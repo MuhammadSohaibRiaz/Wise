@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, AlertCircle, Calendar, Clock, FileText, User, Check, X } from "lucide-react"
 import { LawyerDashboardHeader } from "@/components/lawyer/dashboard-header"
 import { notifyAppointmentUpdate } from "@/lib/notifications"
-import { appointmentStatusLabel } from "@/lib/appointments-status"
+import { appointmentStatusLabel, appointmentWorkflowPhase } from "@/lib/appointments-status"
+import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 
 interface Appointment {
   id: string
@@ -39,7 +40,37 @@ export default function LawyerAppointmentsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [processingId, setProcessingId] = useState<string | null>(null)
+  const [rescheduleDraftById, setRescheduleDraftById] = useState<Record<string, string>>({})
+  const [rescheduleOpenId, setRescheduleOpenId] = useState<string | null>(null)
   const { toast } = useToast()
+
+  const toDatetimeLocalValue = (iso: string) => {
+    const d = new Date(iso)
+    const pad = (n: number) => String(n).padStart(2, "0")
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+
+  const hasLawyerSlotConflict = async (
+    supabase: ReturnType<typeof createClient>,
+    args: { lawyerId: string; appointmentId: string; scheduledAtIso: string; durationMinutes: number },
+  ) => {
+    const { data: blockedAppointments, error } = await supabase
+      .from("appointments")
+      .select("id, scheduled_at, duration_minutes")
+      .eq("lawyer_id", args.lawyerId)
+      .in("status", ["scheduled", "rescheduled", "awaiting_payment"])
+      .neq("id", args.appointmentId)
+
+    if (error) throw error
+
+    const slotStart = new Date(args.scheduledAtIso)
+    const slotEnd = new Date(slotStart.getTime() + args.durationMinutes * 60000)
+    return (blockedAppointments || []).some((apt) => {
+      const aptStart = new Date(apt.scheduled_at)
+      const aptEnd = new Date(aptStart.getTime() + apt.duration_minutes * 60000)
+      return !(slotEnd <= aptStart || slotStart >= aptEnd)
+    })
+  }
 
   const loadAppointments = useCallback(async () => {
     try {
@@ -189,21 +220,11 @@ export default function LawyerAppointmentsPage() {
         throw new Error("Appointment not found")
       }
 
-      const { data: scheduledAppointments, error: scheduleError } = await supabase
-        .from("appointments")
-        .select("id, scheduled_at, duration_minutes")
-        .eq("lawyer_id", lawyerId)
-        .in("status", ["scheduled"])
-        .neq("id", appointmentId)
-
-      if (scheduleError) throw scheduleError
-
-      const slotStart = new Date(targetAppointment.scheduled_at)
-      const slotEnd = new Date(slotStart.getTime() + targetAppointment.duration_minutes * 60000)
-      const hasConflict = (scheduledAppointments || []).some((apt) => {
-        const aptStart = new Date(apt.scheduled_at)
-        const aptEnd = new Date(aptStart.getTime() + apt.duration_minutes * 60000)
-        return !(slotEnd <= aptStart || slotStart >= aptEnd)
+      const hasConflict = await hasLawyerSlotConflict(supabase, {
+        lawyerId,
+        appointmentId,
+        scheduledAtIso: targetAppointment.scheduled_at,
+        durationMinutes: targetAppointment.duration_minutes,
       })
 
       if (hasConflict) {
@@ -214,16 +235,6 @@ export default function LawyerAppointmentsPage() {
         })
         return
       }
-
-      // Get case details to calculate payment amount
-      const { data: caseData } = await supabase
-        .from("cases")
-        .select("hourly_rate")
-        .eq("id", targetAppointment.case.id)
-        .single()
-
-      const hourlyRate = caseData?.hourly_rate || targetAppointment.case.hourly_rate || 0
-      const totalAmount = (hourlyRate * targetAppointment.duration_minutes) / 60
 
       console.log(`[Appointments] Updating appointment ${appointmentId} to awaiting_payment`)
       const { error, data: updatedData } = await supabase
@@ -266,6 +277,18 @@ export default function LawyerAppointmentsPage() {
           caseId: targetAppointment.case.id,
         }
       )
+
+      await appendCaseTimelineEvent(supabase, {
+        caseId: targetAppointment.case.id,
+        actorId: lawyerId,
+        eventType: CaseTimelineEventType.CONSULTATION_ACCEPTED,
+        metadata: {
+          appointment_id: appointmentId,
+          previous_status: targetAppointment.status,
+          status_after: "awaiting_payment",
+          action: "lawyer_accepted",
+        },
+      })
 
       toast({
         title: "Success",
@@ -330,6 +353,18 @@ export default function LawyerAppointmentsPage() {
         }
       )
 
+      await appendCaseTimelineEvent(supabase, {
+        caseId: targetAppointment.case.id,
+        actorId: lawyerId,
+        eventType: CaseTimelineEventType.LAWYER_REJECTED_CONSULTATION,
+        metadata: {
+          appointment_id: appointmentId,
+          previous_status: targetAppointment.status,
+          status_after: "rejected",
+          action: "lawyer_rejected",
+        },
+      })
+
       toast({
         title: "Request Rejected",
         description: "The appointment request has been rejected.",
@@ -370,6 +405,150 @@ export default function LawyerAppointmentsPage() {
         description: message,
         variant: "destructive",
       })
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
+  const handleLawyerCancel = async (appointmentId: string) => {
+    try {
+      setProcessingId(appointmentId)
+      const supabase = createClient()
+      const targetAppointment = appointments.find((apt) => apt.id === appointmentId)
+
+      if (!targetAppointment || !lawyerId) throw new Error("Appointment not found")
+      if (!["scheduled", "rescheduled", "awaiting_payment"].includes(targetAppointment.status)) {
+        throw new Error(`Cannot cancel appointment from status: ${targetAppointment.status}`)
+      }
+
+      const { error: updateError } = await supabase
+        .from("appointments")
+        .update({ status: "cancelled", responded_at: new Date().toISOString() })
+        .eq("id", appointmentId)
+        .in("status", ["scheduled", "rescheduled", "awaiting_payment"])
+
+      if (updateError) throw updateError
+
+      setAppointments((prev) => prev.map((apt) => (apt.id === appointmentId ? { ...apt, status: "cancelled" } : apt)))
+
+      await notifyAppointmentUpdate(supabase, "lawyer_cancel", {
+        recipientId: targetAppointment.client.id,
+        actorId: lawyerId,
+        caseTitle: targetAppointment.case.title,
+        scheduledAt: targetAppointment.scheduled_at,
+        appointmentId,
+        caseId: targetAppointment.case.id,
+      })
+
+      await appendCaseTimelineEvent(supabase, {
+        caseId: targetAppointment.case.id,
+        actorId: lawyerId,
+        eventType: CaseTimelineEventType.LAWYER_CANCELLED_CONSULTATION,
+        metadata: {
+          appointment_id: appointmentId,
+          previous_status: targetAppointment.status,
+          status_after: "cancelled",
+          action: "lawyer_cancelled",
+        },
+      })
+
+      toast({
+        title: "Appointment cancelled",
+        description: "The client has been notified and timeline updated.",
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to cancel appointment"
+      toast({ title: "Error", description: message, variant: "destructive" })
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
+  const openRescheduleFor = (appointment: Appointment) => {
+    setRescheduleDraftById((prev) => ({
+      ...prev,
+      [appointment.id]: prev[appointment.id] || toDatetimeLocalValue(appointment.scheduled_at),
+    }))
+    setRescheduleOpenId(appointment.id)
+  }
+
+  const handleConfirmReschedule = async (appointmentId: string) => {
+    try {
+      setProcessingId(appointmentId)
+      const supabase = createClient()
+      const targetAppointment = appointments.find((apt) => apt.id === appointmentId)
+      const draftValue = rescheduleDraftById[appointmentId]
+      if (!targetAppointment || !lawyerId) throw new Error("Appointment not found")
+      if (!draftValue) throw new Error("Select a new date and time first")
+      if (!["scheduled", "rescheduled"].includes(targetAppointment.status)) {
+        throw new Error(`Cannot reschedule appointment from status: ${targetAppointment.status}`)
+      }
+
+      const newStart = new Date(draftValue)
+      if (Number.isNaN(newStart.getTime())) throw new Error("Invalid date/time")
+      if (newStart.getTime() <= Date.now()) throw new Error("New appointment time must be in the future")
+
+      const newScheduledAtIso = newStart.toISOString()
+      const hasConflict = await hasLawyerSlotConflict(supabase, {
+        lawyerId,
+        appointmentId,
+        scheduledAtIso: newScheduledAtIso,
+        durationMinutes: targetAppointment.duration_minutes,
+      })
+      if (hasConflict) {
+        throw new Error("Schedule conflict: you already have an overlapping booking")
+      }
+
+      const { error: updateError } = await supabase
+        .from("appointments")
+        .update({
+          status: "rescheduled",
+          scheduled_at: newScheduledAtIso,
+          responded_at: new Date().toISOString(),
+        })
+        .eq("id", appointmentId)
+        .in("status", ["scheduled", "rescheduled"])
+
+      if (updateError) throw updateError
+
+      setAppointments((prev) =>
+        prev.map((apt) =>
+          apt.id === appointmentId ? { ...apt, status: "rescheduled", scheduled_at: newScheduledAtIso } : apt,
+        ),
+      )
+      setRescheduleOpenId(null)
+
+      await notifyAppointmentUpdate(supabase, "lawyer_reschedule", {
+        recipientId: targetAppointment.client.id,
+        actorId: lawyerId,
+        caseTitle: targetAppointment.case.title,
+        scheduledAt: newScheduledAtIso,
+        appointmentId,
+        caseId: targetAppointment.case.id,
+      })
+
+      await appendCaseTimelineEvent(supabase, {
+        caseId: targetAppointment.case.id,
+        actorId: lawyerId,
+        eventType: CaseTimelineEventType.CONSULTATION_RESCHEDULED,
+        metadata: {
+          appointment_id: appointmentId,
+          previous_status: targetAppointment.status,
+          previous_scheduled_at: targetAppointment.scheduled_at,
+          scheduled_at: newScheduledAtIso,
+          duration_minutes: targetAppointment.duration_minutes,
+          status_after: "rescheduled",
+          action: "lawyer_rescheduled",
+        },
+      })
+
+      toast({
+        title: "Appointment rescheduled",
+        description: "The client has been notified of the new time.",
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to reschedule appointment"
+      toast({ title: "Error", description: message, variant: "destructive" })
     } finally {
       setProcessingId(null)
     }
@@ -633,6 +812,14 @@ export default function LawyerAppointmentsPage() {
                           Awaiting Payment
                         </span>
                         <p className="text-xs text-muted-foreground text-right">Waiting for client payment</p>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={processingId === appointment.id}
+                          onClick={() => void handleLawyerCancel(appointment.id)}
+                        >
+                          Cancel
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -739,20 +926,74 @@ export default function LawyerAppointmentsPage() {
                             ? "Awaiting Payment"
                             : appointmentStatusLabel(appointment.status)}
                         </span>
+                        <p className="text-[11px] text-muted-foreground">Workflow: {appointmentWorkflowPhase(appointment.status)}</p>
                         {(appointment.status === "scheduled" || appointment.status === "rescheduled") && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="mt-2"
-                            disabled={processingId === appointment.id}
-                            onClick={() => void handleMarkAttended(appointment.id)}
-                          >
-                            {processingId === appointment.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              "Mark consultation held"
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="mt-2"
+                              disabled={processingId === appointment.id}
+                              onClick={() => void handleMarkAttended(appointment.id)}
+                            >
+                              {processingId === appointment.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                "Mark consultation held"
+                              )}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="mt-2"
+                              disabled={processingId === appointment.id}
+                              onClick={() => openRescheduleFor(appointment)}
+                            >
+                              Reschedule
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="mt-2"
+                              disabled={processingId === appointment.id}
+                              onClick={() => void handleLawyerCancel(appointment.id)}
+                            >
+                              Cancel
+                            </Button>
+                            {rescheduleOpenId === appointment.id && (
+                              <div className="mt-2 w-full rounded-md border p-2">
+                                <label className="mb-1 block text-[11px] text-muted-foreground">New date & time</label>
+                                <input
+                                  type="datetime-local"
+                                  className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
+                                  value={rescheduleDraftById[appointment.id] || ""}
+                                  min={toDatetimeLocalValue(new Date().toISOString())}
+                                  onChange={(e) =>
+                                    setRescheduleDraftById((prev) => ({ ...prev, [appointment.id]: e.target.value }))
+                                  }
+                                />
+                                <div className="mt-2 flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    className="h-7 px-2 text-xs"
+                                    disabled={processingId === appointment.id}
+                                    onClick={() => void handleConfirmReschedule(appointment.id)}
+                                  >
+                                    Confirm
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 px-2 text-xs"
+                                    disabled={processingId === appointment.id}
+                                    onClick={() => setRescheduleOpenId(null)}
+                                  >
+                                    Close
+                                  </Button>
+                                </div>
+                              </div>
                             )}
-                          </Button>
+                          </>
                         )}
                       </div>
                     </div>

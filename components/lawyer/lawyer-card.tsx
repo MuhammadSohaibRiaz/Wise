@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { BookAppointmentModal } from "@/components/lawyer/book-appointment-modal"
 import { createClient } from "@/lib/supabase/client"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
+import { markLatestDraftLawyerSelection } from "@/lib/case-drafts"
 
 interface LawyerCardProps {
   id: string
@@ -53,13 +54,15 @@ export function LawyerCard({
     getCurrentUser()
   }, [])
 
-  const handleBookNow = (e: React.MouseEvent) => {
+  const handleBookNow = async (e: React.MouseEvent) => {
     e.preventDefault()
     if (!clientId) {
       // Redirect to login if not authenticated
       window.location.href = "/auth/client/sign-in"
       return
     }
+    const supabase = createClient()
+    await markLatestDraftLawyerSelection(supabase, clientId, id)
     setBookingOpen(true)
   }
 

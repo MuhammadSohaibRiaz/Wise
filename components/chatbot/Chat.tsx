@@ -4,16 +4,25 @@ import { useState, useRef, useEffect, useMemo, useCallback, useTransition } from
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Send, X, Loader2, Upload, FileText, CheckCircle2, Navigation, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { Send, X, Loader2, Upload, FileText, CheckCircle2, Navigation, Mic, MicOff, Volume2, VolumeX, Trash2 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { createClient } from '@/lib/supabase/client';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { normalizeChatNavigationPath, type ChatRole } from '@/lib/chat-routes';
+
+type QueuedAnalysisJob = {
+  status: string
+  error_message?: string | null
+  result_payload?: {
+    analysis?: Record<string, unknown>
+    isLegalDocument?: boolean
+  } | null
+}
 
 export function Chat({ onClose }: { onClose: () => void }) {
   const router = useRouter();
@@ -31,16 +40,25 @@ export function Chat({ onClose }: { onClose: () => void }) {
   const [pendingNavigationPath, setPendingNavigationPath] = useState<string | null>(null);
   const [isRoutePending, startRouteTransition] = useTransition();
   const [historyReady, setHistoryReady] = useState(false);
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [isLoadingOlderHistory, setIsLoadingOlderHistory] = useState(false);
+  const [isClearingHistory, setIsClearingHistory] = useState(false);
   const recognitionRef = useRef<any>(null);
   const lastSpokenMessageIdRef = useRef<string | null>(null);
   const lastScrolledMessageCountRef = useRef(0);
   const isMountedRef = useRef(true);
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const caseIdFromQuery = searchParams.get("case")
+  const caseIdFromPath = pathname.match(/\/(?:client|lawyer)\/cases\/([0-9a-fA-F-]{36})(?:\/|$)/)?.[1] ?? null
+  const activeCaseId = caseIdFromQuery || caseIdFromPath
+  const caseContextPath = activeCaseId ? `${pathname}?case=${activeCaseId}` : pathname
   
   const { messages, sendMessage, setMessages, status, error: chatError } = useChat({
     transport: new DefaultChatTransport({ api: '/api/chat' }),
     body: {
-      currentPath: pathname
+      currentPath: caseContextPath
     },
     onError: (error: any) => {
       console.error("[Chat] useChat error:", error);
@@ -60,6 +78,25 @@ export function Chat({ onClose }: { onClose: () => void }) {
 
   const safeInput = draft ?? '';
 
+  const mapDbMessagesToUi = useCallback((historyData: any[]) => {
+    return historyData.map((m: any) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      parts: [{ type: 'text', text: m.content }],
+      createdAt: new Date(m.created_at)
+    }));
+  }, []);
+
+  const buildHistoryParams = useCallback((opts?: { before?: string; limit?: number }) => {
+    const params = new URLSearchParams();
+    params.set("currentPath", caseContextPath);
+    params.set("limit", String(opts?.limit ?? 80));
+    if (activeCaseId) params.set("caseId", activeCaseId);
+    if (opts?.before) params.set("before", opts.before);
+    return params;
+  }, [activeCaseId, caseContextPath]);
+
   useEffect(() => {
     const loadRoleAndHistory = async () => {
       setHistoryReady(false);
@@ -78,19 +115,13 @@ export function Chat({ onClose }: { onClose: () => void }) {
         setUserAvatar(profile?.avatar_url ?? null);
 
         // Load History
-        const historyRes = await fetch('/api/chat/history');
+        const historyRes = await fetch(`/api/chat/history?${buildHistoryParams().toString()}`);
         if (historyRes.ok) {
-          const { messages: historyData } = await historyRes.json();
+          const { messages: historyData, hasMore, nextCursor } = await historyRes.json();
+          setHasMoreHistory(Boolean(hasMore));
+          setHistoryCursor(nextCursor || null);
           if (historyData && historyData.length > 0) {
-            // Map DB messages to UI message format with parts
-            const mappedMessages = historyData.map((m: any) => ({
-              id: m.id,
-              role: m.role,
-              content: m.content,
-              parts: [{ type: 'text', text: m.content }],
-              createdAt: new Date(m.created_at)
-            }));
-            setMessages(mappedMessages);
+            setMessages(mapDbMessagesToUi(historyData));
           } else {
             setMessages([]);
           }
@@ -103,7 +134,50 @@ export function Chat({ onClose }: { onClose: () => void }) {
       }
     };
     void loadRoleAndHistory();
-  }, [setMessages]);
+  }, [buildHistoryParams, mapDbMessagesToUi, setMessages]);
+
+  const loadOlderHistory = useCallback(async () => {
+    if (!historyCursor || isLoadingOlderHistory) return;
+    setIsLoadingOlderHistory(true);
+    try {
+      const res = await fetch(`/api/chat/history?${buildHistoryParams({ before: historyCursor }).toString()}`);
+      if (!res.ok) throw new Error("Failed to load older messages");
+      const payload = await res.json();
+      const older = mapDbMessagesToUi(payload.messages || []);
+      setMessages((prev: any) => [...older, ...prev]);
+      setHasMoreHistory(Boolean(payload.hasMore));
+      setHistoryCursor(payload.nextCursor || null);
+    } catch (e) {
+      console.error("[Chat] load older history failed:", e);
+    } finally {
+      setIsLoadingOlderHistory(false);
+    }
+  }, [buildHistoryParams, historyCursor, isLoadingOlderHistory, mapDbMessagesToUi, setMessages]);
+
+  const clearCurrentThread = useCallback(async () => {
+    const target = activeCaseId ? "this case thread" : "your global assistant history";
+    if (!window.confirm(`Clear ${target}? This cannot be undone.`)) return;
+
+    setIsClearingHistory(true);
+    try {
+      const params = buildHistoryParams();
+      if (!activeCaseId) params.set("scope", "global");
+      const res = await fetch(`/api/chat/history?${params.toString()}`, { method: "DELETE" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Failed to clear history");
+      setMessages([]);
+      setHasMoreHistory(false);
+      setHistoryCursor(null);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to clear history";
+      setMessages((prev: any) => ([
+        ...prev,
+        { id: Date.now().toString(), role: 'assistant', parts: [{ type: 'text', text: `Error: ${message}` }] }
+      ]));
+    } finally {
+      setIsClearingHistory(false);
+    }
+  }, [activeCaseId, buildHistoryParams, setMessages]);
 
   const normalizePath = useCallback(
     (path: string | null | undefined) => {
@@ -466,7 +540,7 @@ export function Chat({ onClose }: { onClose: () => void }) {
       const fileName = `${crypto.randomUUID()}.${fileExt ?? "bin"}`;
       const filePath = `${user.id}/${fileName}`;
 
-      const { error: uploadError, data: uploadData } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('documents')
         .upload(filePath, file);
 
@@ -503,22 +577,52 @@ export function Chat({ onClose }: { onClose: () => void }) {
       const res = await fetch('/api/analyze-document', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId: doc.id }),
+        body: JSON.stringify({ documentId: doc.id, async: true }),
       });
 
       const analysisData = await res.json();
       if (!res.ok) throw new Error(analysisData.error || "Analysis failed");
 
+      let finalPayload = analysisData
+      if (analysisData.queued && analysisData.jobId) {
+        const maxAttempts = 150
+        let lastJob: QueuedAnalysisJob | null = null
+        for (let i = 0; i < maxAttempts; i++) {
+          const jobRes = await fetch(`/api/analyze-document/job/${analysisData.jobId}`)
+          const jobData = await jobRes.json()
+          if (!jobRes.ok) throw new Error(jobData.error || "Failed to check analysis job")
+          lastJob = jobData as QueuedAnalysisJob
+          if (lastJob.status === "completed" || lastJob.status === "failed") break
+          await new Promise((r) => setTimeout(r, 2000))
+        }
+
+        if (!lastJob || lastJob.status !== "completed" || !lastJob.result_payload?.analysis) {
+          throw new Error(lastJob?.error_message || "Analysis did not complete successfully")
+        }
+
+        finalPayload = {
+          analysis: lastJob.result_payload.analysis,
+          isLegalDocument: lastJob.result_payload.isLegalDocument !== false,
+        }
+      }
+
       // 5. Update messages with results (with Pakistani Law focus)
-      const citations = Array.isArray(analysisData.analysis.legal_citations) 
-        ? `\n\n**Relevant Pakistani Law:**\n- ${analysisData.analysis.legal_citations.join('\n- ')}`
-        : '';
-        
-      const disclaimer = analysisData.analysis.disclaimer 
-        ? `\n\n> [!IMPORTANT]\n> ${analysisData.analysis.disclaimer}`
+      const analysisResult = (finalPayload.analysis || {}) as Record<string, unknown>
+      const legalCitations = Array.isArray(analysisResult.legal_citations)
+        ? analysisResult.legal_citations.map(String)
+        : []
+      const citations = legalCitations.length > 0
+        ? `\n\n**Relevant Pakistani Law:**\n- ${legalCitations.join('\n- ')}`
         : '';
 
-      const analysisContent = `### Analysis Complete for ${file.name}\n\n**Summary:** ${analysisData.analysis.summary}\n\n**Risk Level:** ${analysisData.analysis.risk_level}${citations}${disclaimer}\n\n[VIEW_ANALYSIS:${doc.id}]`;
+      const summaryText = typeof analysisResult.summary === "string" ? analysisResult.summary : "No summary available."
+      const riskLevelText = typeof analysisResult.risk_level === "string" ? analysisResult.risk_level : "Unknown"
+      const disclaimerText = typeof analysisResult.disclaimer === "string" ? analysisResult.disclaimer : ""
+      const disclaimer = disclaimerText
+        ? `\n\n> [!IMPORTANT]\n> ${disclaimerText}`
+        : '';
+
+      const analysisContent = `### Analysis Complete for ${file.name}\n\n**Summary:** ${summaryText}\n\n**Risk Level:** ${riskLevelText}${citations}${disclaimer}\n\n[VIEW_ANALYSIS:${doc.id}]`;
       
       setMessages((prev) => ([
         ...prev,
@@ -536,16 +640,19 @@ export function Chat({ onClose }: { onClose: () => void }) {
       await Promise.all([
         supabase.from("ai_chat_messages").insert({
           user_id: user.id,
+          case_id: caseId,
           role: "user",
           content: `Uploaded document: ${file.name}`
         }),
         supabase.from("ai_chat_messages").insert({
           user_id: user.id,
+          case_id: caseId,
           role: "assistant",
           content: `I've received **${file.name}**. Analyzing it now...`
         }),
         supabase.from("ai_chat_messages").insert({
           user_id: user.id,
+          case_id: caseId,
           role: "assistant",
           content: analysisContent
         })
@@ -570,6 +677,16 @@ export function Chat({ onClose }: { onClose: () => void }) {
           {isSpeaking && <Volume2 className="h-4 w-4 animate-pulse text-primary-foreground/80" />}
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => void clearCurrentThread()}
+            className="text-primary-foreground hover:bg-primary-foreground/10 h-8 w-8"
+            title={activeCaseId ? "Clear this case thread" : "Clear assistant history"}
+            disabled={isClearingHistory}
+          >
+            {isClearingHistory ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          </Button>
           <Button 
             size="icon" 
             variant="ghost" 
@@ -601,6 +718,19 @@ export function Chat({ onClose }: { onClose: () => void }) {
           </div>
         ) : (
         <>
+        {hasMoreHistory && (
+          <div className="flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void loadOlderHistory()}
+              disabled={isLoadingOlderHistory}
+            >
+              {isLoadingOlderHistory ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Load older messages
+            </Button>
+          </div>
+        )}
         {messages.length === 0 && (
           <div className="text-center py-10 text-muted-foreground">
             <p className="text-sm italic">Hello! I'm your WiseCase Assistant. How can I help you today?</p>

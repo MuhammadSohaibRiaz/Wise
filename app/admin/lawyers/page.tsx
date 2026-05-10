@@ -139,6 +139,13 @@ export default function AdminVerificationPage() {
 
       if (error) throw error
 
+      try {
+        const { recomputeLawyerTrustScore } = await import("@/lib/recompute-lawyer-trust")
+        await recomputeLawyerTrustScore(supabase, lawyerId)
+      } catch (e) {
+        console.warn("[Admin] trust_score update skipped:", e)
+      }
+
       const { data: { user } } = await supabase.auth.getUser()
       await supabase.from("notifications").insert({
         user_id: lawyerId,

@@ -76,3 +76,15 @@ Use this checklist before the re-evaluation. Each step is designed to catch demo
   - `scripts/010_create_triggers.sql`
   - `scripts/014_auto_create_lawyer_profile.sql`
   - `scripts/031_fix_profiles_recursion.sql`
+
+## I) Phase 5 final checks (2–3 minutes)
+
+- Async analysis queue:
+  - Upload from `/client/analysis` or chatbot upload.
+  - Confirm response is queued (`jobId`) and eventually resolves to completed.
+- Chat thread controls:
+  - On a case page (`/client/cases/[id]` or `/lawyer/cases/[id]`), open assistant.
+  - Confirm history is case-scoped, “Load older messages” works, and “Clear thread” clears only that case thread.
+- Abuse guard behavior:
+  - Rapidly spam chat send or job-poll requests.
+  - Confirm API returns `429` with `Retry-After` rather than failing with generic `500`.

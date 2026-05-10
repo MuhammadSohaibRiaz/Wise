@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Loader2,
   AlertCircle,
@@ -21,11 +22,14 @@ import {
   Briefcase,
   Save,
   Brain,
+  LayoutDashboard,
+  History,
 } from "lucide-react"
 import { LawyerDashboardHeader } from "@/components/lawyer/dashboard-header"
 import { createNotification } from "@/lib/notifications"
 import { appointmentDisplayLabel } from "@/lib/appointment-display"
 import { isAppointmentBillable } from "@/lib/appointments-status"
+import { caseTimelineEventDetail, formatCaseTimelineEventLabel } from "@/lib/case-timeline"
 
 interface CaseDetail {
   id: string
@@ -67,6 +71,13 @@ interface Document {
   document_analysis?: { id: string; analysis_status: string }[] | null
 }
 
+interface CaseTimelineEventRow {
+  id: string
+  event_type: string
+  created_at: string
+  metadata: Record<string, unknown> | null
+}
+
 const statusConfig: Record<CaseDetail["status"], { label: string; className: string }> = {
   open: {
     label: "Open",
@@ -100,6 +111,7 @@ export default function LawyerCaseDetailPage() {
   const [selectedStatus, setSelectedStatus] = useState<CaseDetail["status"] | null>(null)
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [documents, setDocuments] = useState<Document[]>([])
+  const [timelineEvents, setTimelineEvents] = useState<CaseTimelineEventRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -108,6 +120,7 @@ export default function LawyerCaseDetailPage() {
   const [privateNotes, setPrivateNotes] = useState("")
   const [isSavingNotes, setIsSavingNotes] = useState(false)
   const [selectedAnalysis, setSelectedAnalysis] = useState<Record<string, unknown> | null>(null)
+  const [caseTab, setCaseTab] = useState("overview")
 
   const fetchCaseDetail = useCallback(async () => {
     try {
@@ -249,6 +262,15 @@ export default function LawyerCaseDetailPage() {
         documentsPayload = (docsSimple || []).map((d) => ({ ...d, document_analysis: [] as any }))
       }
       setDocuments(documentsPayload)
+
+      const { data: timelineData, error: timelineError } = await supabase
+        .from("case_timeline_events")
+        .select("id, event_type, metadata, created_at")
+        .eq("case_id", caseId)
+        .order("created_at", { ascending: true })
+
+      if (timelineError) throw timelineError
+      setTimelineEvents((timelineData as CaseTimelineEventRow[]) || [])
 
       setPrivateNotes((caseData as { private_notes?: string }).private_notes || "")
 
@@ -489,375 +511,405 @@ export default function LawyerCaseDetailPage() {
               </div>
             </div>
 
-            <div className="grid gap-6 md:grid-cols-2">
-              {/* Case Information */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Case Information</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {caseDetail.description && (
-                    <div>
-                      <p className="text-sm font-medium mb-1">Description</p>
-                      <p className="text-sm text-muted-foreground">{caseDetail.description}</p>
-                    </div>
-                  )}
+            <Tabs value={caseTab} onValueChange={setCaseTab} className="space-y-6">
+              <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-muted/40 p-1">
+                <TabsTrigger value="overview" className="gap-1.5">
+                  <LayoutDashboard className="h-4 w-4 shrink-0" />
+                  Overview
+                </TabsTrigger>
+                <TabsTrigger value="timeline" className="gap-1.5">
+                  <History className="h-4 w-4 shrink-0" />
+                  Timeline
+                </TabsTrigger>
+                <TabsTrigger value="documents" className="gap-1.5">
+                  <FileText className="h-4 w-4 shrink-0" />
+                  Documents
+                </TabsTrigger>
+                <TabsTrigger value="appointments" className="gap-1.5">
+                  <Calendar className="h-4 w-4 shrink-0" />
+                  Appointments
+                </TabsTrigger>
+                <TabsTrigger value="messages" className="gap-1.5">
+                  <MessageSquare className="h-4 w-4 shrink-0" />
+                  Messages
+                </TabsTrigger>
+              </TabsList>
 
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Client</p>
-                      <p className="text-sm font-medium">{clientName}</p>
-                    </div>
-                  </div>
-
-                  {caseDetail.hourly_rate && (
-                    <div className="flex items-center gap-2">
-                      <DollarSign className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Hourly Rate</p>
-                        <p className="text-sm font-medium">${caseDetail.hourly_rate}/hr</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {(caseDetail.budget_min || caseDetail.budget_max) && (
-                    <div className="flex items-center gap-2">
-                      <Briefcase className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Budget</p>
-                        <p className="text-sm font-medium">
-                          {caseDetail.budget_min && caseDetail.budget_max
-                            ? `$${caseDetail.budget_min} - $${caseDetail.budget_max}`
-                            : caseDetail.budget_min
-                              ? `From $${caseDetail.budget_min}`
-                              : `Up to $${caseDetail.budget_max}`}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Created</p>
-                      <p className="text-sm font-medium">{new Date(caseDetail.created_at).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Status Management */}
-              <div className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Status Management</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <p className="text-sm font-medium mb-2">Current Status</p>
-                      <Badge className={statusInfo.className}>{statusInfo.label}</Badge>
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-medium mb-2">Update Status</p>
-                      <Select value={selectedStatus || ""} onValueChange={(value) => setSelectedStatus(value as CaseDetail["status"])}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="open">Open</SelectItem>
-                          <SelectItem value="in_progress">In Progress</SelectItem>
-                          <SelectItem value="pending_completion">Request Completion</SelectItem>
-                          <SelectItem value="completed" disabled>Completed (Client confirmed)</SelectItem>
-                          <SelectItem value="closed">Closed</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {selectedStatus !== caseDetail.status && (
-                      <Button
-                        onClick={handleStatusUpdate}
-                        disabled={isSaving}
-                        className="w-full"
-                      >
-                        {isSaving ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Saving...
-                          </>
-                        ) : (
-                          <>
-                            <Save className="h-4 w-4 mr-2" />
-                            Update Status
-                          </>
-                        )}
-                      </Button>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <DollarSign className="h-4 w-4 text-green-600" />
-                      Billing & Settlement
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4 border-b pb-4">
-                      <div>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Rate</p>
-                        <p className="text-sm font-medium">${caseDetail.hourly_rate || 0}/hr</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Total Billed</p>
-                        <p className="text-sm font-bold text-green-600">${calculateTotalBilled().toFixed(2)}</p>
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-muted-foreground">Confirmed Hours:</span>
-                      <span className="font-medium">
-                        {(appointments.filter((a) => isAppointmentBillable(a.status)).reduce((acc, a) => acc + a.duration_minutes, 0) / 60).toFixed(1)} hrs
-                      </span>
-                    </div>
-                    <Button variant="outline" size="sm" className="w-full text-xs" disabled>
-                      Generate Invoice (Coming Soon)
-                    </Button>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-
-            {/* Lawyer Private Notes */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-lg">Private Lawyer Notes</CardTitle>
-                <Button 
-                  size="sm" 
-                  onClick={handleSaveNotes} 
-                  disabled={isSavingNotes}
-                  className="h-8"
-                >
-                  {isSavingNotes ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Save className="h-3 w-3 mr-2" />}
-                  Save Notes
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <textarea
-                  value={privateNotes}
-                  onChange={(e) => setPrivateNotes(e.target.value)}
-                  placeholder="Keep track of case details, evidence, and internal strategy here. Only you can see these notes."
-                  className="min-h-[150px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                />
-                <p className="mt-2 text-[10px] text-muted-foreground italic">
-                  * Private notes are encrypted and never shared with the client.
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Appointments */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Appointments ({appointments.length})</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {appointments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No appointments scheduled</p>
-                ) : (
-                  <div className="space-y-3">
-                    {appointments.slice(0, 5).map((apt) => {
-                      const disp = appointmentDisplayLabel(apt, caseDetail.status)
-                      return (
-                      <div key={apt.id} className="flex items-center justify-between p-3 border rounded-lg">
+              <TabsContent value="overview" className="space-y-6 mt-0">
+                <div className="grid gap-6 md:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Case Information</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {caseDetail.description && (
                         <div>
-                          <p className="text-sm font-medium">
-                            {new Date(apt.scheduled_at).toLocaleDateString()} at{" "}
-                            {new Date(apt.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Duration: {apt.duration_minutes} minutes •{" "}
-                            {disp.hint ? <span title={disp.hint}>Status: {disp.label}</span> : <>Status: {disp.label}</>}
-                          </p>
+                          <p className="text-sm font-medium mb-1">Description</p>
+                          <p className="text-sm text-muted-foreground">{caseDetail.description}</p>
                         </div>
-                        <Badge variant="outline" className="text-xs">
-                          {disp.label}
-                        </Badge>
-                      </div>
-                    )})}
-                    {appointments.length > 5 && (
-                      <p className="text-xs text-muted-foreground text-center">+{appointments.length - 5} more appointments</p>
-                    )}
-                  </div>
-                )}
-                <Button variant="outline" size="sm" className="w-full mt-4" onClick={() => router.push("/lawyer/appointments")}>
-                  <Calendar className="h-4 w-4 mr-2" />
-                  View All Appointments
-                </Button>
-              </CardContent>
-            </Card>
+                      )}
 
-            {/* Documents */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Documents ({documents.length})</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {documents.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No documents uploaded yet</p>
-                ) : (
-                  <div className="space-y-3">
-                    {documents.map((doc) => (
-                      <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <FileText className="h-5 w-5 text-muted-foreground" />
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Client</p>
+                          <p className="text-sm font-medium">{clientName}</p>
+                        </div>
+                      </div>
+
+                      {caseDetail.hourly_rate && (
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="h-4 w-4 text-muted-foreground" />
                           <div>
-                            <p className="text-sm font-medium">{doc.file_name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {doc.document_type || "Document"} • {new Date(doc.created_at).toLocaleDateString()}
+                            <p className="text-xs text-muted-foreground">Hourly Rate</p>
+                            <p className="text-sm font-medium">${caseDetail.hourly_rate}/hr</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {(caseDetail.budget_min || caseDetail.budget_max) && (
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Budget</p>
+                            <p className="text-sm font-medium">
+                              {caseDetail.budget_min && caseDetail.budget_max
+                                ? `$${caseDetail.budget_min} - $${caseDetail.budget_max}`
+                                : caseDetail.budget_min
+                                  ? `From $${caseDetail.budget_min}`
+                                  : `Up to $${caseDetail.budget_max}`}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs">
-                            {doc.status}
-                          </Badge>
-                          {doc.file_url && (
-                            <Button variant="ghost" size="sm" asChild>
-                              <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
-                                View
-                              </a>
-                            </Button>
-                          )}
-                          {(doc as any).document_analysis?.[0]?.id && (
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => fetchAnalysis((doc as any).document_analysis[0].id)}
-                              disabled={isAnalysisLoading}
-                            >
-                              {isAnalysisLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "AI Analysis"}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                {selectedAnalysis && (
-                  <div className="mt-6 pt-6 border-t animate-in fade-in slide-in-from-top-2">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold text-lg flex items-center gap-2">
-                        <Brain className="h-5 w-5 text-primary" />
-                        AI Analysis Results
-                      </h3>
-                      <Button variant="ghost" size="sm" onClick={() => setSelectedAnalysis(null)}>
-                        Close Analysis
-                      </Button>
-                    </div>
-                    <div className="bg-muted/30 rounded-lg p-4 space-y-4">
-                      <div>
-                        <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Summary</p>
-                        <p className="text-sm leading-relaxed">{selectedAnalysis.summary}</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Risk Level</p>
-                          <Badge variant={selectedAnalysis.risk_level === 'High' ? 'destructive' : 'secondary'}>
-                            {selectedAnalysis.risk_level}
-                          </Badge>
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Urgency</p>
-                          <Badge variant="outline">{selectedAnalysis.urgency}</Badge>
-                        </div>
-                      </div>
-                      {(() => {
-                        const raw = selectedAnalysis.recommendations as unknown
-                        const list: string[] = Array.isArray(raw)
-                          ? (raw as string[])
-                          : typeof raw === "string"
-                            ? (() => {
-                                try {
-                                  const p = JSON.parse(raw)
-                                  return Array.isArray(p) ? p.map(String) : []
-                                } catch {
-                                  return []
-                                }
-                              })()
-                            : []
-                        return list.length > 0 ? (
-                        <div>
-                          <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Recommendations</p>
-                          <ul className="list-disc ml-4 text-sm space-y-1">
-                            {list.map((rec: string, i: number) => (
-                              <li key={i}>{rec}</li>
-                            ))}
-                          </ul>
-                        </div>
-                        ) : null
-                      })()}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      )}
 
-            {/* Activity Timeline */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Unified Activity Timeline</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6 relative before:absolute before:inset-0 before:ml-1.5 before:-translate-x-px before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
-                  {(() => {
-                    const timelineItems = [
-                      {
-                        type: 'creation',
-                        date: new Date(caseDetail.created_at),
-                        title: 'Case Initiated',
-                        description: 'Legal matter was first registered on WiseCase.',
-                        icon: '🆕'
-                      },
-                      ...appointments.map((apt) => {
-                        const disp = appointmentDisplayLabel(apt, caseDetail.status)
-                        return {
-                          type: "appointment",
-                          date: new Date(apt.scheduled_at),
-                          title: `Appointment ${disp.label}`,
-                          description: `${apt.duration_minutes}m consultation • ${apt.notes || "No notes"}`,
-                          icon: "📅",
-                        }
-                      }),
-                      ...documents.map(doc => ({
-                        type: 'document',
-                        date: new Date(doc.created_at),
-                        title: `Document: ${doc.file_name}`,
-                        description: `Type: ${doc.document_type || 'Unknown'} • Status: ${doc.status}`,
-                        icon: '📄'
-                      }))
-                    ].sort((a, b) => b.date.getTime() - a.date.getTime())
-
-                    return timelineItems.map((item, idx) => (
-                      <div key={idx} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                        {/* Icon */}
-                        <div className="flex items-center justify-center w-3 h-3 rounded-full border border-white bg-primary text-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2">
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Created</p>
+                          <p className="text-sm font-medium">{new Date(caseDetail.created_at).toLocaleDateString()}</p>
                         </div>
-                        {/* Content */}
-                        <div className="w-[calc(100%-2rem)] md:w-[calc(50%-2rem)] p-4 rounded border border-border bg-card shadow-sm">
-                          <div className="flex items-center justify-between space-x-2 mb-1">
-                            <div className="font-bold text-sm text-foreground">{item.icon} {item.title}</div>
-                            <time className="font-medium text-[10px] text-muted-foreground uppercase">{item.date.toLocaleDateString()}</time>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <div className="space-y-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Status Management</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div>
+                          <p className="text-sm font-medium mb-2">Current Status</p>
+                          <Badge className={statusInfo.className}>{statusInfo.label}</Badge>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium mb-2">Update Status</p>
+                          <Select value={selectedStatus || ""} onValueChange={(value) => setSelectedStatus(value as CaseDetail["status"])}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="open">Open</SelectItem>
+                              <SelectItem value="in_progress">In Progress</SelectItem>
+                              <SelectItem value="pending_completion">Request Completion</SelectItem>
+                              <SelectItem value="completed" disabled>Completed (Client confirmed)</SelectItem>
+                              <SelectItem value="closed">Closed</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {selectedStatus !== caseDetail.status && (
+                          <Button
+                            onClick={handleStatusUpdate}
+                            disabled={isSaving}
+                            className="w-full"
+                          >
+                            {isSaving ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              <>
+                                <Save className="h-4 w-4 mr-2" />
+                                Update Status
+                              </>
+                            )}
+                          </Button>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <DollarSign className="h-4 w-4 text-green-600" />
+                          Billing & Settlement
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4 border-b pb-4">
+                          <div>
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase">Rate</p>
+                            <p className="text-sm font-medium">${caseDetail.hourly_rate || 0}/hr</p>
                           </div>
-                          <div className="text-xs text-muted-foreground">{item.description}</div>
+                          <div>
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase">Total Billed</p>
+                            <p className="text-sm font-bold text-green-600">${calculateTotalBilled().toFixed(2)}</p>
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-muted-foreground">Confirmed Hours:</span>
+                          <span className="font-medium">
+                            {(appointments.filter((a) => isAppointmentBillable(a.status)).reduce((acc, a) => acc + a.duration_minutes, 0) / 60).toFixed(1)} hrs
+                          </span>
+                        </div>
+                        <Button variant="outline" size="sm" className="w-full text-xs" disabled>
+                          Generate Invoice (Coming Soon)
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-lg">Private Lawyer Notes</CardTitle>
+                    <Button 
+                      size="sm" 
+                      onClick={handleSaveNotes} 
+                      disabled={isSavingNotes}
+                      className="h-8"
+                    >
+                      {isSavingNotes ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Save className="h-3 w-3 mr-2" />}
+                      Save Notes
+                    </Button>
+                  </CardHeader>
+                  <CardContent>
+                    <textarea
+                      value={privateNotes}
+                      onChange={(e) => setPrivateNotes(e.target.value)}
+                      placeholder="Keep track of case details, evidence, and internal strategy here. Only you can see these notes."
+                      className="min-h-[150px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    />
+                    <p className="mt-2 text-[10px] text-muted-foreground italic">
+                      * Private notes are encrypted and never shared with the client.
+                    </p>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="timeline" className="mt-0">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Case timeline</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {timelineEvents.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No timeline events yet. Booking, payments, and consultation milestones will appear here.
+                      </p>
+                    ) : (
+                      <div className="space-y-6 relative before:absolute before:inset-0 before:ml-1.5 before:-translate-x-px before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
+                        {timelineEvents.map((ev) => {
+                            const detail = caseTimelineEventDetail(ev.event_type, ev.metadata)
+                            return (
+                              <div
+                                key={ev.id}
+                                className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active"
+                              >
+                                <div className="flex items-center justify-center w-3 h-3 rounded-full border border-white bg-primary text-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2" />
+                                <div className="w-[calc(100%-2rem)] md:w-[calc(50%-2rem)] p-4 rounded border border-border bg-card shadow-sm">
+                                  <div className="flex items-center justify-between space-x-2 mb-1">
+                                    <div className="font-bold text-sm text-foreground">
+                                      {formatCaseTimelineEventLabel(ev.event_type)}
+                                    </div>
+                                    <time className="font-medium text-[10px] text-muted-foreground uppercase">
+                                      {new Date(ev.created_at).toLocaleString()}
+                                    </time>
+                                  </div>
+                                  {detail && <div className="text-xs text-muted-foreground">{detail}</div>}
+                                </div>
+                              </div>
+                            )
+                          })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="documents" className="mt-0">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Documents ({documents.length})</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {documents.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No documents uploaded yet</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {documents.map((doc) => (
+                          <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div className="flex items-center gap-3">
+                              <FileText className="h-5 w-5 text-muted-foreground" />
+                              <div>
+                                <p className="text-sm font-medium">{doc.file_name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {doc.document_type || "Document"} • {new Date(doc.created_at).toLocaleDateString()}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">
+                                {doc.status}
+                              </Badge>
+                              {doc.file_url && (
+                                <Button variant="ghost" size="sm" asChild>
+                                  <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
+                                    View
+                                  </a>
+                                </Button>
+                              )}
+                              {(doc as { document_analysis?: { id: string }[] }).document_analysis?.[0]?.id && (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  onClick={() =>
+                                    fetchAnalysis(
+                                      (doc as { document_analysis: { id: string }[] }).document_analysis[0].id,
+                                    )
+                                  }
+                                  disabled={isAnalysisLoading}
+                                >
+                                  {isAnalysisLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "AI Analysis"}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {selectedAnalysis && (
+                      <div className="mt-6 pt-6 border-t animate-in fade-in slide-in-from-top-2">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="font-semibold text-lg flex items-center gap-2">
+                            <Brain className="h-5 w-5 text-primary" />
+                            AI Analysis Results
+                          </h3>
+                          <Button variant="ghost" size="sm" onClick={() => setSelectedAnalysis(null)}>
+                            Close Analysis
+                          </Button>
+                        </div>
+                        <div className="bg-muted/30 rounded-lg p-4 space-y-4">
+                          <div>
+                            <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Summary</p>
+                            <p className="text-sm leading-relaxed">{String(selectedAnalysis.summary ?? "")}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Risk Level</p>
+                              <Badge variant={selectedAnalysis.risk_level === "High" ? "destructive" : "secondary"}>
+                                {String(selectedAnalysis.risk_level ?? "")}
+                              </Badge>
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Urgency</p>
+                              <Badge variant="outline">{String(selectedAnalysis.urgency ?? "")}</Badge>
+                            </div>
+                          </div>
+                          {(() => {
+                            const raw = selectedAnalysis.recommendations as unknown
+                            const list: string[] = Array.isArray(raw)
+                              ? (raw as string[])
+                              : typeof raw === "string"
+                                ? (() => {
+                                    try {
+                                      const p = JSON.parse(raw)
+                                      return Array.isArray(p) ? p.map(String) : []
+                                    } catch {
+                                      return []
+                                    }
+                                  })()
+                                : []
+                            return list.length > 0 ? (
+                            <div>
+                              <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Recommendations</p>
+                              <ul className="list-disc ml-4 text-sm space-y-1">
+                                {list.map((rec: string, i: number) => (
+                                  <li key={i}>{rec}</li>
+                                ))}
+                              </ul>
+                            </div>
+                            ) : null
+                          })()}
                         </div>
                       </div>
-                    ))
-                  })()}
-                </div>
-              </CardContent>
-            </Card>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="appointments" className="mt-0">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Appointments ({appointments.length})</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {appointments.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No appointments scheduled</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {appointments.map((apt) => {
+                          const disp = appointmentDisplayLabel(apt, caseDetail.status)
+                          return (
+                          <div key={apt.id} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div>
+                              <p className="text-sm font-medium">
+                                {new Date(apt.scheduled_at).toLocaleDateString()} at{" "}
+                                {new Date(apt.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Duration: {apt.duration_minutes} minutes •{" "}
+                                {disp.hint ? <span title={disp.hint}>Status: {disp.label}</span> : <>Status: {disp.label}</>}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="text-xs">
+                              {disp.label}
+                            </Badge>
+                          </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    <Button variant="outline" size="sm" className="w-full mt-4" onClick={() => router.push("/lawyer/appointments")}>
+                      <Calendar className="h-4 w-4 mr-2" />
+                      View All Appointments
+                    </Button>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="messages" className="mt-0">
+                <Card className="max-w-lg">
+                  <CardHeader>
+                    <CardTitle>Messages</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Open the conversation for this case with your client.
+                    </p>
+                    <Button onClick={() => router.push(`/lawyer/messages?case=${caseDetail.id}`)}>
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      Go to messages
+                    </Button>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </main>
       </div>
     </div>

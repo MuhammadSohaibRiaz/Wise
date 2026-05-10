@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { notifyAppointmentUpdate } from "@/lib/notifications"
+import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 
 interface AppointmentRequest {
   id: string
@@ -164,7 +165,7 @@ export function ClientRequests({ hideTitle = false }: ClientRequestsProps) {
         .from("appointments")
         .select("id, scheduled_at, duration_minutes")
         .eq("lawyer_id", lawyerId)
-        .in("status", ["scheduled", "attended"])
+        .in("status", ["scheduled", "rescheduled", "awaiting_payment", "attended"])
         .neq("id", requestId)
 
       if (scheduleError) throw scheduleError
@@ -211,6 +212,19 @@ export function ClientRequests({ hideTitle = false }: ClientRequestsProps) {
         },
       )
 
+      await appendCaseTimelineEvent(supabase, {
+        caseId: target.case_id,
+        actorId: lawyerId,
+        eventType: CaseTimelineEventType.CONSULTATION_ACCEPTED,
+        metadata: {
+          appointment_id: requestId,
+          previous_status: "pending",
+          status_after: "awaiting_payment",
+          action: "lawyer_accepted",
+          source: "client_requests_widget",
+        },
+      })
+
       toast({
         title: "Request Accepted",
         description: "The client will be notified to complete payment.",
@@ -247,6 +261,15 @@ export function ClientRequests({ hideTitle = false }: ClientRequestsProps) {
 
       if (error) throw error
 
+      await supabase
+        .from("cases")
+        .update({
+          lawyer_id: null,
+          status: "open",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", target.case_id)
+
       setRequests(requests.filter((r) => r.id !== requestId))
 
       await notifyAppointmentUpdate(
@@ -260,6 +283,19 @@ export function ClientRequests({ hideTitle = false }: ClientRequestsProps) {
           caseId: target.case_id,
         },
       )
+
+      await appendCaseTimelineEvent(supabase, {
+        caseId: target.case_id,
+        actorId: lawyerId,
+        eventType: CaseTimelineEventType.LAWYER_REJECTED_CONSULTATION,
+        metadata: {
+          appointment_id: requestId,
+          previous_status: "pending",
+          status_after: "rejected",
+          action: "lawyer_rejected",
+          source: "client_requests_widget",
+        },
+      })
 
       toast({
         title: "Request Rejected",

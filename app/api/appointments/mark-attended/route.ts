@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 
 /**
  * Marks a consultation as held (`attended`) so billing/session state is not confused with case closure (`completed`).
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     const { data: row, error: fetchErr } = await supabase
       .from("appointments")
-      .select("id, client_id, lawyer_id, status, scheduled_at, duration_minutes")
+      .select("id, client_id, lawyer_id, status, scheduled_at, duration_minutes, case_id")
       .eq("id", appointmentId)
       .maybeSingle()
 
@@ -55,6 +56,15 @@ export async function POST(req: NextRequest) {
 
     if (updErr) {
       return NextResponse.json({ error: updErr.message }, { status: 400 })
+    }
+
+    if (row.case_id) {
+      await appendCaseTimelineEvent(supabase, {
+        caseId: row.case_id,
+        actorId: user.id,
+        eventType: CaseTimelineEventType.CONSULTATION_ATTENDED,
+        metadata: { appointment_id: appointmentId },
+      })
     }
 
     return NextResponse.json({ success: true, status: "attended" })

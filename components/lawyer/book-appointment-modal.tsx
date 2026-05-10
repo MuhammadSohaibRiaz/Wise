@@ -5,6 +5,12 @@ import { DayPicker } from "react-day-picker"
 import { format, isPast, isSameDay, startOfDay, addHours, setHours, setMinutes } from "date-fns"
 import { createClient } from "@/lib/supabase/client"
 import { notifyAppointmentRequest } from "@/lib/notifications"
+import {
+  getLatestReadyDraftForClient,
+  markCaseDraftConverted,
+  markLatestDraftLawyerSelection,
+} from "@/lib/case-drafts"
+import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -43,6 +49,9 @@ export function BookAppointmentModal({
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingSlots, setIsLoadingSlots] = useState(false)
   const [bookedAppointmentId, setBookedAppointmentId] = useState<string | null>(null)
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null)
+  /** Server-backed analysis document from `case_drafts` (preferred over sessionStorage). */
+  const [draftLinkedDocumentId, setDraftLinkedDocumentId] = useState<string | null>(null)
   const { toast } = useToast()
 
   const supabase = createClient()
@@ -71,18 +80,42 @@ export function BookAppointmentModal({
     }
 
     if (open) {
-      fetchBookedDates()
-      
-      // Load AI summary if available for auto-filling
-      if (typeof window !== "undefined") {
-        const aiSummary = sessionStorage.getItem("active_analysis_summary")
-        if (aiSummary && !caseDescription) {
-          setCaseDescription(aiSummary)
-          console.log("[Booking] Auto-filled case description from AI summary")
+      void fetchBookedDates()
+      void (async () => {
+        if (!clientId) return
+
+        const draft = await getLatestReadyDraftForClient(supabase, clientId, lawyerId)
+        if (draft) {
+          setSelectedDraftId(draft.id)
+          setDraftLinkedDocumentId(draft.linked_document_id ?? null)
+          if (draft.title) setCaseTitle((prev) => prev || draft.title || "")
+          if (draft.linked_analysis_id) {
+            const { data: analysis } = await supabase
+              .from("document_analysis")
+              .select("summary")
+              .eq("id", draft.linked_analysis_id)
+              .single()
+            if (analysis?.summary) {
+              setCaseDescription((prev) => prev || analysis.summary)
+            }
+          }
+          await markLatestDraftLawyerSelection(supabase, clientId, lawyerId)
+        } else {
+          setSelectedDraftId(null)
+          setDraftLinkedDocumentId(null)
         }
-      }
+
+        // Backward-compatible fallback (temporary during draft migration)
+        if (typeof window !== "undefined") {
+          const aiSummary = sessionStorage.getItem("active_analysis_summary")
+          if (aiSummary) {
+            setCaseDescription((prev) => prev || aiSummary)
+            console.log("[Booking] Auto-filled case description from AI summary")
+          }
+        }
+      })()
     }
-  }, [open, lawyerId, supabase])
+  }, [open, lawyerId, supabase, clientId])
 
   // Fetch available slots when date is selected
   useEffect(() => {
@@ -272,23 +305,32 @@ export function BookAppointmentModal({
       if (caseError) throw caseError
       if (!caseData) throw new Error("Failed to create case")
 
-      // 1.5. Link existing analysis document if present
-      if (typeof window !== "undefined") {
-        const activeDocId = sessionStorage.getItem("active_analysis_doc_id")
-        if (activeDocId) {
-          console.log("[Booking] Found active analysis document, linking to new case:", activeDocId)
-          const { error: linkError } = await supabase
-            .from("documents")
-            .update({ case_id: caseData.id })
-            .eq("id", activeDocId)
+      await appendCaseTimelineEvent(supabase, {
+        caseId: caseData.id,
+        actorId: clientId,
+        eventType: CaseTimelineEventType.CASE_CREATED,
+        metadata: {
+          source: "booking_modal",
+          lawyer_id: lawyerId,
+        },
+      })
 
-          if (linkError) {
-            console.error("[Booking] Error linking document:", linkError)
-          } else {
-            console.log("[Booking] Document successfully linked to case")
-            sessionStorage.removeItem("active_analysis_doc_id")
-            sessionStorage.removeItem("active_analysis_summary")
-          }
+      // 1.5. Link analysis document from draft or sessionStorage fallback
+      const sessionDocId =
+        typeof window !== "undefined" ? sessionStorage.getItem("active_analysis_doc_id") : null
+      const docIdToLink = draftLinkedDocumentId || sessionDocId
+      if (docIdToLink) {
+        console.log("[Booking] Linking analysis document to new case:", docIdToLink)
+        const { error: linkError } = await supabase
+          .from("documents")
+          .update({ case_id: caseData.id })
+          .eq("id", docIdToLink)
+
+        if (linkError) {
+          console.error("[Booking] Error linking document:", linkError)
+        } else if (typeof window !== "undefined") {
+          sessionStorage.removeItem("active_analysis_doc_id")
+          sessionStorage.removeItem("active_analysis_summary")
         }
       }
 
@@ -372,6 +414,21 @@ export function BookAppointmentModal({
         throw new Error("Appointment was created but no ID was returned")
       }
 
+      await appendCaseTimelineEvent(supabase, {
+        caseId: caseData.id,
+        actorId: clientId,
+        eventType: CaseTimelineEventType.CONSULTATION_REQUESTED,
+        metadata: {
+          appointment_id: finalAppointmentData.id,
+          scheduled_at: appointmentDateTime.toISOString(),
+          duration_minutes: duration,
+        },
+      })
+
+      if (selectedDraftId) {
+        await markCaseDraftConverted(supabase, selectedDraftId, caseData.id, lawyerId)
+      }
+
           if (clientId) {
             await notifyAppointmentRequest(
               supabase,
@@ -404,6 +461,8 @@ export function BookAppointmentModal({
         setCaseType("")
         setCaseTitle("")
         setCaseDescription("")
+        setSelectedDraftId(null)
+        setDraftLinkedDocumentId(null)
       }, 3000)
     } catch (error: any) {
       console.error("[v0] Booking error:", error)
@@ -595,6 +654,11 @@ export function BookAppointmentModal({
           {/* Step: Case Details */}
           {step === "case-details" && (
             <div className="space-y-4">
+              {selectedDraftId && (
+                <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-primary">
+                  Using your latest saved case draft to pre-fill details. You can edit anything before sending.
+                </div>
+              )}
               <div>
                 <label className="text-sm font-medium mb-2 block">Case Type*</label>
                 <Select value={caseType} onValueChange={setCaseType}>

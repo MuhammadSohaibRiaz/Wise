@@ -47,3 +47,30 @@ export function appointmentStatusLabel(status: string | null | undefined): strin
       return status ? status.replace(/_/g, " ") : "—"
   }
 }
+
+/**
+ * Compatibility view for Phase 2 migration (UI wording aligned to planned model
+ * without changing database status values yet).
+ */
+export function appointmentWorkflowPhase(status: string | null | undefined): string {
+  switch (status) {
+    case "pending":
+      return "Requested"
+    case "awaiting_payment":
+      return "Confirmed (awaiting payment)"
+    case "scheduled":
+      return "Confirmed"
+    case "attended":
+      return "Completed"
+    case "completed":
+      return "Closed with case"
+    case "cancelled":
+      return "Cancelled"
+    case "rejected":
+      return "Rejected"
+    case "rescheduled":
+      return "Rescheduled"
+    default:
+      return "Unknown"
+  }
+}

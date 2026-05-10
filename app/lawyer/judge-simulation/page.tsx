@@ -6,9 +6,9 @@ export default function LawyerJudgeSimulationPage() {
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
       <div className="mb-8">
-        <h1 className="text-4xl font-bold tracking-tight text-foreground">Judicial Simulation Tool</h1>
+        <h1 className="text-4xl font-bold tracking-tight text-foreground">Case Strategy Simulation</h1>
         <p className="text-muted-foreground mt-2 text-lg">
-          Simulate a courtroom environment to test your arguments against a strict judicial AI.
+          Stress-test arguments using an AI judicial perspective (Pakistan law framing). Educational only — not a substitute for court judgment.
         </p>
       </div>
       

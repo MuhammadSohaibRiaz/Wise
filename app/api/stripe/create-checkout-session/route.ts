@@ -61,6 +61,16 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    if (session.id) {
+      const { error: checkoutMetaErr } = await supabase
+        .from("payments")
+        .update({ stripe_checkout_session_id: session.id, updated_at: new Date().toISOString() })
+        .eq("id", paymentId)
+      if (checkoutMetaErr) {
+        console.warn("[Stripe] stripe_checkout_session_id column missing or update failed:", checkoutMetaErr.message)
+      }
+    }
+
     return NextResponse.json({ url: session.url })
   } catch (error: any) {
     console.error("[Stripe] Create checkout session error:", error)

@@ -2,6 +2,8 @@ import { convertToModelMessages, streamText, stepCountIs } from "ai";
 import { createGroq } from "@ai-sdk/groq";
 import { getInitialMessage } from "@/lib/chatBotData";
 import { tools } from "@/lib/ai/tools";
+import { extractCaseIdFromPath } from "@/lib/chat-case-context";
+import { applySimpleRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -28,8 +30,31 @@ function extractTextFromUiMessage(m: any): string {
   return text
 }
 
+async function resolveAuthorizedCaseId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  rawCaseId: string | null,
+): Promise<string | null> {
+  if (!rawCaseId) return null
+
+  const { data, error } = await supabase
+    .from("cases")
+    .select("id, client_id, lawyer_id")
+    .eq("id", rawCaseId)
+    .maybeSingle()
+
+  if (error || !data) return null
+
+  if (data.client_id !== userId && data.lawyer_id !== userId) {
+    return null
+  }
+
+  return data.id
+}
+
 export async function POST(req: Request) {
   try {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
     // Parse request with validation
     let body: any;
     try {
@@ -43,6 +68,7 @@ export async function POST(req: Request) {
     }
 
     const { messages, currentPath } = body;
+    const requestedCaseId = extractCaseIdFromPath(currentPath);
     
     // Validate messages array
     if (!Array.isArray(messages)) {
@@ -67,6 +93,22 @@ export async function POST(req: Request) {
 
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
+    const caseId = user ? await resolveAuthorizedCaseId(supabase, user.id, requestedCaseId) : null
+    const throttle = applySimpleRateLimit({
+      namespace: "api-chat-post",
+      key: user?.id || ip,
+      limit: 25,
+      windowMs: 60_000,
+    })
+    if (!throttle.ok) {
+      return new Response(JSON.stringify({ error: "Too many chat requests. Please wait a moment." }), {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(throttle.retryAfterSec),
+        },
+      })
+    }
 
     const systemMessage = getInitialMessage();
     const pageContext = currentPath ? `\n[PAGE_CONTEXT] User is currently viewing: ${currentPath}. Tailor your response to this page if relevant (e.g. if on a case page, offer to help with that case).` : "";
@@ -113,6 +155,7 @@ export async function POST(req: Request) {
                 const userText = extractTextFromUiMessage(lastUserMessage)
                 await supabase.from("ai_chat_messages").insert({
                   user_id: user.id,
+                  case_id: caseId,
                   role: "user",
                   content: userText || "[User message]",
                 });
@@ -121,6 +164,7 @@ export async function POST(req: Request) {
               // 2. Save assistant response
               await supabase.from("ai_chat_messages").insert({
                 user_id: user.id,
+                case_id: caseId,
                 role: "assistant",
                 content: text,
                 metadata: { toolCalls, toolResults },
@@ -168,12 +212,14 @@ export async function POST(req: Request) {
                   const userText = extractTextFromUiMessage(lastUserMessage)
                   await supabase.from("ai_chat_messages").insert({
                     user_id: user.id,
+                    case_id: caseId,
                     role: "user",
                     content: userText || "[User message]",
                   });
                 }
                 await supabase.from("ai_chat_messages").insert({
                   user_id: user.id,
+                  case_id: caseId,
                   role: "assistant",
                   content: text,
                 });

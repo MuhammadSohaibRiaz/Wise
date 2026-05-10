@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { stripe } from "@/lib/stripe/config"
 import { createClient } from "@/lib/supabase/server"
+import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 
 export async function POST(request: NextRequest) {
     try {
@@ -83,6 +84,18 @@ export async function POST(request: NextRequest) {
                     console.error("[Payment Verify] Error updating case:", caseError)
                 } else {
                     console.log(`[Payment Verify] ✅ Case ${updatedAppointment.case_id} marked as in_progress`)
+                    await appendCaseTimelineEvent(supabase, {
+                        caseId: updatedAppointment.case_id,
+                        actorId: user.id,
+                        eventType: CaseTimelineEventType.PAYMENT_COMPLETED,
+                        metadata: { appointment_id, payment_id, source: "verify_payment" },
+                    })
+                    await appendCaseTimelineEvent(supabase, {
+                        caseId: updatedAppointment.case_id,
+                        actorId: user.id,
+                        eventType: CaseTimelineEventType.CASE_ACTIVATED,
+                        metadata: { source: "verify_payment" },
+                    })
                 }
             }
 

@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Loader2,
   AlertCircle,
@@ -22,12 +23,14 @@ import {
   ShieldAlert,
   Star,
   XCircle,
+  LayoutDashboard,
+  History,
 } from "lucide-react"
 import { ReviewModal } from "@/components/client/review-modal"
 import { DisputeModal } from "@/components/cases/dispute-modal"
 import { createNotification } from "@/lib/notifications"
 import { appointmentDisplayLabel } from "@/lib/appointment-display"
-import { appointmentStatusLabel } from "@/lib/appointments-status"
+import { caseTimelineEventDetail, formatCaseTimelineEventLabel } from "@/lib/case-timeline"
 
 interface CaseDetail {
   id: string
@@ -68,6 +71,13 @@ interface Document {
   uploaded_by: string
 }
 
+interface CaseTimelineEventRow {
+  id: string
+  event_type: string
+  created_at: string
+  metadata: Record<string, unknown> | null
+}
+
 const statusConfig: Record<CaseDetail["status"], { label: string; className: string }> = {
   open: {
     label: "Open",
@@ -100,12 +110,14 @@ export default function ClientCaseDetailPage() {
   const [caseDetail, setCaseDetail] = useState<CaseDetail | null>(null)
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [documents, setDocuments] = useState<Document[]>([])
+  const [timelineEvents, setTimelineEvents] = useState<CaseTimelineEventRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isConfirming, setIsConfirming] = useState(false)
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [showDisputeModal, setShowDisputeModal] = useState(false)
   const [clientId, setClientId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [caseTab, setCaseTab] = useState("overview")
 
   const fetchCaseDetail = useCallback(async () => {
     try {
@@ -188,6 +200,15 @@ export default function ClientCaseDetailPage() {
 
       if (documentsError) throw documentsError
       setDocuments(documentsData || [])
+
+      const { data: timelineData, error: timelineError } = await supabase
+        .from("case_timeline_events")
+        .select("id, event_type, metadata, created_at")
+        .eq("case_id", caseId)
+        .order("created_at", { ascending: true })
+
+      if (timelineError) throw timelineError
+      setTimelineEvents((timelineData as CaseTimelineEventRow[]) || [])
 
       setError(null)
     } catch (error) {
@@ -426,226 +447,225 @@ export default function ClientCaseDetailPage() {
         </Card>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Case Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Case Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {caseDetail.description && (
-              <div>
-                <p className="text-sm font-medium mb-1">Description</p>
-                <p className="text-sm text-muted-foreground">{caseDetail.description}</p>
-              </div>
-            )}
+      <Tabs value={caseTab} onValueChange={setCaseTab} className="space-y-6">
+        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-muted/40 p-1">
+          <TabsTrigger value="overview" className="gap-1.5">
+            <LayoutDashboard className="h-4 w-4 shrink-0" />
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="timeline" className="gap-1.5">
+            <History className="h-4 w-4 shrink-0" />
+            Timeline
+          </TabsTrigger>
+          <TabsTrigger value="documents" className="gap-1.5">
+            <FileText className="h-4 w-4 shrink-0" />
+            Documents
+          </TabsTrigger>
+          <TabsTrigger value="appointments" className="gap-1.5">
+            <Calendar className="h-4 w-4 shrink-0" />
+            Appointments
+          </TabsTrigger>
+          <TabsTrigger value="messages" className="gap-1.5">
+            <MessageSquare className="h-4 w-4 shrink-0" />
+            Messages
+          </TabsTrigger>
+        </TabsList>
 
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-muted-foreground" />
-              <div>
-                <p className="text-xs text-muted-foreground">Lawyer</p>
-                <p className="text-sm font-medium">{lawyerName}</p>
-              </div>
-            </div>
-
-            {caseDetail.hourly_rate && (
-              <div className="flex items-center gap-2">
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
+        <TabsContent value="overview" className="space-y-6 mt-0">
+          <Card className="max-w-3xl">
+            <CardHeader>
+              <CardTitle>Case Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {caseDetail.description && (
                 <div>
-                  <p className="text-xs text-muted-foreground">Hourly Rate</p>
-                  <p className="text-sm font-medium">${caseDetail.hourly_rate}/hr</p>
+                  <p className="text-sm font-medium mb-1">Description</p>
+                  <p className="text-sm text-muted-foreground">{caseDetail.description}</p>
                 </div>
-              </div>
-            )}
+              )}
 
-            {(caseDetail.budget_min || caseDetail.budget_max) && (
               <div className="flex items-center gap-2">
-                <Briefcase className="h-4 w-4 text-muted-foreground" />
+                <User className="h-4 w-4 text-muted-foreground" />
                 <div>
-                  <p className="text-xs text-muted-foreground">Budget</p>
-                  <p className="text-sm font-medium">
-                    {caseDetail.budget_min && caseDetail.budget_max
-                      ? `$${caseDetail.budget_min} - $${caseDetail.budget_max}`
-                      : caseDetail.budget_min
-                        ? `From $${caseDetail.budget_min}`
-                        : `Up to $${caseDetail.budget_max}`}
-                  </p>
+                  <p className="text-xs text-muted-foreground">Lawyer</p>
+                  <p className="text-sm font-medium">{lawyerName}</p>
                 </div>
               </div>
-            )}
 
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-muted-foreground" />
-              <div>
-                <p className="text-xs text-muted-foreground">Created</p>
-                <p className="text-sm font-medium">{new Date(caseDetail.created_at).toLocaleDateString()}</p>
+              {caseDetail.hourly_rate && (
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Hourly Rate</p>
+                    <p className="text-sm font-medium">${caseDetail.hourly_rate}/hr</p>
+                  </div>
+                </div>
+              )}
+
+              {(caseDetail.budget_min || caseDetail.budget_max) && (
+                <div className="flex items-center gap-2">
+                  <Briefcase className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Budget</p>
+                    <p className="text-sm font-medium">
+                      {caseDetail.budget_min && caseDetail.budget_max
+                        ? `$${caseDetail.budget_min} - $${caseDetail.budget_max}`
+                        : caseDetail.budget_min
+                          ? `From $${caseDetail.budget_min}`
+                          : `Up to $${caseDetail.budget_max}`}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Created</p>
+                  <p className="text-sm font-medium">{new Date(caseDetail.created_at).toLocaleDateString()}</p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-        {/* Appointments */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Appointments ({appointments.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {appointments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No appointments scheduled</p>
-            ) : (
-              <div className="space-y-3">
-                {appointments.slice(0, 5).map((apt) => {
-                  const disp = appointmentDisplayLabel(apt, caseDetail.status)
-                  return (
-                  <div key={apt.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <p className="text-sm font-medium">
-                        {new Date(apt.scheduled_at).toLocaleDateString()} at{" "}
-                        {new Date(apt.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Duration: {apt.duration_minutes} minutes •{" "}
-                        {disp.hint ? <span title={disp.hint}>Status: {disp.label}</span> : <>Status: {disp.label}</>}
-                      </p>
+        <TabsContent value="timeline" className="mt-0">
+          <Card>
+            <CardHeader>
+              <CardTitle>Case timeline</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {timelineEvents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No timeline events yet. Key steps (booking, payment, consultation) will appear here as they happen.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {timelineEvents.map((ev, idx) => {
+                    const detail = caseTimelineEventDetail(ev.event_type, ev.metadata)
+                    return (
+                      <div key={ev.id} className="flex gap-4">
+                        <div className="flex flex-col items-center">
+                          <div className="h-2 w-2 rounded-full bg-primary mt-1.5" />
+                          {idx < timelineEvents.length - 1 && <div className="h-full min-h-[1rem] w-px bg-border mt-2" />}
+                        </div>
+                        <div className="flex-1 pb-4">
+                          <p className="text-sm font-medium">{formatCaseTimelineEventLabel(ev.event_type)}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(ev.created_at).toLocaleString()}</p>
+                          {detail && <p className="text-xs text-muted-foreground mt-1">{detail}</p>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="documents" className="mt-0">
+          <Card>
+            <CardHeader>
+              <CardTitle>Documents ({documents.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {documents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No documents uploaded yet</p>
+              ) : (
+                <div className="space-y-3">
+                  {documents.map((doc) => (
+                    <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <FileText className="h-5 w-5 text-muted-foreground" />
+                        <div>
+                          <p className="text-sm font-medium">{doc.file_name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {doc.document_type || "Document"} • {new Date(doc.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">
+                          {doc.status}
+                        </Badge>
+                        {doc.file_url && (
+                          <Button variant="ghost" size="sm" asChild>
+                            <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
+                              View
+                            </a>
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <Badge variant="outline" className="text-xs">
-                      {disp.label}
-                    </Badge>
-                  </div>
-                  )
-                })}
-                {appointments.length > 5 && (
-                  <p className="text-xs text-muted-foreground text-center">
-                    +{appointments.length - 5} more appointments
-                  </p>
-                )}
-              </div>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full mt-4"
-              onClick={() => router.push("/client/appointments")}
-            >
-              <Calendar className="h-4 w-4 mr-2" />
-              View All Appointments
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Documents */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Documents ({documents.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {documents.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No documents uploaded yet</p>
-          ) : (
-            <div className="space-y-3">
-              {documents.map((doc) => (
-                <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-5 w-5 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium">{doc.file_name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {doc.document_type || "Document"} • {new Date(doc.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">
-                      {doc.status}
-                    </Badge>
-                    {doc.file_url && (
-                      <Button variant="ghost" size="sm" asChild>
-                        <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
-                          View
-                        </a>
-                      </Button>
-                    )}
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* Activity Timeline */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Activity Timeline</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {/* Case Created */}
-            <div className="flex gap-4">
-              <div className="flex flex-col items-center">
-                <div className="h-2 w-2 rounded-full bg-blue-500 mt-1.5" />
-                <div className="h-full w-px bg-border mt-2" />
-              </div>
-              <div className="flex-1 pb-4">
-                <p className="text-sm font-medium">Case Created</p>
-                <p className="text-xs text-muted-foreground">{new Date(caseDetail.created_at).toLocaleString()}</p>
-              </div>
-            </div>
-
-            {/* Status Changes */}
-            <div className="flex gap-4">
-              <div className="flex flex-col items-center">
-                <div className="h-2 w-2 rounded-full bg-orange-500 mt-1.5" />
-                <div className="h-full w-px bg-border mt-2" />
-              </div>
-              <div className="flex-1 pb-4">
-                <p className="text-sm font-medium">Status: {statusInfo.label}</p>
-                <p className="text-xs text-muted-foreground">Last updated: {new Date(caseDetail.updated_at).toLocaleString()}</p>
-              </div>
-            </div>
-
-            {/* Appointments */}
-            {appointments.slice(0, 3).map((apt, idx) => {
-              const disp = appointmentDisplayLabel(apt, caseDetail.status)
-              return (
-              <div key={apt.id} className="flex gap-4">
-                <div className="flex flex-col items-center">
-                  <div className="h-2 w-2 rounded-full bg-green-500 mt-1.5" />
-                  {idx < Math.min(appointments.length, 3) - 1 && <div className="h-full w-px bg-border mt-2" />}
+        <TabsContent value="appointments" className="mt-0">
+          <Card>
+            <CardHeader>
+              <CardTitle>Appointments ({appointments.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {appointments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No appointments scheduled</p>
+              ) : (
+                <div className="space-y-3">
+                  {appointments.map((apt) => {
+                    const disp = appointmentDisplayLabel(apt, caseDetail.status)
+                    return (
+                      <div key={apt.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div>
+                          <p className="text-sm font-medium">
+                            {new Date(apt.scheduled_at).toLocaleDateString()} at{" "}
+                            {new Date(apt.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Duration: {apt.duration_minutes} minutes •{" "}
+                            {disp.hint ? <span title={disp.hint}>Status: {disp.label}</span> : <>Status: {disp.label}</>}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="text-xs">
+                          {disp.label}
+                        </Badge>
+                      </div>
+                    )
+                  })}
                 </div>
-                <div className="flex-1 pb-4">
-                  <p className="text-sm font-medium">Appointment {disp.label}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(apt.scheduled_at).toLocaleString()} • {appointmentStatusLabel(apt.status)}
-                  </p>
-                </div>
-              </div>
-              )
-            })}
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-4"
+                onClick={() => router.push("/client/appointments")}
+              >
+                <Calendar className="h-4 w-4 mr-2" />
+                View All Appointments
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-            {/* Documents */}
-            {documents.slice(0, 3).map((doc, idx) => (
-              <div key={doc.id} className="flex gap-4">
-                <div className="flex flex-col items-center">
-                  <div className="h-2 w-2 rounded-full bg-purple-500 mt-1.5" />
-                  {idx < Math.min(documents.length, 3) - 1 && <div className="h-full w-px bg-border mt-2" />}
-                </div>
-                <div className="flex-1 pb-4">
-                  <p className="text-sm font-medium">Document Uploaded: {doc.file_name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(doc.created_at).toLocaleString()} • Status: {doc.status}
-                  </p>
-                </div>
-              </div>
-            ))}
-
-            {appointments.length === 0 && documents.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">No recent activity</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+        <TabsContent value="messages" className="mt-0">
+          <Card className="max-w-lg">
+            <CardHeader>
+              <CardTitle>Messages</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Open the conversation for this case with your lawyer. Thread context includes this case when you use the link below.
+              </p>
+              <Button onClick={() => router.push(`/client/messages?case=${caseDetail.id}`)}>
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Go to messages
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {caseDetail.lawyer && clientId && (
         <ReviewModal

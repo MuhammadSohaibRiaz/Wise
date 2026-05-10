@@ -15,6 +15,28 @@ import { cn } from "@/lib/utils"
 import { normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
 
 import { useSearchParams } from "next/navigation"
+
+type QueuedAnalysisJob = {
+  status: string
+  error_message?: string | null
+  result_payload?: {
+    analysis?: Record<string, unknown>
+    recommendedLawyers?: unknown[]
+    isLegalDocument?: boolean
+  } | null
+}
+
+async function pollAnalysisJob(jobId: string): Promise<QueuedAnalysisJob> {
+  const maxAttempts = 150
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await fetch(`/api/analyze-document/job/${jobId}`)
+    const job = (await res.json()) as QueuedAnalysisJob & { error?: string }
+    if (!res.ok) throw new Error(job.error || "Could not check analysis status")
+    if (job.status === "completed" || job.status === "failed") return job
+    await new Promise((r) => setTimeout(r, 2000))
+  }
+  throw new Error("Analysis is taking longer than expected. Check History or try again.")
+}
 import { Suspense } from "react"
 
 function AICaseAnalysisContent() {
@@ -95,12 +117,7 @@ function AICaseAnalysisContent() {
 
       if (analysisRes.error || !analysis) throw new Error("Analysis not found")
 
-      // Store document ID and summary for linkage during booking
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("active_analysis_doc_id", docId)
-        sessionStorage.setItem("active_analysis_summary", (analysis as any).summary ?? "")
-        console.log("[Analysis] Stored active_analysis_doc_id and summary")
-      }
+      // Booking reads `case_drafts` + optional session fallback in `BookAppointmentModal`.
 
       // Normalize DB shape to the UI shape expected by `AnalysisResultsView`
       let normalizedRecommendations: any[] = []
@@ -202,27 +219,46 @@ function AICaseAnalysisContent() {
       const response = await fetch("/api/analyze-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentId }),
+        body: JSON.stringify({ documentId, async: true }),
       })
 
       const data = await response.json()
 
       if (!response.ok) throw new Error(data.error || "Analysis failed")
 
-      if (data.isLegalDocument === false) {
+      let analysisPayload: Record<string, unknown>
+      let recommended: unknown[] = []
+      let isLegalDocument = true
+
+      if (data.queued && data.jobId) {
+        toast({
+          title: "Processing",
+          description: "Your document is in the analysis queue. This usually takes under a minute.",
+        })
+        const job = await pollAnalysisJob(data.jobId as string)
+        if (job.status === "failed") {
+          throw new Error(job.error_message || "Analysis failed")
+        }
+        const payload = job.result_payload
+        if (!payload?.analysis) {
+          throw new Error("Analysis finished but no result was stored. Try again or contact support.")
+        }
+        analysisPayload = payload.analysis as Record<string, unknown>
+        recommended = Array.isArray(payload.recommendedLawyers) ? payload.recommendedLawyers : []
+        isLegalDocument = payload.isLegalDocument !== false
+      } else {
+        analysisPayload = (data.analysis || {}) as Record<string, unknown>
+        recommended = data.recommendedLawyers || []
+        isLegalDocument = data.isLegalDocument !== false
+      }
+
+      if (isLegalDocument === false) {
         toast({
           title: "Not a legal document",
           description:
             "This file was classified as non-legal. Upload a contract, court order, notice, lease, or similar for full Pakistani-law analysis.",
           duration: 12_000,
         })
-      }
-
-      // Store document ID and summary for linkage during booking
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("active_analysis_doc_id", documentId)
-        sessionStorage.setItem("active_analysis_summary", data.analysis.summary)
-        console.log("[Analysis] Stored active_analysis_doc_id and summary")
       }
 
       // Fetch document metadata to get the URL
@@ -234,15 +270,15 @@ function AICaseAnalysisContent() {
         .single()
 
       setAnalysisResult({
-        ...data.analysis,
-        document_url: document?.file_url
+        ...analysisPayload,
+        document_url: document?.file_url,
       })
-      setRecommendedLawyers(data.recommendedLawyers)
+      setRecommendedLawyers(recommended)
       
       toast({
-        title: data.isLegalDocument === false ? "Upload recorded" : "Analysis Complete",
+        title: isLegalDocument === false ? "Upload recorded" : "Analysis Complete",
         description:
-          data.isLegalDocument === false
+          isLegalDocument === false
             ? "See the summary below. Recommended lawyers stay empty until a legal document is analyzed."
             : "Your document has been successfully processed.",
       })

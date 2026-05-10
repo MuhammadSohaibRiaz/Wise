@@ -7,7 +7,8 @@ import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Loader2, AlertCircle, Calendar, Clock, FileText, CreditCard, CheckCircle2 } from "lucide-react"
 import { notifyAppointmentUpdate } from "@/lib/notifications"
-import { appointmentStatusLabel } from "@/lib/appointments-status"
+import { appointmentStatusLabel, appointmentWorkflowPhase } from "@/lib/appointments-status"
+import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { PaymentButton } from "@/components/payments/payment-button"
 import {
   Dialog,
@@ -251,13 +252,23 @@ export default function ClientAppointmentsPage() {
   const handleCancelAppointment = async (appointmentId: string) => {
     try {
       const supabase = createClient()
+      const targetAppointment = appointments.find((apt) => apt.id === appointmentId)
+
       const { error } = await supabase.from("appointments").update({ status: "cancelled" }).eq("id", appointmentId)
 
       if (error) throw error
 
       setAppointments(appointments.map((apt) => (apt.id === appointmentId ? { ...apt, status: "cancelled" } : apt)))
 
-      const targetAppointment = appointments.find((apt) => apt.id === appointmentId)
+      if (clientId && targetAppointment?.case?.id) {
+        await appendCaseTimelineEvent(supabase, {
+          caseId: targetAppointment.case.id,
+          actorId: clientId,
+          eventType: CaseTimelineEventType.APPOINTMENT_CANCELLED,
+          metadata: { appointment_id: appointmentId },
+        })
+      }
+
       if (clientId && targetAppointment?.lawyer?.id) {
         await notifyAppointmentUpdate(
           supabase,
@@ -456,6 +467,7 @@ export default function ClientAppointmentsPage() {
                   >
                     {appointmentStatusLabel(appointment.status)}
                   </span>
+                  <p className="text-[11px] text-muted-foreground">Workflow: {appointmentWorkflowPhase(appointment.status)}</p>
 
                   {appointment.status === "awaiting_payment" && (
                     <Dialog>

@@ -51,11 +51,8 @@ export function DisputeModal({ open, onOpenChange, caseId, onSuccess }: DisputeM
 
       if (error) throw error
 
-      // Also update the case status to 'disputed' if we want to reflect it there
-      await supabase
-        .from("cases")
-        .update({ status: "disputed", updated_at: new Date().toISOString() })
-        .eq("id", caseId)
+      // Disputes are tracked in `case_disputes` only; do not set cases.status to "disputed"
+      // (keeps case workflow / DB constraints consistent; UI shows "Dispute open" from dispute rows).
 
       toast({
         title: "Dispute Raised Successfully",

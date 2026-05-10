@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { stripe } from "@/lib/stripe/config"
 import { createClient } from "@/lib/supabase/server"
 import Stripe from "stripe"
+import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
 
@@ -70,6 +71,19 @@ export async function POST(request: NextRequest) {
                 updated_at: new Date().toISOString(),
               })
               .eq("id", updatedAppointment.case_id)
+
+            await appendCaseTimelineEvent(supabase, {
+              caseId: updatedAppointment.case_id,
+              actorId: null,
+              eventType: CaseTimelineEventType.PAYMENT_COMPLETED,
+              metadata: { appointment_id, payment_id, source: "stripe_webhook_checkout" },
+            })
+            await appendCaseTimelineEvent(supabase, {
+              caseId: updatedAppointment.case_id,
+              actorId: null,
+              eventType: CaseTimelineEventType.CASE_ACTIVATED,
+              metadata: { source: "stripe_webhook_checkout" },
+            })
 
             console.log(`[Stripe] Updated case ${updatedAppointment.case_id} to in_progress`)
           }
@@ -141,6 +155,19 @@ export async function POST(request: NextRequest) {
                 updated_at: new Date().toISOString(),
               })
               .eq("id", updatedAppointment.case_id)
+
+            await appendCaseTimelineEvent(supabase, {
+              caseId: updatedAppointment.case_id,
+              actorId: null,
+              eventType: CaseTimelineEventType.PAYMENT_COMPLETED,
+              metadata: { appointment_id, payment_id, source: "stripe_webhook_intent" },
+            })
+            await appendCaseTimelineEvent(supabase, {
+              caseId: updatedAppointment.case_id,
+              actorId: null,
+              eventType: CaseTimelineEventType.CASE_ACTIVATED,
+              metadata: { source: "stripe_webhook_intent" },
+            })
 
             console.log(`[Stripe] Updated case ${updatedAppointment.case_id} to in_progress`)
           }
