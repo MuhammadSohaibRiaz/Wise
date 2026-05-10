@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import type { Metadata } from "next"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -69,14 +68,14 @@ export default function ReviewsPage() {
               id,
               title
             ),
-            lawyer:profiles!reviews_lawyer_id_fkey (
+            lawyer:profiles!reviews_reviewee_id_fkey (
               id,
               first_name,
               last_name,
               avatar_url
             )
           `)
-          .eq("client_id", session.user.id)
+          .eq("reviewer_id", session.user.id)
           .order("created_at", { ascending: false })
 
         if (reviewsError) throw reviewsError

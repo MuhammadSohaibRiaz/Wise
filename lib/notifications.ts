@@ -195,11 +195,18 @@ export async function notifyAnalysisComplete(
     riskLevel: string
   },
 ) {
+  const safeDocumentName =
+    typeof params.documentName === "string" && params.documentName.trim().length > 0
+      ? params.documentName
+      : "Document"
+  const safeRiskLevel =
+    typeof params.riskLevel === "string" && params.riskLevel.trim().length > 0 ? params.riskLevel : "Unknown"
+
   return createNotification(supabase, {
     user_id: params.userId,
     type: "case_update",
     title: "Analysis Complete",
-    description: `Analysis for "${params.documentName}" is ready. Risk Level: ${params.riskLevel}`,
+    description: `Analysis for "${safeDocumentName}" is ready. Risk Level: ${safeRiskLevel}`,
     data: {
       document_id: params.documentId,
       action: "view_analysis",

@@ -113,39 +113,39 @@ export default function ClientSettingsPage() {
     try {
       setIsUploading(true)
 
-      // Check if bucket exists, if not show helpful error
-      const { data: buckets, error: bucketError } = await supabase.storage.listBuckets()
-
-      if (bucketError) {
-        throw new Error("Unable to access storage. Please check your Supabase configuration.")
-      }
-
-      const avatarsBucket = buckets?.find((b) => b.id === "avatars")
-      if (!avatarsBucket) {
-        throw new Error(
-          'Storage bucket "avatars" not found. Please run the migration script 018_create_storage_bucket.sql in Supabase SQL Editor.'
-        )
-      }
-
       const fileExt = file.name.split(".").pop()
       const fileName = `${user.id}-${Date.now()}.${fileExt}`
-      const { error: uploadError } = await supabase.storage.from("avatars").upload(fileName, file, { upsert: true })
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError)
-        if (uploadError.message.includes("bucket") || uploadError.message.includes("not found")) {
-          throw new Error(
-            'Storage bucket "avatars" not found. Please run the migration script 018_create_storage_bucket.sql in Supabase SQL Editor.'
-          )
-        }
-        throw uploadError
+      const tryUpload = async (bucket: "avatars" | "avatar") => {
+        const upload = await supabase.storage.from(bucket).upload(fileName, file, { upsert: true })
+        if (upload.error) return { bucket, error: upload.error, publicUrl: null as string | null }
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from(bucket).getPublicUrl(fileName)
+        return { bucket, error: null, publicUrl }
       }
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("avatars").getPublicUrl(fileName)
+      let selected = await tryUpload("avatars")
+      if (
+        selected.error &&
+        (selected.error.message.toLowerCase().includes("bucket") || selected.error.message.toLowerCase().includes("not found"))
+      ) {
+        selected = await tryUpload("avatar")
+      }
 
-      const { error: updateError } = await supabase.from("profiles").update({ avatar_url: publicUrl }).eq("id", user.id)
+      if (selected.error || !selected.publicUrl) {
+        console.error("Upload error:", selected.error)
+        if (selected.error?.message.includes("bucket") || selected.error?.message.includes("not found")) {
+          throw new Error(
+            'Storage bucket "avatars" not found or inaccessible. Please verify bucket and storage policies from script 018.'
+          )
+        }
+        throw selected.error || new Error("Failed to upload avatar")
+      }
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ avatar_url: selected.publicUrl })
+        .eq("id", user.id)
 
       if (updateError) throw updateError
 
