@@ -1,0 +1,1 @@
+ALTER TABLE public.lawyer_profiles ADD COLUMN IF NOT EXISTS ai_license_match boolean, ADD COLUMN IF NOT EXISTS ai_extracted_license text;

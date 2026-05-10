@@ -1,0 +1,1 @@
+ALTER TABLE public.document_analysis ADD COLUMN IF NOT EXISTS is_legal_document boolean DEFAULT true;

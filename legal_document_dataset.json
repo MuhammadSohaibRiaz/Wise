@@ -1,0 +1,148 @@
+[
+    {
+        "id": "dataset_001",
+        "file_name": "CP_1092_2018_Judgment.txt",
+        "document_type": "Legal Judgment",
+        "extracted_text": "IN THE SUPREME COURT OF PAKISTAN (Appellate Jurisdiction)\n\nPRESENT:\nMR. JUSTICE MUSHIR ALAM\nMR. JUSTICE MAZHAR ALAM KHAN MIANKHEL\nMR. JUSTICE MUNIB AKHTAR\n\nCIVIL PETITION NOS. 1092 & 1093 OF 2018...",
+        "analysis_data": {
+            "summary": "The petitioner, a civil servant (Teaching Staff), sought induction into the Secretariat Group and promotion based on 'Time Scale Formula' and 'Meritorious Service'. He had served on deputation in various federal bodies. The Supreme Court dismissed his petitions, upholding that: 1) He does not belong to the Occupational Groups eligible for horizontal movement into the Secretariat Group. 2) Time Scale Promotion is a policy benefit, not a vested right, and is applicable to specific cadres; the petitioner's prolonged absence from his parent department made him ineligible at this stage. 3) Promotion on meritorious service is the exclusive prerogative of the Special Selection Committee, and courts cannot assume this role.",
+            "key_terms": [
+                "Civil Servants Act 1973",
+                "Article 199 Constitution of Pakistan",
+                "Secretariat Group Induction",
+                "Horizontal Movement",
+                "Time Scale Promotion",
+                "Meritorious Service",
+                "Deputation",
+                "Repatriation",
+                "Occupational Groups"
+            ],
+            "risk_assessment": "High Risk. The legal position is settled that policy incentives (like Time Scale) and selection for high-grade promotions (Meritorious Service) are executive prerogatives involving specific eligibility criteria. Seeking judicial intervention to bypass Selection Committees or eligibility rules (like cadre membership) rarely succeeds.",
+            "recommendations": [
+                {
+                    "name": "Service Law Specialist",
+                    "relevance": "Essential for interpreting Civil Servants Act 1973 and Estacode rules regarding deputation and induction."
+                },
+                {
+                    "name": "Constitutional Lawyer",
+                    "relevance": "To leverage Article 199 correctly, though the scope is limited in pure service matters involving factual eligibility."
+                }
+            ]
+        }
+    },
+    {
+        "id": "dataset_002",
+        "file_name": "CP_1097_L_2020_Order.txt",
+        "document_type": "Legal Order",
+        "extracted_text": "In the Supreme Court of Pakistan (Appellate Jurisdiction)\n\nPresent:\nMr. Justice Sajjad Ali Shah\nMr. Justice Syed Mansoor Ali Shah\n\nCivil Petition No.1097-L of 2020...",
+        "analysis_data": {
+            "summary": "The Supreme Court set aside a Lahore High Court order that directed the government to grant proforma promotion to the respondent. The Court held that under Article 212 of the Constitution of Pakistan, Administrative Courts (Service Tribunals) have *exclusive* jurisdiction over terms and conditions of service. The High Court lacked jurisdiction to entertain the petition. The only exception (fitness for promotion) did not apply here as the issue was 'eligibility' for consideration, which falls within the Tribunal's domain.",
+            "key_terms": [
+                "Article 212 Constitution of Pakistan",
+                "Article 199 Constitution of Pakistan",
+                "Jurisdiction Bar",
+                "Service Tribunal",
+                "Proforma Promotion",
+                "Terms and Conditions of Service",
+                "Eligibility vs Fitness"
+            ],
+            "risk_assessment": "Critical Jurisdictional Risk. Filing service matters (promotions, pension, seniority) directly in the High Court under Article 199 is fatal due to the constitutional bar of Article 212. Such petitions are liable to be dismissed regardless of merit.",
+            "recommendations": [
+                {
+                    "name": "Service Tribunal Advocate",
+                    "relevance": "Expertise in Punjab Service Tribunals Act 1974 is required to navigate the correct forum."
+                },
+                {
+                    "name": "Appellate Practice Expert",
+                    "relevance": "To defend against state appeals in the Supreme Court regarding jurisdictional errors."
+                }
+            ]
+        }
+    },
+    {
+        "id": "dataset_003",
+        "file_name": "CP_1165_2021_Order.txt",
+        "document_type": "Legal Order",
+        "extracted_text": "SUPREME COURT OF PAKISTAN (Appellate Jurisdiction)\n\nPRESENT:\nMr. Justice Gulzar Ahmed, CJ\nMr. Justice Jamal Khan Mandokhail\nMr. Justice Muhammad Ali Mazhar\n\nCIVIL PETITION NO. 1165 OF 2021...",
+        "analysis_data": {
+            "summary": "The respondent, an employee of ZTBL, was charged with holding a fake MBA degree. The High Court had directed the bank to associate a specific former President (appointing authority) in the inquiry. The Supreme Court exercised its power under Article 187 (Complete Justice) to set aside this direction, terming it legally unsustainable and likely to pollute the inquiry's transparency. The Court directed the bank to conclude the inquiry within 15 days.",
+            "key_terms": [
+                "Article 187 Constitution of Pakistan",
+                "Fake Degree",
+                "Disciplinary Inquiry",
+                "Complete Justice",
+                "Judicial Interference in Inquiry",
+                "Termination of Service"
+            ],
+            "risk_assessment": "High Risk. Admission of providing non-recognized/fake degrees is a severe misconduct leading to termination. Procedural delays or attempts to influence the inquiry composition via court orders are viewed unfavorably by the Apex Court.",
+            "recommendations": [
+                {
+                    "name": "Employment & Labor Law Specialist",
+                    "relevance": "To handle disciplinary proceedings and termination defenses."
+                },
+                {
+                    "name": "Banking Law Expert",
+                    "relevance": "Familiarity with Bank Staff Service Rules and internal inquiry procedures."
+                }
+            ]
+        }
+    },
+    {
+        "id": "dataset_004",
+        "file_name": "CP_1276_2020_Judgment.txt",
+        "document_type": "Legal Judgment",
+        "extracted_text": "IN THE SUPREME COURT OF PAKISTAN (Appellate Jurisdiction)\n\nPRESENT:\nMR. JUSTICE JAMAL KHAN MANDOKHAIL\nMR. JUSTICE SHAHID WAHEED\n\nCivil Petition No.1276 of 2020...",
+        "analysis_data": {
+            "summary": "The Supreme Court set aside the punishment (pension reduction) imposed on a retired Education Officer. The punishment was based on a show cause notice under the PEEDA Act 2006 that was found to be vague, conflating charges of corruption, inefficiency, and misconduct without specific details. The Court ruled that a show cause notice must clearly specify acts of omission/commission to satisfy natural justice (fair trial). The inquiry failed to prove the specific charge of corruption (bribery) or misconduct (joining teachers with valid-looking orders).",
+            "key_terms": [
+                "PEEDA Act 2006",
+                "Show Cause Notice",
+                "Natural Justice",
+                "Fair Trial",
+                "Vague Charges",
+                "Misconduct",
+                "Inefficiency",
+                "Corruption"
+            ],
+            "risk_assessment": "Low Risk (for Petitioner). Procedural impropriety by the department (vague notice, lack of evidence) is a strong defense. Courts strictly enforce due process requirements in disciplinary proceedings.",
+            "recommendations": [
+                {
+                    "name": "PEEDA Act Specialist",
+                    "relevance": "Expertise in the Punjab Employees Efficiency, Discipline and Accountability Act is crucial for defense."
+                },
+                {
+                    "name": "Civil Service Defense Lawyer",
+                    "relevance": "To challenge procedural defects in inquiry reports and show cause notices."
+                }
+            ]
+        }
+    },
+    {
+        "id": "dataset_005",
+        "file_name": "CA_3_K_2021_Judgment.txt",
+        "document_type": "Legal Judgment",
+        "extracted_text": "IN THE SUPREME COURT OF PAKISTAN (Appellate Jurisdiction)\n\nPRESENT:\nMR. JUSTICE SAJJAD ALI SHAH\nMR. JUSTICE MUHAMMAD ALI MAZHAR\n\nCIVIL APPEAL NO.3-K OF 2021...",
+        "analysis_data": {
+            "summary": "The Supreme Court dismissed the Federation's appeal, upholding the Service Tribunal's decision to exonerate a Pension Clerk accused of embezzlement. The Court found that the departmental inquiry failed to produce any witness or documentary evidence directly implicating the respondent. The actual culprit had confessed. The Court emphasized that in cases of major penalty, the burden of proof lies on the department to produce 'trustworthy evidence', which was missing here.",
+            "key_terms": [
+                "burden of proof",
+                "Major Penalty",
+                "Embezzlement",
+                "Departmental Inquiry",
+                "Standard of Proof",
+                "Service Tribunal Appeal"
+            ],
+            "risk_assessment": "Low Risk (for Respondent). Lack of evidentiary support in an inquiry is fatal to the prosecution's case. The presumption of innocence applies where another individual has already confessed.",
+            "recommendations": [
+                {
+                    "name": "Criminal Defense Lawyer (White Collar)",
+                    "relevance": "To defend against serious allegations of fraud and embezzlement."
+                },
+                {
+                    "name": "Service Tribunal Advocate",
+                    "relevance": "To argue the appeal based on lack of evidence in the departmental record."
+                }
+            ]
+        }
+    }
+]
