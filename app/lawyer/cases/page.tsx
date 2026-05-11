@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card"
 import { Loader2, AlertCircle, Briefcase, MessageSquare, Eye, Calendar, User, FileText } from "lucide-react"
 import { LawyerDashboardHeader } from "@/components/lawyer/dashboard-header"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getOpenDisputeCaseIds } from "@/lib/case-disputes"
+// import { getOpenDisputeCaseIds } from "@/lib/case-disputes"
 
 interface Case {
   id: string
@@ -66,7 +66,7 @@ export default function LawyerCasesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [lawyerId, setLawyerId] = useState<string | null>(null)
-  const [openDisputeCaseIds, setOpenDisputeCaseIds] = useState<Set<string>>(() => new Set())
+  // const [openDisputeCaseIds, setOpenDisputeCaseIds] = useState<Set<string>>(() => new Set())
   const { toast } = useToast()
   const router = useRouter()
   const toastRef = useRef(toast)
@@ -151,8 +151,9 @@ export default function LawyerCasesPage() {
       }))
 
       setCases(mappedCases)
-      const disputeSet = await getOpenDisputeCaseIds(supabase, caseIds)
-      setOpenDisputeCaseIds(disputeSet)
+      // Dispute badges disabled for now
+      // const disputeSet = await getOpenDisputeCaseIds(supabase, caseIds)
+      // setOpenDisputeCaseIds(disputeSet)
       setError(null)
     } catch (error) {
       console.error("[v0] Fetch error:", error)
@@ -197,17 +198,12 @@ export default function LawyerCasesPage() {
             void fetchCases()
           },
         )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "case_disputes",
-          },
-          () => {
-            void fetchCases()
-          },
-        )
+        // Dispute realtime disabled for now
+        // .on(
+        //   "postgres_changes",
+        //   { event: "*", schema: "public", table: "case_disputes" },
+        //   () => { void fetchCases() },
+        // )
         .subscribe()
     }
 
@@ -325,9 +321,7 @@ export default function LawyerCasesPage() {
                                 <div className="flex flex-wrap items-center gap-3 mb-2">
                                   <h3 className="text-xl font-semibold">{caseItem.title}</h3>
                                   <Badge className={statusInfo.className}>{statusInfo.label}</Badge>
-                                  {openDisputeCaseIds.has(caseItem.id) && (
-                                    <Badge variant="destructive">Dispute open</Badge>
-                                  )}
+                                  {/* Dispute badge disabled for now */}
                                 </div>
                                 {caseItem.case_type && (
                                   <p className="text-sm text-muted-foreground mb-2">Type: {caseItem.case_type}</p>
