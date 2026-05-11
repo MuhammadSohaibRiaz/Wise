@@ -80,8 +80,9 @@ export default function ClientDashboardPage() {
         .from("cases")
         .select("id, status, lawyer_id")
         .eq("client_id", uid)
-        .in("status", ["open", "in_progress"])
+        .in("status", ["open", "in_progress", "pending_completion"])
         .not("lawyer_id", "is", null)
+        .neq("title", "AI Analysis Documents")
 
       const activeConsultations = casesData?.length || 0
 

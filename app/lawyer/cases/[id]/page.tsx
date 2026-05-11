@@ -661,42 +661,67 @@ export default function LawyerCaseDetailPage() {
                           <Badge className={statusInfo.className}>{statusInfo.label}</Badge>
                         </div>
 
-                        <div>
-                          <p className="text-sm font-medium mb-2">Update Status</p>
-                          <Select value={selectedStatus || ""} onValueChange={(value) => setSelectedStatus(value as CaseDetail["status"])}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="open">Open</SelectItem>
-                              <SelectItem value="in_progress">In Progress</SelectItem>
-                              <SelectItem value="pending_completion" disabled={!hasAttendedAppointment}>
-                                Request Case Completion {!hasAttendedAppointment ? "(needs attended consult)" : ""}
-                              </SelectItem>
-                              <SelectItem value="completed" disabled>Completed (Client confirmed)</SelectItem>
-                              <SelectItem value="closed">Closed</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
+                        {caseDetail.status === "closed" ? (
+                          <p className="text-sm text-muted-foreground">This case has been archived and cannot be reopened.</p>
+                        ) : caseDetail.status === "completed" ? (
+                          <div className="space-y-3">
+                            <p className="text-sm text-muted-foreground">
+                              Case completed. You can archive it to move it out of your active view.
+                            </p>
+                            <Button
+                              variant="outline"
+                              onClick={() => { setSelectedStatus("closed"); handleStatusUpdate("closed"); }}
+                              disabled={isSaving}
+                              className="w-full"
+                            >
+                              {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                              Archive Case
+                            </Button>
+                          </div>
+                        ) : caseDetail.status === "pending_completion" ? (
+                          <p className="text-sm text-muted-foreground">
+                            Waiting for the client to confirm completion. Status changes are locked until the client responds.
+                          </p>
+                        ) : (
+                          <>
+                            <div>
+                              <p className="text-sm font-medium mb-2">Update Status</p>
+                              <Select value={selectedStatus || ""} onValueChange={(value) => setSelectedStatus(value as CaseDetail["status"])}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="open">Open</SelectItem>
+                                  <SelectItem value="in_progress">In Progress</SelectItem>
+                                  <SelectItem value="pending_completion" disabled={!hasAttendedAppointment}>
+                                    Request Case Completion {!hasAttendedAppointment ? "(needs attended consult)" : ""}
+                                  </SelectItem>
+                                  <SelectItem value="completed" disabled>Completed (Client confirms)</SelectItem>
+                                  <SelectItem value="closed" disabled>Closed (after completion)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
 
-                        {selectedStatus !== caseDetail.status && (
-                          <Button
-                            onClick={handleStatusUpdate}
-                            disabled={isSaving}
-                            className="w-full"
-                          >
-                            {isSaving ? (
-                              <>
-                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                Saving...
-                              </>
-                            ) : (
-                              <>
-                                <Save className="h-4 w-4 mr-2" />
-                                Update Status
-                              </>
+                            {selectedStatus !== caseDetail.status && (
+                              <Button
+                                onClick={() => handleStatusUpdate()}
+                                disabled={isSaving}
+                                className="w-full"
+                              >
+                                {isSaving ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    Saving...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Save className="h-4 w-4 mr-2" />
+                                    Update Status
+                                  </>
+                                )}
+                              </Button>
                             )}
-                          </Button>
+                          </>
                         )}
                       </CardContent>
                     </Card>

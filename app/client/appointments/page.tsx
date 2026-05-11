@@ -524,14 +524,9 @@ export default function ClientAppointmentsPage() {
                   )}
                   {appointment.status === "scheduled" && (
                     <div className="flex flex-col items-end gap-2">
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
-                          <CheckCircle2 className="h-4 w-4" />
-                          <span className="font-medium">Paid</span>
-                        </div>
-                        <Button variant="destructive" size="sm" onClick={() => handleCancelAppointment(appointment.id)}>
-                          Cancel
-                        </Button>
+                      <div className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span className="font-medium">Paid & Confirmed</span>
                       </div>
                       <Button
                         size="sm"

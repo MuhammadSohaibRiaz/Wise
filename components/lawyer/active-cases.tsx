@@ -11,7 +11,7 @@ import { Clock, MessageSquare, Loader2 } from "lucide-react"
 interface ActiveCase {
   id: string
   title: string
-  status: "open" | "in_progress" | "completed" | "closed"
+  status: "open" | "in_progress" | "pending_completion" | "completed" | "closed"
   hourly_rate: number | null
   description: string | null
   created_at: string
@@ -25,6 +25,7 @@ interface ActiveCase {
 const statusConfig: Record<ActiveCase["status"], { label: string; variant: "default" | "secondary" }> = {
   open: { label: "Open", variant: "default" },
   in_progress: { label: "In Progress", variant: "default" },
+  pending_completion: { label: "Completion Requested", variant: "default" },
   completed: { label: "Completed", variant: "secondary" },
   closed: { label: "Closed", variant: "secondary" },
 }
@@ -68,7 +69,8 @@ export function ActiveCases({ hideTitle = false }: ActiveCasesProps) {
         )
         .eq("lawyer_id", sessionData.session.user.id)
         .not("lawyer_id", "is", null)
-        .in("status", ["open", "in_progress"])
+        .in("status", ["open", "in_progress", "pending_completion"])
+        .neq("title", "AI Analysis Documents")
         .order("updated_at", { ascending: false })
         .limit(3)
 

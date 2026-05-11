@@ -63,7 +63,11 @@ export function PendingCaseReviewDialog({
       })
       if (insErr) throw insErr
 
-      await recomputeLawyerRatingStats(supabase, pending.lawyerId)
+      try {
+        await recomputeLawyerRatingStats(supabase, pending.lawyerId)
+      } catch {
+        // Rating recomputation handled by DB trigger (048); client-side call is a best-effort fallback
+      }
       setRating(0)
       setComment("")
       onSubmitted()

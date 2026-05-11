@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Briefcase, TrendingUp, Star, Users, AlertCircle, Calendar, MessageSquare, Loader2, Gavel } from "lucide-react"
+import { Briefcase, TrendingUp, Star, Users, AlertCircle, Calendar, MessageSquare, Loader2, Gavel, LayoutDashboard } from "lucide-react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
@@ -102,6 +102,16 @@ export function LawyerSidebar({ onNavigate }: LawyerSidebarProps) {
             <Card className="p-4">
                 <h3 className="font-semibold mb-3 text-sm md:text-base">Quick Actions</h3>
                 <div className="space-y-2">
+                    <Link href="/lawyer/dashboard" onClick={onNavigate}>
+                        <Button
+                            variant="ghost"
+                            className="w-full justify-start text-xs md:text-sm"
+                            size="sm"
+                        >
+                            <LayoutDashboard className="h-4 w-4 mr-2" />
+                            Dashboard
+                        </Button>
+                    </Link>
                     <Link href="/lawyer/appointments" onClick={onNavigate}>
                         <Button
                             variant="ghost"
