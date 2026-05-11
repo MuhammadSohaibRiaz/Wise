@@ -20,14 +20,13 @@ import {
   DollarSign,
   Briefcase,
   CheckCircle2,
-  ShieldAlert,
   Star,
   XCircle,
   LayoutDashboard,
   History,
 } from "lucide-react"
 import { ReviewModal } from "@/components/client/review-modal"
-import { DisputeModal } from "@/components/cases/dispute-modal"
+// import { DisputeModal } from "@/components/cases/dispute-modal"
 import { createNotification } from "@/lib/notifications"
 import { appointmentDisplayLabel } from "@/lib/appointment-display"
 import { deriveCaseLifecycleStages } from "@/lib/case-lifecycle-stages"
@@ -116,7 +115,7 @@ export default function ClientCaseDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isConfirming, setIsConfirming] = useState(false)
   const [showReviewModal, setShowReviewModal] = useState(false)
-  const [showDisputeModal, setShowDisputeModal] = useState(false)
+  // const [showDisputeModal, setShowDisputeModal] = useState(false)
   const [clientId, setClientId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [caseTab, setCaseTab] = useState("overview")
@@ -280,9 +279,10 @@ export default function ClientCaseDetailPage() {
     }
   }
 
-  const handleRaiseDispute = () => {
-    setShowDisputeModal(true)
-  }
+  // Dispute disabled for now
+  // const handleRaiseDispute = () => {
+  //   setShowDisputeModal(true)
+  // }
 
   const handleDeclineCompletion = async () => {
     if (!caseDetail) return
@@ -404,15 +404,7 @@ export default function ClientCaseDetailPage() {
                   disabled={isConfirming}
                 >
                   <XCircle className="h-4 w-4 mr-2" />
-                  Decline request
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="flex-1 border-purple-300 text-purple-700 hover:bg-purple-100"
-                  onClick={handleRaiseDispute}
-                >
-                  <ShieldAlert className="h-4 w-4 mr-2" />
-                  Raise Dispute
+                  Decline
                 </Button>
                 <Button 
                   className="flex-1 bg-purple-700 hover:bg-purple-800 text-white"
@@ -677,12 +669,14 @@ export default function ClientCaseDetailPage() {
         />
       )}
 
+      {/* Dispute modal disabled for now
       <DisputeModal
         open={showDisputeModal}
         onOpenChange={setShowDisputeModal}
         caseId={caseId}
         onSuccess={fetchCaseDetail}
       />
+      */}
     </main>
   )
 }

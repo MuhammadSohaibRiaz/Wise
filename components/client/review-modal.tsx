@@ -43,14 +43,14 @@ export function ReviewModal({ isOpen, onClose, caseId, lawyerId, clientId, onSuc
         reviewee_id: lawyerId,
         rating,
         comment,
-        status: "pending", // Admin will approve it or it can be auto-published if you prefer
+        status: "published",
       })
 
       if (error) throw error
 
       toast({
         title: "Review submitted",
-        description: "Thank you for your feedback! Your review has been submitted for moderation.",
+        description: "Thank you for your feedback! Your review is now live on the lawyer's profile.",
       })
       
       onSuccess()

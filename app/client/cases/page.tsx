@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { MessageSquare, Eye, Star, Loader2, AlertCircle, Briefcase, Calendar } from "lucide-react"
 import type { Metadata } from "next"
 import Link from "next/link"
-import { getOpenDisputeCaseIds } from "@/lib/case-disputes"
+// import { getOpenDisputeCaseIds } from "@/lib/case-disputes"
 
 interface Case {
   id: string
@@ -63,7 +63,7 @@ export default function MyCasesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [clientId, setClientId] = useState<string | null>(null)
-  const [openDisputeCaseIds, setOpenDisputeCaseIds] = useState<Set<string>>(() => new Set())
+  // const [openDisputeCaseIds, setOpenDisputeCaseIds] = useState<Set<string>>(() => new Set())
   const { toast } = useToast()
   const router = useRouter()
   const toastRef = useRef(toast)
@@ -161,8 +161,9 @@ export default function MyCasesPage() {
       }))
 
       setCases(mappedCases)
-      const disputeSet = await getOpenDisputeCaseIds(supabase, caseIds)
-      setOpenDisputeCaseIds(disputeSet)
+      // Dispute badges disabled for now
+      // const disputeSet = await getOpenDisputeCaseIds(supabase, caseIds)
+      // setOpenDisputeCaseIds(disputeSet)
       setError(null)
     } catch (error) {
       console.error("[v0] Fetch error:", error)
@@ -208,17 +209,12 @@ export default function MyCasesPage() {
             void fetchCases()
           },
         )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "case_disputes",
-          },
-          () => {
-            void fetchCases()
-          },
-        )
+        // Dispute realtime disabled for now
+        // .on(
+        //   "postgres_changes",
+        //   { event: "*", schema: "public", table: "case_disputes" },
+        //   () => { void fetchCases() },
+        // )
         .subscribe()
     }
 
@@ -303,8 +299,7 @@ export default function MyCasesPage() {
             Find a Lawyer
           </Link>
           . Multiple rows can exist until a consultation is confirmed. When your lawyer requests case completion, open{" "}
-          <strong>View</strong> on that case to <strong>confirm</strong>, <strong>decline</strong>, or{" "}
-          <strong>raise a dispute</strong> (admins review disputes under Admin).
+          <strong>View</strong> on that case to <strong>confirm</strong> or <strong>decline</strong>.
         </p>
       )}
 
@@ -341,11 +336,6 @@ export default function MyCasesPage() {
                       <p className="text-xs text-muted-foreground">Status</p>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         <Badge className={statusInfo.className}>{statusInfo.label}</Badge>
-                        {openDisputeCaseIds.has(caseItem.id) && (
-                          <Badge variant="destructive" className="text-xs">
-                            Dispute open
-                          </Badge>
-                        )}
                       </div>
                     </div>
 
