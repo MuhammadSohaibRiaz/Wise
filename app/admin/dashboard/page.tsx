@@ -3,12 +3,11 @@
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { AdminHeader } from "@/components/admin/admin-header"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
   Users, 
   Briefcase, 
-  AlertTriangle, 
-  CheckCircle, 
   TrendingUp, 
   Clock,
   ShieldCheck
@@ -33,13 +32,11 @@ export default function AdminDashboardPage() {
           { count: usersCount },
           { count: lawyersCount },
           { count: pendingCount },
-          { count: disputesCount },
           { count: casesCount }
         ] = await Promise.all([
           supabase.from("profiles").select("*", { count: 'exact', head: true }),
           supabase.from("profiles").select("*", { count: 'exact', head: true }).eq("user_type", "lawyer"),
           supabase.from("lawyer_profiles").select("*", { count: 'exact', head: true }).eq("verified", false),
-          supabase.from("case_disputes").select("*", { count: 'exact', head: true }).eq("status", "open"),
           supabase.from("cases").select("*", { count: 'exact', head: true })
         ])
 
@@ -47,7 +44,7 @@ export default function AdminDashboardPage() {
           totalUsers: usersCount || 0,
           totalLawyers: lawyersCount || 0,
           pendingVerifications: pendingCount || 0,
-          openDisputes: disputesCount || 0,
+          openDisputes: 0,
           totalCases: casesCount || 0
         })
       } catch (error) {
@@ -95,12 +92,11 @@ export default function AdminDashboardPage() {
       link: "/admin/lawyers"
     },
     {
-      title: "Active Disputes",
-      value: stats.openDisputes,
-      icon: AlertTriangle,
-      color: "text-red-600",
-      bg: "bg-red-50",
-      link: "/admin/disputes"
+      title: "Total Cases",
+      value: stats.totalCases,
+      icon: Briefcase,
+      color: "text-indigo-600",
+      bg: "bg-indigo-50",
     }
   ]
 
@@ -151,10 +147,10 @@ export default function AdminDashboardPage() {
               <Button 
                 variant="outline" 
                 className="w-full justify-start gap-2 h-12"
-                onClick={() => window.location.href = '/admin/disputes'}
+                onClick={() => window.location.href = '/admin/security-logs'}
               >
-                <AlertTriangle className="h-4 w-4" />
-                Manage Case Disputes
+                <ShieldCheck className="h-4 w-4" />
+                AI Security Logs
               </Button>
               <Button 
                 variant="outline" 
