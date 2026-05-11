@@ -363,33 +363,16 @@ export function MessagesShell({ userType }: MessagesShellProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run once on mount
 
-  // Link ?lawyer=<uuid> to the client's "AI Analysis Documents" case so messaging has a lawyer recipient.
+  // When navigating to messages with ?lawyer=<uuid>, reload conversations so
+  // any existing case with this lawyer surfaces in the sidebar.
   useEffect(() => {
     const lawyerParam = searchParams.get("lawyer")
     if (!lawyerParam || userType !== "client" || !currentUserId) return
     if (linkedLawyerFromUrl.current === lawyerParam) return
 
-    const linkLawyer = async () => {
-      const { data, error } = await supabase
-        .from("cases")
-        .update({ lawyer_id: lawyerParam, updated_at: new Date().toISOString() })
-        .eq("client_id", currentUserId)
-        .eq("title", "AI Analysis Documents")
-        .is("lawyer_id", null)
-        .select("id")
-
-      if (error) {
-        console.warn("[Messages] Could not attach lawyer from URL:", error.message)
-        return
-      }
-      if (data?.length) {
-        linkedLawyerFromUrl.current = lawyerParam
-        await loadConversations(currentUserId)
-      }
-    }
-
-    void linkLawyer()
-  }, [searchParams, userType, currentUserId, supabase, loadConversations])
+    linkedLawyerFromUrl.current = lawyerParam
+    void loadConversations(currentUserId)
+  }, [searchParams, userType, currentUserId, loadConversations])
 
   useEffect(() => {
     if (!currentUserId || !activeCaseId) return

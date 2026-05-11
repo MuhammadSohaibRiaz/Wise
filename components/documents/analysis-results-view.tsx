@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { AlertTriangle, CheckCircle, Info, ArrowRight, ShieldAlert, Zap, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { CaseStrengthMeter } from "./case-strength-meter"
 
 interface AnalysisResultsViewProps {
   analysis: {
@@ -44,6 +45,24 @@ export function AnalysisResultsView({ analysis }: AnalysisResultsViewProps) {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {isLegal && (
+        <Card className="border-2 border-primary/20">
+          <CardContent className="flex flex-col sm:flex-row items-center gap-6 p-6">
+            <CaseStrengthMeter
+              riskLevel={analysis.risk_level || "Medium"}
+              urgency={analysis.urgency || "Normal"}
+              seriousness={analysis.seriousness || "Moderate"}
+            />
+            <div className="flex-1 text-center sm:text-left">
+              <h3 className="text-lg font-semibold">Case Strength Analysis</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Calculated from risk level, urgency, and seriousness of your document. A higher score indicates a stronger legal position.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Risk Level Card - Only show if legal */}
         {isLegal && (

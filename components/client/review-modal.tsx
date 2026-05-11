@@ -37,6 +37,24 @@ export function ReviewModal({ isOpen, onClose, caseId, lawyerId, clientId, onSuc
     try {
       setIsSubmitting(true)
 
+      const { data: existing } = await supabase
+        .from("reviews")
+        .select("id")
+        .eq("case_id", caseId)
+        .eq("reviewer_id", clientId)
+        .limit(1)
+        .maybeSingle()
+
+      if (existing) {
+        toast({
+          title: "Already reviewed",
+          description: "You have already submitted a review for this case.",
+        })
+        onSuccess()
+        onClose()
+        return
+      }
+
       const { error } = await supabase.from("reviews").insert({
         case_id: caseId,
         reviewer_id: clientId,

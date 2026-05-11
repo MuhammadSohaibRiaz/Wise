@@ -52,6 +52,9 @@ export function BookAppointmentModal({
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null)
   /** Server-backed analysis document from `case_drafts` (preferred over sessionStorage). */
   const [draftLinkedDocumentId, setDraftLinkedDocumentId] = useState<string | null>(null)
+  const [analyzedDocs, setAnalyzedDocs] = useState<any[]>([])
+  const [selectedDocId, setSelectedDocId] = useState<string>("")
+  const [isLoadingDocs, setIsLoadingDocs] = useState(false)
   const { toast } = useToast()
 
   const supabase = createClient()
@@ -84,10 +87,40 @@ export function BookAppointmentModal({
       void (async () => {
         if (!clientId) return
 
+        // Fetch client's analyzed documents for the dropdown
+        setIsLoadingDocs(true)
+        try {
+          const { data: docs } = await supabase
+            .from("documents")
+            .select(`
+              id,
+              file_name,
+              created_at,
+              document_analysis (
+                id,
+                summary,
+                category
+              )
+            `)
+            .eq("uploaded_by", clientId)
+            .order("created_at", { ascending: false })
+
+          const withAnalysis = (docs || []).filter(
+            (d: any) => d.document_analysis && (Array.isArray(d.document_analysis) ? d.document_analysis.length > 0 : true)
+          )
+          setAnalyzedDocs(withAnalysis)
+        } catch (err) {
+          console.error("[Booking] Error fetching analyzed docs:", err)
+        } finally {
+          setIsLoadingDocs(false)
+        }
+
+        // Pre-fill from case_drafts if one exists
         const draft = await getLatestReadyDraftForClient(supabase, clientId, lawyerId)
         if (draft) {
           setSelectedDraftId(draft.id)
           setDraftLinkedDocumentId(draft.linked_document_id ?? null)
+          if (draft.linked_document_id) setSelectedDocId(draft.linked_document_id)
           if (draft.title) setCaseTitle((prev) => prev || draft.title || "")
           if (draft.linked_analysis_id) {
             const { data: analysis } = await supabase
@@ -103,15 +136,6 @@ export function BookAppointmentModal({
         } else {
           setSelectedDraftId(null)
           setDraftLinkedDocumentId(null)
-        }
-
-        // Backward-compatible fallback (temporary during draft migration)
-        if (typeof window !== "undefined") {
-          const aiSummary = sessionStorage.getItem("active_analysis_summary")
-          if (aiSummary) {
-            setCaseDescription((prev) => prev || aiSummary)
-            console.log("[Booking] Auto-filled case description from AI summary")
-          }
         }
       })()
     }
@@ -315,12 +339,9 @@ export function BookAppointmentModal({
         },
       })
 
-      // 1.5. Link analysis document from draft or sessionStorage fallback
-      const sessionDocId =
-        typeof window !== "undefined" ? sessionStorage.getItem("active_analysis_doc_id") : null
-      const docIdToLink = draftLinkedDocumentId || sessionDocId
+      // Link selected analysis document to the real case
+      const docIdToLink = selectedDocId || draftLinkedDocumentId
       if (docIdToLink) {
-        console.log("[Booking] Linking analysis document to new case:", docIdToLink)
         const { error: linkError } = await supabase
           .from("documents")
           .update({ case_id: caseData.id })
@@ -328,9 +349,6 @@ export function BookAppointmentModal({
 
         if (linkError) {
           console.error("[Booking] Error linking document:", linkError)
-        } else if (typeof window !== "undefined") {
-          sessionStorage.removeItem("active_analysis_doc_id")
-          sessionStorage.removeItem("active_analysis_summary")
         }
       }
 
@@ -463,6 +481,8 @@ export function BookAppointmentModal({
         setCaseDescription("")
         setSelectedDraftId(null)
         setDraftLinkedDocumentId(null)
+        setSelectedDocId("")
+        setAnalyzedDocs([])
       }, 3000)
     } catch (error: any) {
       console.error("[v0] Booking error:", error)
@@ -654,11 +674,75 @@ export function BookAppointmentModal({
           {/* Step: Case Details */}
           {step === "case-details" && (
             <div className="space-y-4">
-              {selectedDraftId && (
+              {selectedDraftId && !selectedDocId && (
                 <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-primary">
                   Using your latest saved case draft to pre-fill details. You can edit anything before sending.
                 </div>
               )}
+
+              {analyzedDocs.length > 0 && (
+                <div>
+                  <label className="text-sm font-medium mb-2 block">
+                    <FileText className="inline h-4 w-4 mr-1 -mt-0.5" />
+                    Link Analyzed Document (optional)
+                  </label>
+                  <Select
+                    value={selectedDocId}
+                    onValueChange={(docId) => {
+                      setSelectedDocId(docId)
+                      const doc = analyzedDocs.find((d: any) => d.id === docId)
+                      if (doc) {
+                        setDraftLinkedDocumentId(docId)
+                        const analysis = Array.isArray(doc.document_analysis)
+                          ? doc.document_analysis[0]
+                          : doc.document_analysis
+                        if (analysis?.summary) {
+                          setCaseDescription(analysis.summary)
+                        }
+                        if (analysis?.category && !caseType) {
+                          const categoryMap: Record<string, string> = {
+                            "family": "Family",
+                            "corporate": "Corporate",
+                            "criminal": "Criminal",
+                            "civil": "Civil",
+                            "intellectual property": "Intellectual",
+                            "real estate": "Real Estate",
+                          }
+                          const mapped = categoryMap[(analysis.category || "").toLowerCase()]
+                          if (mapped) setCaseType(mapped)
+                        }
+                        if (!caseTitle && doc.file_name) {
+                          const name = doc.file_name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ")
+                          setCaseTitle(name)
+                        }
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select a previously analyzed document..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {analyzedDocs.map((doc: any) => {
+                        const analysis = Array.isArray(doc.document_analysis)
+                          ? doc.document_analysis[0]
+                          : doc.document_analysis
+                        return (
+                          <SelectItem key={doc.id} value={doc.id}>
+                            {doc.file_name}
+                            {analysis?.category ? ` — ${analysis.category}` : ""}
+                          </SelectItem>
+                        )
+                      })}
+                    </SelectContent>
+                  </Select>
+                  {selectedDocId && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      This document will be linked to your new case automatically.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="text-sm font-medium mb-2 block">Case Type*</label>
                 <Select value={caseType} onValueChange={setCaseType}>

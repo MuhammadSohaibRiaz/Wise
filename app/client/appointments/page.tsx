@@ -30,6 +30,7 @@ interface Appointment {
     title: string
     case_type: string
     hourly_rate: number | null
+    status?: string
   }
   lawyer: {
     id: string
@@ -136,7 +137,8 @@ export default function ClientAppointmentsPage() {
               id,
               title,
               case_type,
-              hourly_rate
+              hourly_rate,
+              status
             ),
             profiles!appointments_lawyer_id_fkey (
               id,
@@ -181,7 +183,7 @@ export default function ClientAppointmentsPage() {
           status: apt.status || "pending",
           // Get payment status from payments table
           payment_status: paymentStatuses[apt.case_id] || null,
-          case: apt.cases || { id: "", title: "", case_type: "", hourly_rate: null },
+          case: apt.cases || { id: "", title: "", case_type: "", hourly_rate: null, status: "" },
           lawyer: apt.profiles || {},
         }))
 
@@ -213,6 +215,14 @@ export default function ClientAppointmentsPage() {
     if (!clientId) return
 
     const supabase = createClient()
+    let refetchTimeout: ReturnType<typeof setTimeout> | null = null
+    const debouncedRefetch = () => {
+      if (refetchTimeout) clearTimeout(refetchTimeout)
+      refetchTimeout = setTimeout(() => {
+        window.location.reload()
+      }, 500)
+    }
+
     const channel = supabase
       .channel(`appointments-client-${clientId}-${Date.now()}`)
       .on(
@@ -241,16 +251,59 @@ export default function ClientAppointmentsPage() {
           }
         },
       )
-      .subscribe((status) => {
-        console.log(`[Client Appointments] Realtime subscription status: ${status} for client ${clientId}`)
-        if (status === "SUBSCRIBED") {
-          console.log(`[Client Appointments] ✅ Successfully subscribed to appointment updates for client ${clientId}`)
-        } else if (status === "CHANNEL_ERROR") {
-          console.error(`[Client Appointments] ❌ Channel error for client ${clientId}`)
-        }
-      })
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "appointments",
+          filter: `client_id=eq.${clientId}`,
+        },
+        () => {
+          debouncedRefetch()
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "payments",
+          filter: `client_id=eq.${clientId}`,
+        },
+        () => {
+          debouncedRefetch()
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "cases",
+          filter: `client_id=eq.${clientId}`,
+        },
+        (payload) => {
+          const updatedCase = payload.new as any
+          setAppointments((prev) =>
+            prev.map((apt) =>
+              apt.case.id === updatedCase.id
+                ? { ...apt, case: { ...apt.case, status: updatedCase.status } }
+                : apt
+            ),
+          )
+          if (updatedCase.status === "pending_completion") {
+            toast({
+              title: "Completion Requested",
+              description: "Your lawyer has requested case completion. Please review from My Cases.",
+            })
+          }
+        },
+      )
+      .subscribe()
 
     return () => {
+      if (refetchTimeout) clearTimeout(refetchTimeout)
       supabase.removeChannel(channel)
     }
   }, [clientId, toast])
@@ -559,9 +612,22 @@ export default function ClientAppointmentsPage() {
                   {appointment.status === "attended" && (
                     <div className="text-right">
                       <p className="text-xs text-green-700 dark:text-green-400 font-medium">Consultation held</p>
-                      <p className="text-xs text-muted-foreground">
-                        Waiting for lawyer to request case completion
-                      </p>
+                      {appointment.case.status === "pending_completion" ? (
+                        <a href={`/client/cases/${appointment.case.id}`} className="block mt-1">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 dark:bg-purple-900/30 px-2.5 py-1 text-xs font-semibold text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-200 transition-colors">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Completion requested — Review now
+                          </span>
+                        </a>
+                      ) : appointment.case.status === "completed" ? (
+                        <p className="text-xs text-green-700 dark:text-green-400 font-medium mt-1">
+                          Case completed
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Waiting for lawyer to request case completion
+                        </p>
+                      )}
                     </div>
                   )}
                   {appointment.status === "pending" && (

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import type { Metadata } from "next"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -39,96 +39,119 @@ const statusConfig: Record<Payment["status"], { label: string; className: string
     label: "Failed",
     className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
   },
+  refunded: {
+    label: "Refunded",
+    className: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+  },
 }
 
 export default function PaymentsPage() {
   const [payments, setPayments] = useState<Payment[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   const [stats, setStats] = useState({
     totalSpent: 0,
     pending: 0,
   })
   const { toast } = useToast()
 
-  useEffect(() => {
-    const fetchPayments = async () => {
-      try {
-        setIsLoading(true)
-        setError(null)
-        const supabase = createClient()
+  const fetchPayments = useCallback(async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      const supabase = createClient()
 
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.user?.id) {
-          setError("You must be logged in to view payments")
-          toast({
-            title: "Authentication Required",
-            description: "Please log in to view your payments",
-            variant: "destructive",
-          })
-          return
-        }
-
-        console.log("[Payments] Fetching payments for user:", session.user.id)
-
-        // Fetch payments with case and lawyer info
-        const { data, error: fetchError } = await supabase
-          .from("payments")
-          .select(`
-            id,
-            amount,
-            status,
-            payment_method,
-            created_at,
-            case:cases!payments_case_id_fkey (
-              id,
-              title
-            ),
-            lawyer:profiles!payments_lawyer_id_fkey (
-              id,
-              first_name,
-              last_name
-            )
-          `)
-          .eq("client_id", session.user.id)
-          .order("created_at", { ascending: false })
-
-        if (fetchError) {
-          console.error("[Payments] Error fetching payments:", fetchError)
-          throw fetchError
-        }
-
-        console.log("[Payments] Fetched payments:", data?.length || 0)
-        setPayments(data || [])
-
-        // Calculate stats
-        const totalSpent = (data || [])
-          .filter((p) => p.status === "completed")
-          .reduce((sum, p) => sum + p.amount, 0)
-
-        const pending = (data || [])
-          .filter((p) => p.status === "pending")
-          .reduce((sum, p) => sum + p.amount, 0)
-
-        const refunded = (data || [])
-          .filter((p) => p.status === "refunded")
-          .reduce((sum, p) => sum + p.amount, 0)
-
-        setStats({ totalSpent, pending, refunded })
-      } catch (error) {
-        console.error("Error fetching payments:", error)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user?.id) {
+        setError("You must be logged in to view payments")
         toast({
-          title: "Error",
-          description: "Failed to load payments",
+          title: "Authentication Required",
+          description: "Please log in to view your payments",
           variant: "destructive",
         })
-      } finally {
-        setIsLoading(false)
+        return
       }
-    }
 
-    fetchPayments()
+      setUserId(session.user.id)
+
+      const { data, error: fetchError } = await supabase
+        .from("payments")
+        .select(`
+          id,
+          amount,
+          status,
+          payment_method,
+          created_at,
+          case:cases!payments_case_id_fkey (
+            id,
+            title
+          ),
+          lawyer:profiles!payments_lawyer_id_fkey (
+            id,
+            first_name,
+            last_name
+          )
+        `)
+        .eq("client_id", session.user.id)
+        .order("created_at", { ascending: false })
+
+      if (fetchError) {
+        console.error("[Payments] Error fetching payments:", fetchError)
+        throw fetchError
+      }
+
+      setPayments(data || [])
+
+      const totalSpent = (data || [])
+        .filter((p) => p.status === "completed")
+        .reduce((sum, p) => sum + p.amount, 0)
+
+      const pending = (data || [])
+        .filter((p) => p.status === "pending")
+        .reduce((sum, p) => sum + p.amount, 0)
+
+      setStats({ totalSpent, pending })
+    } catch (error) {
+      console.error("Error fetching payments:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load payments",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }, [toast])
+
+  useEffect(() => {
+    fetchPayments()
+  }, [fetchPayments])
+
+  useEffect(() => {
+    if (!userId) return
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`payments-client-${userId}-${Date.now()}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "payments",
+          filter: `client_id=eq.${userId}`,
+        },
+        () => {
+          void fetchPayments()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [userId, fetchPayments])
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {

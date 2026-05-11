@@ -104,6 +104,7 @@ export default function MyCasesPage() {
         `,
         )
         .eq("client_id", sessionData.session.user.id)
+        .neq("title", "AI Analysis Documents")
         .order("updated_at", { ascending: false })
 
       if (fetchError) throw fetchError
@@ -117,7 +118,7 @@ export default function MyCasesPage() {
           .from("appointments")
           .select("id, case_id, scheduled_at, status")
           .in("case_id", caseIds)
-          .in("status", ["pending", "scheduled"])
+          .in("status", ["pending", "scheduled", "awaiting_payment", "rescheduled"])
           .order("scheduled_at", { ascending: true })
 
         if (appointmentsData) {
@@ -209,12 +210,30 @@ export default function MyCasesPage() {
             void fetchCases()
           },
         )
-        // Dispute realtime disabled for now
-        // .on(
-        //   "postgres_changes",
-        //   { event: "*", schema: "public", table: "case_disputes" },
-        //   () => { void fetchCases() },
-        // )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "appointments",
+            filter: `client_id=eq.${uid}`,
+          },
+          () => {
+            void fetchCases()
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "payments",
+            filter: `client_id=eq.${uid}`,
+          },
+          () => {
+            void fetchCases()
+          },
+        )
         .subscribe()
     }
 
@@ -292,14 +311,10 @@ export default function MyCasesPage() {
 
       {cases.length > 0 && (
         <p className="text-sm text-muted-foreground rounded-lg border border-border bg-muted/30 px-4 py-3">
-          <span className="font-medium text-foreground">How cases work:</span> A row appears when you start document
-          analysis, messaging, or a booking. <strong>Open</strong> with <em>No lawyer assigned</em> usually means no
-          active booking yet, or the lawyer declined—book again from{" "}
-          <Link href="/match" className="underline underline-offset-2 text-primary">
-            Find a Lawyer
-          </Link>
-          . Multiple rows can exist until a consultation is confirmed. When your lawyer requests case completion, open{" "}
-          <strong>View</strong> on that case to <strong>confirm</strong> or <strong>decline</strong>.
+          <span className="font-medium text-foreground">How cases work:</span> A case is created when you book a
+          consultation with a lawyer. <strong>Open</strong> means the consultation is pending or scheduled.
+          When your lawyer requests case completion, open <strong>View</strong> on that case to{" "}
+          <strong>confirm</strong> or <strong>decline</strong>.
         </p>
       )}
 

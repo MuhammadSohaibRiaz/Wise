@@ -8,7 +8,6 @@ import { SiteFooter } from "@/components/site-footer"
 import { Suspense } from "react"
 import { usePathname } from "next/navigation"
 import { ProgressBar } from "@/components/progress-bar"
-import { Toaster } from "@/components/ui/toaster"
 
 export default function ClientLayout({
   children,
@@ -21,7 +20,7 @@ export default function ClientLayout({
 
   return (
     <ThemeProvider defaultTheme="system" enableSystem className="theme-law">
-      <ProgressBar />
+      <Suspense fallback={null}><ProgressBar /></Suspense>
       <Suspense fallback={<div>Loading...</div>}>
         {!isDashboardRoute && <SiteHeader />}
         <main role="main" className={isDashboardRoute ? "" : "min-h-[60vh]"}>
@@ -30,7 +29,6 @@ export default function ClientLayout({
         {!isDashboardRoute && <SiteFooter />}
       </Suspense>
       <Analytics />
-      <Toaster />
     </ThemeProvider>
   )
 }

@@ -4,7 +4,7 @@ import type React from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { ClientSidebar } from "@/components/client/sidebar"
 import { ClientHeader } from "@/components/client/header"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, Suspense } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { ProgressBar } from "@/components/progress-bar"
 
@@ -88,7 +88,7 @@ export default function ClientLayout({
 
   return (
     <>
-      <ProgressBar />
+      <Suspense fallback={null}><ProgressBar /></Suspense>
       <div className="flex h-screen bg-background overflow-hidden">
         {/* Sidebar */}
         <ClientSidebar open={sidebarOpen} onToggle={toggleSidebar} />

@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
 interface UploadZoneProps {
-  caseId: string
+  caseId?: string | null
   onUploadComplete: (documentId: string) => void
   onUploadError: (message: string) => void
 }
@@ -56,7 +56,8 @@ export function UploadZone({ caseId, onUploadComplete, onUploadError }: UploadZo
       // 1. Upload to Storage
       const fileExt = file.name.split(".").pop()
       const fileName = `${Math.random()}.${fileExt}`
-      const filePath = `${caseId}/${fileName}`
+      const folder = caseId || user.id
+      const filePath = `${folder}/${fileName}`
 
       const { error: storageError, data: storageData } = await supabase.storage
         .from("documents")
@@ -70,18 +71,20 @@ export function UploadZone({ caseId, onUploadComplete, onUploadError }: UploadZo
         .from("documents")
         .getPublicUrl(filePath)
 
-      // 3. Create Database Record
+      // 3. Create Database Record (case_id is nullable for standalone analysis docs)
+      const docRow: Record<string, unknown> = {
+        uploaded_by: user.id,
+        file_name: file.name,
+        file_url: publicUrl,
+        file_type: file.type,
+        file_size: file.size,
+        status: "pending",
+      }
+      if (caseId) docRow.case_id = caseId
+
       const { data: docData, error: dbError } = await supabase
         .from("documents")
-        .insert({
-          case_id: caseId,
-          uploaded_by: user.id,
-          file_name: file.name,
-          file_url: publicUrl,
-          file_type: file.type,
-          file_size: file.size,
-          status: "pending"
-        })
+        .insert(docRow)
         .select()
         .single()
 

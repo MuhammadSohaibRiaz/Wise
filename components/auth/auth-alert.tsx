@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef } from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CheckCircle, AlertCircle, Info, XCircle } from "lucide-react"
 
@@ -10,6 +11,12 @@ interface AuthAlertProps {
 }
 
 export function AuthAlert({ type, message, onClose }: AuthAlertProps) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+  }, [message])
+
   const styles = {
     success: { bg: "bg-green-50", border: "border-green-200", text: "text-green-800", icon: CheckCircle },
     error: { bg: "bg-red-50", border: "border-red-200", text: "text-red-800", icon: XCircle },
@@ -20,7 +27,7 @@ export function AuthAlert({ type, message, onClose }: AuthAlertProps) {
   const { bg, border, text, icon: Icon } = styles[type]
 
   return (
-    <Alert className={`${bg} ${border} ${text}`}>
+    <Alert ref={ref} className={`${bg} ${border} ${text}`}>
       <Icon className="h-4 w-4" />
       <AlertDescription>{message}</AlertDescription>
     </Alert>

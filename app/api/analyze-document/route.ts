@@ -53,16 +53,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { data: caseRow } = await supabase
-      .from("cases")
-      .select("client_id, lawyer_id")
-      .eq("id", document.case_id)
-      .single()
+    let allowed = document.uploaded_by === user.id
+    if (!allowed && document.case_id) {
+      const { data: caseRow } = await supabase
+        .from("cases")
+        .select("client_id, lawyer_id")
+        .eq("id", document.case_id)
+        .single()
 
-    const allowed =
-      document.uploaded_by === user.id ||
-      caseRow?.client_id === user.id ||
-      caseRow?.lawyer_id === user.id
+      allowed =
+        caseRow?.client_id === user.id ||
+        caseRow?.lawyer_id === user.id
+    }
     if (!allowed) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }

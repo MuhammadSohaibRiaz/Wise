@@ -507,34 +507,8 @@ export function Chat({ onClose }: { onClose: () => void }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Please log in to upload documents.");
 
-      // Ensure there is a dedicated case container for AI analysis documents
-      const { data: existingCases, error: caseFetchError } = await supabase
-        .from("cases")
-        .select("id")
-        .eq("client_id", user.id)
-        .eq("title", "AI Analysis Documents")
-        .limit(1);
-
-      if (caseFetchError) throw caseFetchError;
-
-      let caseId = existingCases?.[0]?.id as string | undefined;
-      if (!caseId) {
-        const { data: newCase, error: newCaseError } = await supabase
-          .from("cases")
-          .insert({
-            client_id: user.id,
-            title: "AI Analysis Documents",
-            description: "Case container for automatically analyzed documents.",
-            status: "open",
-          })
-          .select("id")
-          .single();
-
-        if (newCaseError) throw newCaseError;
-        caseId = newCase?.id;
-      }
-
-      if (!caseId) throw new Error("Could not initialize analysis case.");
+      // Documents are now stored without a case_id (nullable).
+      // They get linked to a real case when the client books a consultation.
 
       // 1. Upload to Storage
       const fileExt = file.name.split('.').pop();
@@ -551,11 +525,10 @@ export function Chat({ onClose }: { onClose: () => void }) {
         .from('documents')
         .getPublicUrl(filePath);
 
-      // 2. Create document record
+      // 2. Create document record (no case_id — linked later during booking)
       const { data: doc, error: docError } = await supabase
         .from('documents')
         .insert({
-          case_id: caseId,
           uploaded_by: user.id,
           file_name: file.name,
           file_url: publicUrl,

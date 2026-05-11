@@ -116,7 +116,7 @@ export default function ClientDashboardPage() {
         `,
         )
         .eq("client_id", uid)
-        .in("status", ["scheduled", "pending", "awaiting_payment"])
+        .in("status", ["scheduled", "pending", "awaiting_payment", "rescheduled"])
         .gte("scheduled_at", new Date().toISOString())
         .order("scheduled_at", { ascending: true })
         .limit(1)
@@ -408,42 +408,40 @@ export default function ClientDashboardPage() {
       </section>
 
       {/* Quick Actions */}
-      <section className="grid gap-4 md:grid-cols-3">
-        <Link href="/client/analysis">
-          <Card className="border-2 border-primary/20 hover:border-primary/40 transition-colors cursor-pointer min-h-[180px] flex flex-col">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <FileText className="h-5 w-5 text-primary" />
-                Upload Document
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex-grow flex flex-col">
-              <p className="text-sm text-muted-foreground mb-4 line-clamp-2">Get AI analysis of your legal documents</p>
-              <Button variant="outline" size="sm" className="mt-auto">
+      <section className="grid gap-4 md:grid-cols-2">
+        <Link href="/client/analysis" className="block h-full">
+          <Card className="group h-full border-2 border-primary/20 hover:border-primary/40 hover:shadow-md transition-all cursor-pointer">
+            <CardContent className="flex items-center gap-4 p-6 h-full">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                <FileText className="h-6 w-6 text-primary" />
+              </div>
+              <div className="flex-grow min-w-0">
+                <h3 className="font-semibold">Upload Document</h3>
+                <p className="text-sm text-muted-foreground">Get AI analysis of your legal documents</p>
+              </div>
+              <Button variant="outline" size="sm" className="shrink-0">
                 Upload Now
               </Button>
             </CardContent>
           </Card>
         </Link>
 
-        <Link href="/match">
-          <Card className="border-2 border-primary/20 hover:border-primary/40 transition-colors cursor-pointer min-h-[180px] flex flex-col">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Star className="h-5 w-5 text-primary" />
-                Find a Lawyer
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex-grow flex flex-col">
-              <p className="text-sm text-muted-foreground mb-4 line-clamp-2">Browse verified lawyers in your area</p>
-              <Button variant="outline" size="sm" className="mt-auto">
+        <Link href="/match" className="block h-full">
+          <Card className="group h-full border-2 border-primary/20 hover:border-primary/40 hover:shadow-md transition-all cursor-pointer">
+            <CardContent className="flex items-center gap-4 p-6 h-full">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                <Star className="h-6 w-6 text-primary" />
+              </div>
+              <div className="flex-grow min-w-0">
+                <h3 className="font-semibold">Find a Lawyer</h3>
+                <p className="text-sm text-muted-foreground">Browse verified lawyers in your area</p>
+              </div>
+              <Button variant="outline" size="sm" className="shrink-0">
                 Browse Now
               </Button>
             </CardContent>
           </Card>
         </Link>
-
-        {/* AI Recommendations card hidden — page still accessible at /client/ai-recommendations */}
       </section>
 
       {/* Recommended Lawyers */}

@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { AuthAlert } from "@/components/auth/auth-alert"
 import { createClient } from "@/lib/supabase/client"
+import { Loader2 } from "lucide-react"
 
 export default function LawyerSignInPage() {
   const router = useRouter()
@@ -80,9 +81,7 @@ export default function LawyerSignInPage() {
       }
 
       setSuccess("Sign in successful! Redirecting...")
-      setTimeout(() => {
-        router.push("/lawyer/dashboard")
-      }, 1500)
+      router.push("/lawyer/dashboard")
     } catch (err) {
       setError("An unexpected error occurred. Please try again.")
     } finally {
@@ -134,6 +133,7 @@ export default function LawyerSignInPage() {
           </div>
 
           <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isLoading ? "Signing in..." : "Sign in"}
           </Button>
         </form>

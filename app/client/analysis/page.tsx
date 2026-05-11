@@ -40,7 +40,7 @@ async function pollAnalysisJob(jobId: string): Promise<QueuedAnalysisJob> {
 import { Suspense } from "react"
 
 function AICaseAnalysisContent() {
-  const [caseId, setCaseId] = useState<string | null>(null)
+  const [isReady, setIsReady] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysisResult, setAnalysisResult] = useState<any>(null)
   const [recommendedLawyers, setRecommendedLawyers] = useState<any[]>([])
@@ -51,45 +51,19 @@ function AICaseAnalysisContent() {
   const searchParams = useSearchParams()
   const documentIdParam = searchParams.get("documentId")
 
-  // 1. Get or Create a Case for Analysis
   useEffect(() => {
-    const initCase = async () => {
+    const init = async () => {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // If we have a documentId in the URL, fetch it immediately
       if (documentIdParam) {
         loadExistingAnalysis(documentIdParam)
       }
 
-      // Check for an existing analysis case
-      const { data: existingCases } = await supabase
-        .from("cases")
-        .select("id")
-        .eq("client_id", user.id)
-        .eq("title", "AI Analysis Documents")
-        .limit(1)
-
-      if (existingCases && existingCases.length > 0) {
-        setCaseId(existingCases[0].id)
-      } else {
-        // Create a new case for analysis
-        const { data: newCase, error } = await supabase
-          .from("cases")
-          .insert({
-            client_id: user.id,
-            title: "AI Analysis Documents",
-            description: "Case container for automatically analyzed documents.",
-            status: "open"
-          })
-          .select()
-          .single()
-        
-        if (newCase) setCaseId(newCase.id)
-      }
+      setIsReady(true)
     }
-    initCase()
+    init()
     fetchHistory()
   }, [documentIdParam])
 
@@ -196,14 +170,20 @@ function AICaseAnalysisContent() {
           category,
           analysis_status,
           legal_citations,
-          disclaimer
+          disclaimer,
+          is_legal_document
         )
       `)
       .eq("uploaded_by", user.id)
       .order("created_at", { ascending: false })
 
     if (data) {
-      setHistory(data)
+      const legalOnly = data.filter((doc) => {
+        const analysis = Array.isArray(doc.document_analysis) ? doc.document_analysis[0] : null
+        if (!analysis) return true
+        return analysis.is_legal_document !== false
+      })
+      setHistory(legalOnly)
     }
     setIsLoadingHistory(false)
   }
@@ -324,9 +304,8 @@ function AICaseAnalysisContent() {
                   <CardTitle className="text-xl font-bold">New Analysis</CardTitle>
                 </CardHeader>
                 <CardContent className="p-8">
-                  {caseId ? (
+                  {isReady ? (
                     <UploadZone 
-                      caseId={caseId} 
                       onUploadComplete={handleUploadComplete}
                       onUploadError={(msg) => toast({ title: "Upload Error", description: msg, variant: "destructive" })}
                     />

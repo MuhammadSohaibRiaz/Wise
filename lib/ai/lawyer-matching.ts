@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
 /** Match lawyers whose specializations overlap the given category or text hint (works server + browser). */
 export async function matchLawyersWithCategory(supabase: SupabaseClient, category: string) {
   // Search for lawyers whose specializations array contains the category
@@ -31,10 +35,10 @@ export async function matchLawyersWithCategory(supabase: SupabaseClient, categor
     return []
   }
 
-  // 1. Prepare Category Keywords (Lowercase, remove 'Law', 'Legal', etc.)
   const STOP_WORDS = new Set(['law', 'legal', 'and', 'practice', 'specialist', 'specialization', 'expert'])
   const categoryKeywords = category.toLowerCase()
     .split(/\s+/)
+    .map(w => w.replace(/[^a-z0-9]/g, ""))
     .filter(word => word.length > 2 && !STOP_WORDS.has(word))
 
   if (categoryKeywords.length === 0 && category.length > 0) {
@@ -55,7 +59,7 @@ export async function matchLawyersWithCategory(supabase: SupabaseClient, categor
       return profile.specializations.some((spec: string) => {
         const specLower = spec.toLowerCase()
         return categoryKeywords.some(keyword => {
-          const regex = new RegExp(`\\b${keyword}\\b`, 'i')
+          const regex = new RegExp(`\\b${escapeRegex(keyword)}\\b`, 'i')
           return regex.test(specLower)
         })
       })
@@ -100,9 +104,8 @@ function calculateMatchScore(profile: any, category: string, categoryKeywords: s
     score += 100
   }
   
-  // 2. Keyword overlap bonus (Using regex for whole words)
   categoryKeywords.forEach(keyword => {
-    const regex = new RegExp(`\\b${keyword}\\b`, 'i')
+    const regex = new RegExp(`\\b${escapeRegex(keyword)}\\b`, 'i')
     if (specStrings.some((s: string) => regex.test(s))) {
       score += 50
     }

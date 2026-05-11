@@ -71,6 +71,11 @@ interface Document {
   created_at: string
   uploaded_by: string
   document_analysis?: { id: string; analysis_status: string }[] | null
+  uploader?: {
+    first_name: string | null
+    last_name: string | null
+    user_type: string | null
+  } | null
 }
 
 interface CaseTimelineEventRow {
@@ -247,6 +252,9 @@ export default function LawyerCaseDetailPage() {
           document_analysis (
             id,
             analysis_status
+          ),
+          uploader:profiles!documents_uploaded_by_fkey (
+            first_name, last_name, user_type
           )
         `)
         .eq("case_id", caseId)
@@ -257,7 +265,12 @@ export default function LawyerCaseDetailPage() {
       } else {
         const { data: docsSimple, error: docsSimpleError } = await supabase
           .from("documents")
-          .select("id, file_name, file_url, file_type, document_type, status, created_at, uploaded_by")
+          .select(`
+            id, file_name, file_url, file_type, document_type, status, created_at, uploaded_by,
+            uploader:profiles!documents_uploaded_by_fkey (
+              first_name, last_name, user_type
+            )
+          `)
           .eq("case_id", caseId)
           .order("created_at", { ascending: false })
         if (docsSimpleError) throw docsSimpleError
@@ -294,6 +307,37 @@ export default function LawyerCaseDetailPage() {
     if (caseId) {
       fetchCaseDetail()
     }
+  }, [caseId, fetchCaseDetail])
+
+  useEffect(() => {
+    if (!caseId) return
+    const supabase = createClient()
+    const topic = `lawyer-case-detail-${caseId}-${Date.now()}`
+    const channel = supabase
+      .channel(topic)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "cases", filter: `id=eq.${caseId}` },
+        () => { void fetchCaseDetail() },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "appointments", filter: `case_id=eq.${caseId}` },
+        () => { void fetchCaseDetail() },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "documents", filter: `case_id=eq.${caseId}` },
+        () => { void fetchCaseDetail() },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "case_timeline_events", filter: `case_id=eq.${caseId}` },
+        () => { void fetchCaseDetail() },
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [caseId, fetchCaseDetail])
 
   const fetchAnalysis = async (analysisId: string) => {
@@ -806,45 +850,53 @@ export default function LawyerCaseDetailPage() {
                       <p className="text-sm text-muted-foreground">No documents uploaded yet</p>
                     ) : (
                       <div className="space-y-3">
-                        {documents.map((doc) => (
-                          <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
-                            <div className="flex items-center gap-3">
-                              <FileText className="h-5 w-5 text-muted-foreground" />
-                              <div>
-                                <p className="text-sm font-medium">{doc.file_name}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {doc.document_type || "Document"} • {new Date(doc.created_at).toLocaleDateString()}
-                                </p>
+                        {documents.map((doc) => {
+                          const uploaderName = doc.uploader
+                            ? `${doc.uploader.first_name || ""} ${doc.uploader.last_name || ""}`.trim() || "Unknown"
+                            : "Unknown"
+                          const uploaderRole = doc.uploader?.user_type === "lawyer" ? "Lawyer" : "Client"
+                          const isOwnUpload = doc.uploaded_by === lawyerId
+
+                          return (
+                            <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
+                              <div className="flex items-center gap-3">
+                                <FileText className="h-5 w-5 text-muted-foreground" />
+                                <div>
+                                  <p className="text-sm font-medium">{doc.file_name}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    Uploaded by {isOwnUpload ? "you" : `${uploaderName} (${uploaderRole})`} • {new Date(doc.created_at).toLocaleDateString()}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-xs">
+                                  {doc.status}
+                                </Badge>
+                                {doc.file_url && (
+                                  <Button variant="ghost" size="sm" asChild>
+                                    <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
+                                      View
+                                    </a>
+                                  </Button>
+                                )}
+                                {(doc as { document_analysis?: { id: string }[] }).document_analysis?.[0]?.id && (
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    onClick={() =>
+                                      fetchAnalysis(
+                                        (doc as { document_analysis: { id: string }[] }).document_analysis[0].id,
+                                      )
+                                    }
+                                    disabled={isAnalysisLoading}
+                                  >
+                                    {isAnalysisLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "AI Analysis"}
+                                  </Button>
+                                )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="text-xs">
-                                {doc.status}
-                              </Badge>
-                              {doc.file_url && (
-                                <Button variant="ghost" size="sm" asChild>
-                                  <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
-                                    View
-                                  </a>
-                                </Button>
-                              )}
-                              {(doc as { document_analysis?: { id: string }[] }).document_analysis?.[0]?.id && (
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  onClick={() =>
-                                    fetchAnalysis(
-                                      (doc as { document_analysis: { id: string }[] }).document_analysis[0].id,
-                                    )
-                                  }
-                                  disabled={isAnalysisLoading}
-                                >
-                                  {isAnalysisLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "AI Analysis"}
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     )}
                     

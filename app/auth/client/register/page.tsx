@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { AuthAlert } from "@/components/auth/auth-alert"
 import { createClient } from "@/lib/supabase/client"
+import { Loader2 } from "lucide-react"
 
 export default function ClientRegisterPage() {
   const router = useRouter()
@@ -114,7 +115,7 @@ export default function ClientRegisterPage() {
         setSuccess("Registration successful! Please check your email to confirm your account.")
         setTimeout(() => {
           router.push("/auth/client/sign-in")
-        }, 2000)
+        }, 800)
       }
     } catch (err: any) {
       console.error("Registration error:", err)
@@ -210,6 +211,7 @@ export default function ClientRegisterPage() {
           </div>
 
           <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isLoading ? "Creating account..." : "Create account"}
           </Button>
         </form>

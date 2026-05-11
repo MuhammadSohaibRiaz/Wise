@@ -48,6 +48,11 @@ export default function LawyerRegisterPage() {
       return
     }
 
+    if (!/^PKB-\d{6}$/.test(barLicense.trim())) {
+      setError("Bar license must be in format PKB-XXXXXX (e.g. PKB-123456)")
+      return
+    }
+
     if (!practiceArea.trim()) {
       setError("Please select a primary practice area")
       return
@@ -120,7 +125,7 @@ export default function LawyerRegisterPage() {
           setSuccess("Registration successful! Your account is now pending admin verification. Please check your email to confirm your account.")
         }
 
-        setTimeout(() => router.push("/auth/lawyer/sign-in"), 4000)
+        setTimeout(() => router.push("/auth/lawyer/sign-in"), 1000)
       }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.")
@@ -183,9 +188,18 @@ export default function LawyerRegisterPage() {
             <Label htmlFor="barLicense">Bar License Number</Label>
             <Input
               id="barLicense"
-              placeholder="PKB-XXXXX"
+              placeholder="PKB-123456"
               value={barLicense}
-              onChange={(e) => setBarLicense(e.target.value)}
+              maxLength={10}
+              onChange={(e) => {
+                let v = e.target.value.toUpperCase()
+                if (v.length <= 4) {
+                  v = v.replace(/[^A-Z-]/g, "")
+                } else {
+                  v = v.slice(0, 4) + v.slice(4).replace(/[^0-9]/g, "")
+                }
+                setBarLicense(v)
+              }}
               required
               disabled={isLoading}
             />
