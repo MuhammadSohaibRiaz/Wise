@@ -12,7 +12,6 @@ import {
   Users, 
   Briefcase, 
   LayoutDashboard,
-  AlertTriangle,
   ShieldAlert,
 } from "lucide-react"
 import Link from "next/link"
@@ -55,10 +54,7 @@ export function AdminHeader() {
               <Users className="h-4 w-4" />
               Users
             </Link>
-            <Link href="/admin/disputes" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5">
-              <AlertTriangle className="h-4 w-4 text-red-500" />
-              Disputes
-            </Link>
+            {/* Disputes nav hidden — module disabled for now */}
             <Link href="/admin/security-logs" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5">
               <ShieldAlert className="h-4 w-4 text-amber-600" />
               AI Security
@@ -100,9 +96,7 @@ export function AdminHeader() {
           <Link href="/admin/users" className="block text-sm font-medium px-4 py-2 hover:bg-muted rounded-md">
             Users
           </Link>
-          <Link href="/admin/disputes" className="block text-sm font-medium px-4 py-2 hover:bg-muted rounded-md text-red-600">
-            Disputes
-          </Link>
+          {/* Disputes nav hidden — module disabled for now */}
           <Link href="/admin/security-logs" className="block text-sm font-medium px-4 py-2 hover:bg-muted rounded-md">
             AI Security
           </Link>
