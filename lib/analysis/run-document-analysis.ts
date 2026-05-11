@@ -259,6 +259,17 @@ export async function runDocumentAnalysis(
     } = analysisData
     insertRes = await tryInsert({ ...rest, is_legal_document: isLegalDoc })
   }
+  if (insertRes.error) {
+    console.warn("[Analysis] Fallback with is_legal_document failed, trying minimal:", insertRes.error.message)
+    const {
+      confidence_score: _c2,
+      detected_language: _d2,
+      processing_time_ms: _p2,
+      ai_model_version: _a2,
+      ...minimal
+    } = analysisData
+    insertRes = await tryInsert(minimal)
+  }
 
   if (insertRes.error || !insertRes.data?.id) {
     console.error("[Analysis] Database Insert Error:", insertRes.error)

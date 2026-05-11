@@ -219,38 +219,16 @@ function AICaseAnalysisContent() {
       const response = await fetch("/api/analyze-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentId, async: true }),
+        body: JSON.stringify({ documentId }),
       })
 
       const data = await response.json()
 
       if (!response.ok) throw new Error(data.error || "Analysis failed")
 
-      let analysisPayload: Record<string, unknown>
-      let recommended: unknown[] = []
-      let isLegalDocument = true
-
-      if (data.queued && data.jobId) {
-        toast({
-          title: "Processing",
-          description: "Your document is in the analysis queue. This usually takes under a minute.",
-        })
-        const job = await pollAnalysisJob(data.jobId as string)
-        if (job.status === "failed") {
-          throw new Error(job.error_message || "Analysis failed")
-        }
-        const payload = job.result_payload
-        if (!payload?.analysis) {
-          throw new Error("Analysis finished but no result was stored. Try again or contact support.")
-        }
-        analysisPayload = payload.analysis as Record<string, unknown>
-        recommended = Array.isArray(payload.recommendedLawyers) ? payload.recommendedLawyers : []
-        isLegalDocument = payload.isLegalDocument !== false
-      } else {
-        analysisPayload = (data.analysis || {}) as Record<string, unknown>
-        recommended = data.recommendedLawyers || []
-        isLegalDocument = data.isLegalDocument !== false
-      }
+      const analysisPayload = (data.analysis || {}) as Record<string, unknown>
+      const recommended = data.recommendedLawyers || []
+      const isLegalDocument = data.isLegalDocument !== false
 
       if (isLegalDocument === false) {
         toast({
