@@ -55,7 +55,7 @@ export function Chat({ onClose }: { onClose: () => void }) {
   const activeCaseId = caseIdFromQuery || caseIdFromPath
   const caseContextPath = activeCaseId ? `${pathname}?case=${activeCaseId}` : pathname
   
-  const { messages, sendMessage, setMessages, status, error: chatError } = useChat({
+  const { messages, sendMessage, setMessages, status, stop, error: chatError } = useChat({
     transport: new DefaultChatTransport({ api: '/api/chat' }),
     body: {
       currentPath: caseContextPath
@@ -160,6 +160,7 @@ export function Chat({ onClose }: { onClose: () => void }) {
 
     setIsClearingHistory(true);
     try {
+      stop();
       const params = buildHistoryParams();
       if (!activeCaseId) params.set("scope", "global");
       const res = await fetch(`/api/chat/history?${params.toString()}`, { method: "DELETE" });
@@ -177,7 +178,7 @@ export function Chat({ onClose }: { onClose: () => void }) {
     } finally {
       setIsClearingHistory(false);
     }
-  }, [activeCaseId, buildHistoryParams, setMessages]);
+  }, [activeCaseId, buildHistoryParams, setMessages, stop]);
 
   const normalizePath = useCallback(
     (path: string | null | undefined) => {

@@ -442,22 +442,7 @@ export default function ClientDashboardPage() {
           </Card>
         </Link>
 
-        <Link href="/client/ai-recommendations">
-          <Card className="border-2 border-primary/20 hover:border-primary/40 transition-colors cursor-pointer min-h-[180px] flex flex-col">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <AlertCircle className="h-5 w-5 text-primary" />
-                AI Recommendations
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex-grow flex flex-col">
-              <p className="text-sm text-muted-foreground mb-4 line-clamp-2">View AI-matched lawyers for your case</p>
-              <Button variant="outline" size="sm">
-                View Now
-              </Button>
-            </CardContent>
-          </Card>
-        </Link>
+        {/* AI Recommendations card hidden — page still accessible at /client/ai-recommendations */}
       </section>
 
       {/* Recommended Lawyers */}
@@ -480,11 +465,7 @@ export default function ClientDashboardPage() {
                 <Link href="/client/analysis" className="text-primary underline">
                   analyzing a document
                 </Link>{" "}
-                or describe your case on{" "}
-                <Link href="/client/ai-recommendations" className="text-primary underline">
-                  AI Recommendations
-                </Link>
-                .
+                to get matched with the right lawyer.
               </p>
             </CardContent>
           </Card>

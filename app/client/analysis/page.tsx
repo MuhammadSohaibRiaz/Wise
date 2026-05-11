@@ -274,6 +274,23 @@ function AICaseAnalysisContent() {
     }
   }
 
+  const handleDeleteDocument = async (documentId: string, fileName: string) => {
+    if (!window.confirm(`Delete "${fileName}" and its analysis? This cannot be undone.`)) return
+
+    try {
+      const supabase = createClient()
+
+      await supabase.from("document_analysis").delete().eq("document_id", documentId)
+      await supabase.from("documents").delete().eq("id", documentId)
+
+      setHistory((prev) => prev.filter((d: any) => d.id !== documentId))
+
+      toast({ title: "Deleted", description: `"${fileName}" has been removed.` })
+    } catch (err: any) {
+      toast({ title: "Delete failed", description: err.message || "Could not delete document.", variant: "destructive" })
+    }
+  }
+
   return (
     <main className="max-w-6xl mx-auto space-y-8 pb-20">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -426,39 +443,65 @@ function AICaseAnalysisContent() {
                 </div>
               ) : (
                 <div className="grid gap-4">
-                  {history.map((item) => (
-                    <Card key={item.id} className="hover:border-primary/50 transition-colors cursor-pointer" onClick={() => {
-                        if (item.document_analysis?.length > 0) {
-                          loadExistingAnalysis(item.id);
-                          setActiveTab("analyze");
-                        } else {
-                          toast({ title: "Processing", description: "Analysis is still in progress for this document." })
-                        }
-                      }}>
-                      <CardContent className="p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="bg-primary/10 p-2 rounded">
-                            <FileText className="h-5 w-5 text-primary" />
+                  {history.map((item) => {
+                    const hasAnalysis = Array.isArray(item.document_analysis) && item.document_analysis.length > 0
+                    const riskLevel = hasAnalysis ? item.document_analysis[0]?.risk_level : null
+
+                    return (
+                      <Card key={item.id} className="hover:border-primary/50 transition-colors cursor-pointer" onClick={() => {
+                          if (hasAnalysis) {
+                            loadExistingAnalysis(item.id);
+                            setActiveTab("analyze");
+                          } else {
+                            toast({ title: "Processing", description: "Analysis is still in progress for this document." })
+                          }
+                        }}>
+                        <CardContent className="p-4 flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="bg-primary/10 p-2 rounded">
+                              <FileText className="h-5 w-5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-semibold">{item.file_name}</p>
+                              <p className="text-xs text-muted-foreground">{new Date(item.created_at).toLocaleDateString()}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-semibold">{item.file_name}</p>
-                            <p className="text-xs text-muted-foreground">{new Date(item.created_at).toLocaleDateString()}</p>
+                          <div className="flex items-center gap-3">
+                            {hasAnalysis && riskLevel && riskLevel !== "N/A" && (
+                              <Badge variant="outline" className={cn(
+                                riskLevel === "High" ? "bg-red-50 text-red-700 border-red-200" :
+                                riskLevel === "Medium" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                                "bg-green-50 text-green-700 border-green-200"
+                              )}>
+                                {riskLevel} Risk
+                              </Badge>
+                            )}
+                            {hasAnalysis && (
+                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                <CheckCircle className="h-3 w-3 mr-1" /> Analyzed
+                              </Badge>
+                            )}
+                            {item.status === "failed" && (
+                              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                                Failed
+                              </Badge>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDeleteDocument(item.id, item.file_name)
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <Badge variant="outline" className={cn(
-                            item.status === "completed" ? "bg-green-50 text-green-700" : 
-                            item.status === "failed" ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"
-                          )}>
-                            {item.status}
-                          </Badge>
-                          <Button variant="ghost" size="icon">
-                            <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
               )}
             </CardContent>
