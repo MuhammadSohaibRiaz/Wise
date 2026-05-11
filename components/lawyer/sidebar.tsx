@@ -154,7 +154,7 @@ export function LawyerSidebar({ onNavigate }: LawyerSidebarProps) {
                             size="sm"
                         >
                             <Gavel className="h-4 w-4 mr-2" />
-                            Judge Simulation
+                            Judicial Perspective
                         </Button>
                     </Link>
                 </div>

@@ -172,9 +172,9 @@ export function JudgeSimulationView({ userRole }: JudgeSimulationViewProps) {
               </div>
               <Badge variant="outline" className="text-xs uppercase tracking-wider">Experimental</Badge>
             </div>
-            <CardTitle className="text-2xl">AI Judge Simulation</CardTitle>
+            <CardTitle className="text-2xl">AI Judicial Perspective Simulator</CardTitle>
             <CardDescription>
-              Present your case to our AI Judge to receive a simulated ruling based on Pakistani Law.
+              Present your case to explore how a judicial perspective might evaluate your arguments under Pakistani Law.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">

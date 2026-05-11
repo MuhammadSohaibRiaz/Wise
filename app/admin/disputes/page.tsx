@@ -44,6 +44,7 @@ export default function AdminDisputesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [selectedDispute, setSelectedDispute] = useState<Dispute | null>(null)
   const [adminNotes, setAdminNotes] = useState("")
+  const [resolutionOutcome, setResolutionOutcome] = useState<"proceed_completion" | "reopen_case">("proceed_completion")
   const [isResolving, setIsResolving] = useState(false)
   const { toast } = useToast()
   const supabase = createClient()
@@ -86,27 +87,40 @@ export default function AdminDisputesPage() {
 
     try {
       setIsResolving(true)
+
       const { error } = await supabase
         .from("case_disputes")
         .update({
           status: "resolved",
           admin_notes: adminNotes,
-          resolved_at: new Date().toISOString()
+          resolved_at: new Date().toISOString(),
         })
         .eq("id", selectedDispute.id)
 
       if (error) throw error
 
-      // Also update case status to 'closed' or back to 'in_progress'?
-      // For now, let's just resolve the dispute.
-      
+      const newCaseStatus = resolutionOutcome === "proceed_completion" ? "pending_completion" : "in_progress"
+      const { error: caseErr } = await supabase
+        .from("cases")
+        .update({ status: newCaseStatus, updated_at: new Date().toISOString() })
+        .eq("id", selectedDispute.case_id)
+
+      if (caseErr) {
+        console.warn("[Disputes] Case status update failed:", caseErr.message)
+      }
+
+      const outcomeLabel = resolutionOutcome === "proceed_completion"
+        ? "Case moved to pending completion — client can now confirm."
+        : "Case reopened — lawyer should continue working on it."
+
       toast({
         title: "Dispute Resolved",
-        description: "The dispute has been marked as resolved.",
+        description: outcomeLabel,
       })
-      
+
       setSelectedDispute(null)
       setAdminNotes("")
+      setResolutionOutcome("proceed_completion")
       fetchDisputes()
     } catch (error: any) {
       toast({
@@ -222,9 +236,26 @@ export default function AdminDisputesPage() {
           
           <div className="py-4 space-y-4">
             <div className="p-4 bg-muted rounded-lg text-sm italic">
-              " {selectedDispute?.description} "
+              &ldquo;{selectedDispute?.description}&rdquo;
             </div>
-            
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Resolution Outcome</label>
+              <select
+                value={resolutionOutcome}
+                onChange={(e) => setResolutionOutcome(e.target.value as typeof resolutionOutcome)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="proceed_completion">Proceed to Completion — client can confirm &amp; review</option>
+                <option value="reopen_case">Reopen Case — lawyer must continue working</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                {resolutionOutcome === "proceed_completion"
+                  ? "The case will be set to \"Pending Completion\". The client will see the Confirm/Dispute buttons again."
+                  : "The case will be set back to \"In Progress\". The lawyer should address the issues before requesting completion again."}
+              </p>
+            </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Admin Resolution Notes</label>
               <Textarea 

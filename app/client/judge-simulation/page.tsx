@@ -6,9 +6,9 @@ export default function ClientJudgeSimulationPage() {
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
       <div className="mb-8">
-        <h1 className="text-4xl font-bold tracking-tight text-foreground">Legal Argument Stress Test</h1>
+        <h1 className="text-4xl font-bold tracking-tight text-foreground">AI Judicial Perspective Simulator</h1>
         <p className="text-muted-foreground mt-2 text-lg">
-          AI-assisted judicial perspective simulation — explore strengths and risks of your position. Not a prediction of court outcomes.
+          Stress-test your legal arguments from a judicial viewpoint — explore strengths and risks of your position. Not a prediction of court outcomes.
         </p>
       </div>
       

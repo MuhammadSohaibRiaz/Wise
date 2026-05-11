@@ -29,7 +29,7 @@ const navItems = [
   { href: "/client/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/client/cases", label: "My Cases", icon: Briefcase },
   { href: "/client/analysis", label: "AI Case Analysis", icon: Brain },
-  { href: "/client/judge-simulation", label: "Judge Simulation", icon: Gavel },
+  { href: "/client/judge-simulation", label: "Judicial Perspective", icon: Gavel },
   { href: "/client/messages", label: "Messages", icon: MessageSquare },
   { href: "/client/payments", label: "Payments", icon: CreditCard },
   { href: "/client/reviews", label: "Reviews", icon: Star },
