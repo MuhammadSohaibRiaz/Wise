@@ -900,6 +900,8 @@ export function Chat({ onClose }: { onClose: () => void }) {
           </div>
         ))}
         {(() => {
+          if (messages.length === 0) return false;
+          if (isClearingHistory) return false;
           const last = messages[messages.length - 1] as any;
           const lastLooksLikeAssistantError =
             last?.role === "assistant" && getMessageText(last).trimStart().startsWith("Error:");
@@ -980,9 +982,9 @@ export function Chat({ onClose }: { onClose: () => void }) {
               "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
               isListening && "placeholder:text-primary placeholder:font-bold"
             )}
-            disabled={isLoading || isUploading || !historyReady}
+            disabled={(isLoading && messages.length > 0) || isUploading || !historyReady}
           />
-          <Button type="submit" size="icon" disabled={isLoading || isUploading || !historyReady || safeInput.trim().length === 0}>
+          <Button type="submit" size="icon" disabled={(isLoading && messages.length > 0) || isUploading || !historyReady || safeInput.trim().length === 0}>
             <Send className="h-5 w-5" />
           </Button>
         </form>

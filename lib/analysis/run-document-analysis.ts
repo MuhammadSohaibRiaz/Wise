@@ -262,27 +262,36 @@ ${sanitizedText}
 Return ONLY the JSON object. No markdown, no explanation, no preamble.`
 
   let completion
-  if (isImageMode) {
-    completion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: dataUrl } },
-          ],
-        },
-      ],
-      model: "meta-llama/llama-4-scout-17b-16e-instruct",
-      temperature: 0,
-    })
-  } else {
-    completion = await groq.chat.completions.create({
-      messages: [{ role: "user", content: prompt }],
-      model: "llama-3.3-70b-versatile",
-      temperature: 0,
-      response_format: { type: "json_object" },
-    })
+  try {
+    if (isImageMode) {
+      completion = await groq.chat.completions.create({
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+        model: "meta-llama/llama-4-scout-17b-16e-instruct",
+        temperature: 0,
+      })
+    } else {
+      completion = await groq.chat.completions.create({
+        messages: [{ role: "user", content: prompt }],
+        model: "llama-3.3-70b-versatile",
+        temperature: 0,
+        response_format: { type: "json_object" },
+      })
+    }
+  } catch (groqError: unknown) {
+    const msg = groqError instanceof Error ? groqError.message : String(groqError)
+    if (msg.includes("rate limit") || msg.includes("Rate limit") || msg.includes("429") || msg.includes("TPD")) {
+      await supabase.from("documents").update({ status: "pending" }).eq("id", documentId)
+      throw new Error("AI service daily limit reached. Please try again later or contact support.")
+    }
+    throw groqError
   }
 
   const responseText = completion.choices[0].message.content || "{}"
