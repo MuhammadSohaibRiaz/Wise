@@ -16,7 +16,7 @@ interface Case {
   id: string
   title: string
   description: string | null
-  status: "open" | "in_progress" | "completed" | "closed"
+  status: "open" | "in_progress" | "pending_completion" | "completed" | "closed"
   case_type: string | null
   hourly_rate: number | null
   created_at: string
@@ -43,6 +43,10 @@ const statusConfig: Record<Case["status"], { label: string; className: string }>
   in_progress: {
     label: "In Progress",
     className: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-200 dark:border-orange-800",
+  },
+  pending_completion: {
+    label: "Completion Requested",
+    className: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800",
   },
   completed: {
     label: "Completed",
@@ -316,7 +320,7 @@ export default function MyCasesPage() {
       ) : (
         <div className="space-y-4">
           {cases.map((caseItem) => {
-            const statusInfo = statusConfig[caseItem.status]
+            const statusInfo = statusConfig[caseItem.status] ?? statusConfig.in_progress
             const lawyerName = caseItem.lawyer
               ? `${caseItem.lawyer.first_name || ""} ${caseItem.lawyer.last_name || ""}`.trim() || "Unknown Lawyer"
               : "No lawyer assigned"

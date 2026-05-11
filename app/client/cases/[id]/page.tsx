@@ -354,7 +354,7 @@ export default function ClientCaseDetailPage() {
     )
   }
 
-  const statusInfo = statusConfig[caseDetail.status]
+  const statusInfo = statusConfig[caseDetail.status] ?? statusConfig.in_progress
   const lawyerName = caseDetail.lawyer
     ? `${caseDetail.lawyer.first_name || ""} ${caseDetail.lawyer.last_name || ""}`.trim() || "Unknown Lawyer"
     : "No lawyer assigned"
