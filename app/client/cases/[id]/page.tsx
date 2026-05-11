@@ -30,7 +30,9 @@ import { ReviewModal } from "@/components/client/review-modal"
 import { DisputeModal } from "@/components/cases/dispute-modal"
 import { createNotification } from "@/lib/notifications"
 import { appointmentDisplayLabel } from "@/lib/appointment-display"
-import { caseTimelineEventDetail, formatCaseTimelineEventLabel } from "@/lib/case-timeline"
+import { deriveCaseLifecycleStages } from "@/lib/case-lifecycle-stages"
+import { CaseProgressStepper } from "@/components/cases/case-progress-stepper"
+import { CaseActivityFeed } from "@/components/cases/case-activity-feed"
 
 interface CaseDetail {
   id: string
@@ -258,7 +260,7 @@ export default function ClientCaseDetailPage() {
       
       toast({
         title: "Case Completed",
-        description: "The case has been marked as completed. Please share your feedback.",
+        description: "You can now leave a review for your lawyer.",
       })
 
       // Show review modal after a short delay
@@ -391,7 +393,7 @@ export default function ClientCaseDetailPage() {
                   Lawyer has requested case completion
                 </h2>
                 <p className="text-purple-700 dark:text-purple-400 mt-1">
-                  Please review the work done. If you are satisfied, confirm the completion to close the case.
+                  Please review the work done. If satisfied, confirm completion — you&apos;ll then be able to leave a review.
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
@@ -432,20 +434,38 @@ export default function ClientCaseDetailPage() {
 
       {caseDetail.status === "completed" && (
         <Card className="border-green-200 bg-green-50 dark:bg-green-950/20 border-2">
-          <CardContent className="p-6 flex items-center justify-between gap-4">
+          <CardContent className="p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <CheckCircle2 className="h-6 w-6 text-green-600" />
-              <p className="font-semibold text-green-900 dark:text-green-400">
-                This case has been successfully completed.
-              </p>
+              <CheckCircle2 className="h-6 w-6 text-green-600 shrink-0" />
+              <div>
+                <p className="font-semibold text-green-900 dark:text-green-400">
+                  Case completed successfully
+                </p>
+                <p className="text-sm text-green-700 dark:text-green-500">
+                  Please rate your experience with the lawyer to help other clients.
+                </p>
+              </div>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setShowReviewModal(true)}>
+            <Button onClick={() => setShowReviewModal(true)} className="shrink-0">
               <Star className="h-4 w-4 mr-2 text-yellow-500 fill-yellow-500" />
-              Share Review
+              Leave a Review
             </Button>
           </CardContent>
         </Card>
       )}
+
+      {/* Workflow Progress Stepper */}
+      <Card>
+        <CardContent className="pt-6 pb-4">
+          <CaseProgressStepper
+            stages={deriveCaseLifecycleStages({
+              caseStatus: caseDetail.status,
+              appointments,
+              timelineEventTypes: timelineEvents.map((e) => e.event_type),
+            })}
+          />
+        </CardContent>
+      </Card>
 
       <Tabs value={caseTab} onValueChange={setCaseTab} className="space-y-6">
         <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-muted/40 p-1">
@@ -455,7 +475,7 @@ export default function ClientCaseDetailPage() {
           </TabsTrigger>
           <TabsTrigger value="timeline" className="gap-1.5">
             <History className="h-4 w-4 shrink-0" />
-            Timeline
+            Activity
           </TabsTrigger>
           <TabsTrigger value="documents" className="gap-1.5">
             <FileText className="h-4 w-4 shrink-0" />
@@ -532,33 +552,10 @@ export default function ClientCaseDetailPage() {
         <TabsContent value="timeline" className="mt-0">
           <Card>
             <CardHeader>
-              <CardTitle>Case timeline</CardTitle>
+              <CardTitle>Case Activity</CardTitle>
             </CardHeader>
             <CardContent>
-              {timelineEvents.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No timeline events yet. Key steps (booking, payment, consultation) will appear here as they happen.
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {timelineEvents.map((ev, idx) => {
-                    const detail = caseTimelineEventDetail(ev.event_type, ev.metadata)
-                    return (
-                      <div key={ev.id} className="flex gap-4">
-                        <div className="flex flex-col items-center">
-                          <div className="h-2 w-2 rounded-full bg-primary mt-1.5" />
-                          {idx < timelineEvents.length - 1 && <div className="h-full min-h-[1rem] w-px bg-border mt-2" />}
-                        </div>
-                        <div className="flex-1 pb-4">
-                          <p className="text-sm font-medium">{formatCaseTimelineEventLabel(ev.event_type)}</p>
-                          <p className="text-xs text-muted-foreground">{new Date(ev.created_at).toLocaleString()}</p>
-                          {detail && <p className="text-xs text-muted-foreground mt-1">{detail}</p>}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+              <CaseActivityFeed events={timelineEvents} />
             </CardContent>
           </Card>
         </TabsContent>

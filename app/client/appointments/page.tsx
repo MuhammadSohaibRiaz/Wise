@@ -110,7 +110,7 @@ export default function ClientAppointmentsPage() {
       window.history.replaceState({}, "", "/client/appointments")
     }
 
-    const fetchAppointments = async () => {
+    const fetchAppointments = async (retryCount = 0) => {
       try {
         setIsLoading(true)
         const supabase = createClient()
@@ -149,7 +149,13 @@ export default function ClientAppointmentsPage() {
           .eq("client_id", sessionData.session.user.id)
           .order("created_at", { ascending: false })
 
-        if (fetchError) throw fetchError
+        if (fetchError) {
+          if (retryCount < 2) {
+            await new Promise((r) => setTimeout(r, 1500))
+            return fetchAppointments(retryCount + 1)
+          }
+          throw fetchError
+        }
 
         // Fetch payment status for each appointment
         const appointmentIds = (data || []).map((apt: any) => apt.id)
@@ -312,8 +318,8 @@ export default function ClientAppointmentsPage() {
         prev.map((apt) => (apt.id === appointmentId ? { ...apt, status: "attended" as const } : apt)),
       )
       toast({
-        title: "Consultation recorded",
-        description: "Marked as held. This is separate from closing the legal case.",
+        title: "Consultation marked as held",
+        description: "The lawyer can now request case completion when the case work is done. You'll confirm it from the Case page.",
       })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Could not mark consultation as held"
@@ -536,7 +542,7 @@ export default function ClientAppointmentsPage() {
                         {processingId === appointment.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
-                          "Mark consultation held"
+                          "Mark Consultation Held"
                         )}
                       </Button>
                     </div>
@@ -551,9 +557,17 @@ export default function ClientAppointmentsPage() {
                       {processingId === appointment.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
-                        "Mark consultation held"
+                        "Mark Consultation Held"
                       )}
                     </Button>
+                  )}
+                  {appointment.status === "attended" && (
+                    <div className="text-right">
+                      <p className="text-xs text-green-700 dark:text-green-400 font-medium">Consultation held</p>
+                      <p className="text-xs text-muted-foreground">
+                        Waiting for lawyer to request case completion
+                      </p>
+                    </div>
                   )}
                   {appointment.status === "pending" && (
                     <p className="text-xs text-muted-foreground text-right">Waiting for lawyer response</p>

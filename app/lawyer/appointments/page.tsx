@@ -395,8 +395,8 @@ export default function LawyerAppointmentsPage() {
         prev.map((apt) => (apt.id === appointmentId ? { ...apt, status: "attended" as const } : apt)),
       )
       toast({
-        title: "Consultation recorded",
-        description: "Marked as held (attended). Billing can use this session separately from case closure.",
+        title: "Consultation marked as held",
+        description: "Next step: go to the Case Detail page and click 'Request Case Completion' when case work is done.",
       })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Could not mark consultation as held"
@@ -927,6 +927,17 @@ export default function LawyerAppointmentsPage() {
                             : appointmentStatusLabel(appointment.status)}
                         </span>
                         <p className="text-[11px] text-muted-foreground">Workflow: {appointmentWorkflowPhase(appointment.status)}</p>
+                        {appointment.status === "attended" && (
+                          <div className="mt-1 text-right">
+                            <p className="text-xs text-green-700 dark:text-green-400 font-medium">Consultation held</p>
+                            <a
+                              href={`/lawyer/cases/${appointment.case.id}`}
+                              className="text-xs text-primary hover:underline"
+                            >
+                              Go to Case → Request Case Completion
+                            </a>
+                          </div>
+                        )}
                         {(appointment.status === "scheduled" || appointment.status === "rescheduled") && (
                           <>
                             <Button
@@ -939,7 +950,7 @@ export default function LawyerAppointmentsPage() {
                               {processingId === appointment.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
-                                "Mark consultation held"
+                                "Mark Consultation Held"
                               )}
                             </Button>
                             <Button

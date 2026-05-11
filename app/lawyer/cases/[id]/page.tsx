@@ -29,7 +29,9 @@ import { LawyerDashboardHeader } from "@/components/lawyer/dashboard-header"
 import { createNotification } from "@/lib/notifications"
 import { appointmentDisplayLabel } from "@/lib/appointment-display"
 import { isAppointmentBillable } from "@/lib/appointments-status"
-import { caseTimelineEventDetail, formatCaseTimelineEventLabel } from "@/lib/case-timeline"
+import { deriveCaseLifecycleStages } from "@/lib/case-lifecycle-stages"
+import { CaseProgressStepper } from "@/components/cases/case-progress-stepper"
+import { CaseActivityFeed } from "@/components/cases/case-activity-feed"
 
 interface CaseDetail {
   id: string
@@ -324,6 +326,16 @@ export default function LawyerCaseDetailPage() {
       return
     }
 
+    if (statusToApply === "pending_completion" && !hasAttendedAppointment) {
+      toast({
+        title: "Consultation required",
+        description:
+          "At least one consultation must be marked as held before requesting completion.",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       setIsSaving(true)
       const supabase = createClient()
@@ -357,13 +369,19 @@ export default function LawyerCaseDetailPage() {
         )
       }
 
-      // Update local state
       setCaseDetail({ ...caseDetail, status: statusToApply, updated_at: new Date().toISOString() })
 
-      toast({
-        title: "Success",
-        description: "Case status updated successfully.",
-      })
+      if (statusToApply === "pending_completion") {
+        toast({
+          title: "Case completion requested",
+          description: "The client has been notified. They will confirm completion and can then leave a review.",
+        })
+      } else {
+        toast({
+          title: "Success",
+          description: "Case status updated successfully.",
+        })
+      }
     } catch (error) {
       console.error("[v0] Status update error:", error)
       toast({
@@ -376,6 +394,10 @@ export default function LawyerCaseDetailPage() {
     }
   }
 
+  const hasAttendedAppointment = appointments.some(
+    (a) => a.status === "attended" || a.status === "completed",
+  )
+
   const handleRequestCompletion = async () => {
     if (!caseDetail) return
     if (caseDetail.status !== "in_progress") {
@@ -387,8 +409,17 @@ export default function LawyerCaseDetailPage() {
       return
     }
 
+    if (!hasAttendedAppointment) {
+      toast({
+        title: "Consultation required",
+        description:
+          "At least one consultation must be marked as held before you can request case completion.",
+        variant: "destructive",
+      })
+      return
+    }
+
     setSelectedStatus("pending_completion")
-    // Let the existing status update flow do the DB update + notification.
     await handleStatusUpdate("pending_completion")
   }
 
@@ -472,21 +503,34 @@ export default function LawyerCaseDetailPage() {
       <div className="px-4 py-4 md:px-6 md:py-6 lg:px-8 max-w-7xl mx-auto">
           <main className="space-y-6">
         {caseDetail.status === "in_progress" && (
-          <Card className="border-purple-200 bg-purple-50 dark:bg-purple-950/20 border-2">
+          <Card className={`border-2 ${hasAttendedAppointment ? "border-purple-200 bg-purple-50 dark:bg-purple-950/20" : "border-amber-200 bg-amber-50 dark:bg-amber-950/20"}`}>
             <CardContent className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <p className="font-bold text-purple-900 dark:text-purple-300">Ready to close this case?</p>
-                <p className="text-sm text-purple-700 dark:text-purple-400">
-                  Request completion so the client can confirm and leave a review.
-                </p>
+                {hasAttendedAppointment ? (
+                  <>
+                    <p className="font-bold text-purple-900 dark:text-purple-300">Ready to close this case?</p>
+                    <p className="text-sm text-purple-700 dark:text-purple-400">
+                      Request case completion so the client can confirm and leave a review.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-bold text-amber-900 dark:text-amber-300">Consultation required first</p>
+                    <p className="text-sm text-amber-700 dark:text-amber-400">
+                      At least one consultation must be marked as &ldquo;held&rdquo; before you can request case completion.
+                      The client or you can mark it from the Appointments page.
+                    </p>
+                  </>
+                )}
               </div>
               <Button
-                className="bg-purple-700 hover:bg-purple-800 text-white"
+                className={hasAttendedAppointment ? "bg-purple-700 hover:bg-purple-800 text-white" : ""}
+                variant={hasAttendedAppointment ? "default" : "outline"}
                 onClick={handleRequestCompletion}
-                disabled={isSaving}
+                disabled={isSaving || !hasAttendedAppointment}
               >
                 {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                Request Completion
+                Request Case Completion
               </Button>
             </CardContent>
           </Card>
@@ -511,6 +555,19 @@ export default function LawyerCaseDetailPage() {
               </div>
             </div>
 
+            {/* Workflow Progress Stepper */}
+            <Card>
+              <CardContent className="pt-6 pb-4">
+                <CaseProgressStepper
+                  stages={deriveCaseLifecycleStages({
+                    caseStatus: caseDetail.status,
+                    appointments,
+                    timelineEventTypes: timelineEvents.map((e) => e.event_type),
+                  })}
+                />
+              </CardContent>
+            </Card>
+
             <Tabs value={caseTab} onValueChange={setCaseTab} className="space-y-6">
               <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-muted/40 p-1">
                 <TabsTrigger value="overview" className="gap-1.5">
@@ -519,7 +576,7 @@ export default function LawyerCaseDetailPage() {
                 </TabsTrigger>
                 <TabsTrigger value="timeline" className="gap-1.5">
                   <History className="h-4 w-4 shrink-0" />
-                  Timeline
+                  Activity
                 </TabsTrigger>
                 <TabsTrigger value="documents" className="gap-1.5">
                   <FileText className="h-4 w-4 shrink-0" />
@@ -613,7 +670,9 @@ export default function LawyerCaseDetailPage() {
                             <SelectContent>
                               <SelectItem value="open">Open</SelectItem>
                               <SelectItem value="in_progress">In Progress</SelectItem>
-                              <SelectItem value="pending_completion">Request Completion</SelectItem>
+                              <SelectItem value="pending_completion" disabled={!hasAttendedAppointment}>
+                                Request Case Completion {!hasAttendedAppointment ? "(needs attended consult)" : ""}
+                              </SelectItem>
                               <SelectItem value="completed" disabled>Completed (Client confirmed)</SelectItem>
                               <SelectItem value="closed">Closed</SelectItem>
                             </SelectContent>
@@ -704,39 +763,10 @@ export default function LawyerCaseDetailPage() {
               <TabsContent value="timeline" className="mt-0">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Case timeline</CardTitle>
+                    <CardTitle>Case Activity</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {timelineEvents.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No timeline events yet. Booking, payments, and consultation milestones will appear here.
-                      </p>
-                    ) : (
-                      <div className="space-y-6 relative before:absolute before:inset-0 before:ml-1.5 before:-translate-x-px before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
-                        {timelineEvents.map((ev) => {
-                            const detail = caseTimelineEventDetail(ev.event_type, ev.metadata)
-                            return (
-                              <div
-                                key={ev.id}
-                                className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active"
-                              >
-                                <div className="flex items-center justify-center w-3 h-3 rounded-full border border-white bg-primary text-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2" />
-                                <div className="w-[calc(100%-2rem)] md:w-[calc(50%-2rem)] p-4 rounded border border-border bg-card shadow-sm">
-                                  <div className="flex items-center justify-between space-x-2 mb-1">
-                                    <div className="font-bold text-sm text-foreground">
-                                      {formatCaseTimelineEventLabel(ev.event_type)}
-                                    </div>
-                                    <time className="font-medium text-[10px] text-muted-foreground uppercase">
-                                      {new Date(ev.created_at).toLocaleString()}
-                                    </time>
-                                  </div>
-                                  {detail && <div className="text-xs text-muted-foreground">{detail}</div>}
-                                </div>
-                              </div>
-                            )
-                          })}
-                      </div>
-                    )}
+                    <CaseActivityFeed events={timelineEvents} />
                   </CardContent>
                 </Card>
               </TabsContent>

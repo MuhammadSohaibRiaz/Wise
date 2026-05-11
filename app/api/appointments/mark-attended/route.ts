@@ -43,9 +43,9 @@ export async function POST(req: NextRequest) {
 
     const start = new Date(row.scheduled_at).getTime()
     const now = Date.now()
-    const allowEarlyMs = 30 * 60_000
+    const allowEarlyMs = 7 * 24 * 60 * 60_000
     if (now < start - allowEarlyMs) {
-      return NextResponse.json({ error: "Consultation has not started yet (can mark from 30 min before start)" }, { status: 400 })
+      return NextResponse.json({ error: "Consultation slot is too far in the future to mark as held (7-day window)" }, { status: 400 })
     }
 
     const { error: updErr } = await supabase
