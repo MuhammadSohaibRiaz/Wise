@@ -290,6 +290,16 @@ export default function LawyerAppointmentsPage() {
         },
       })
 
+      // Email notification sent to client — see /api/notify/email
+      fetch("/api/notify/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          template: "appointment_accepted",
+          data: { client_id: targetAppointment.client.id, lawyer_id: lawyerId, case_title: targetAppointment.case.title },
+        }),
+      }).catch(() => {})
+
       toast({
         title: "Success",
         description: "Appointment request accepted. The client has been notified.",

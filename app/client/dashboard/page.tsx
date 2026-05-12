@@ -6,11 +6,11 @@ import { useEffect, useState, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { AlertCircle, Calendar, FileText, DollarSign, MessageSquare, Star, Loader2 } from "lucide-react"
+import { AlertCircle, Calendar, FileText, DollarSign, MessageSquare, Star, Loader2, Sparkles } from "lucide-react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
-import { matchLawyersWithCategory } from "@/lib/ai/lawyer-matching"
+import { matchLawyersWithCategory, generateRecommendationReason } from "@/lib/ai/lawyer-matching"
 import { formatDistanceToNow } from "date-fns"
 import {
   PendingCaseReviewDialog,
@@ -476,15 +476,25 @@ export default function ClientDashboardPage() {
                 Array.isArray(lawyer.specializations) && lawyer.specializations.length > 0
                   ? lawyer.specializations.slice(0, 2).join(", ")
                   : "Legal practice"
+              const reason = generateRecommendationReason({
+                specializations: lawyer.specializations ?? [],
+                rating: Number(lawyer.rating) || 0,
+                caseType: matchHint,
+                verified: lawyer.verified,
+              })
               return (
                 <Card key={lawyer.id}>
-                  <CardHeader>
+                  <CardHeader className="pb-2">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <CardTitle className="text-base">{lawyer.name}</CardTitle>
                         <CardDescription className="line-clamp-2">{spec}</CardDescription>
                       </div>
                       <Badge variant="secondary">{matchPct}% match</Badge>
+                    </div>
+                    <div className="flex items-start gap-1.5 pt-1">
+                      <Sparkles className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-primary/60" />
+                      <p className="text-xs italic text-muted-foreground leading-relaxed">{reason}</p>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">

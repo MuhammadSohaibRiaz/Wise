@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Star, MapPin, Briefcase, Clock, Badge } from "lucide-react"
+import { Star, MapPin, Briefcase, Clock, Badge, Sparkles } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -23,6 +23,7 @@ interface LawyerCardProps {
   response_time_hours: number
   verified: boolean
   availability_status: string | null
+  recommendationReason?: string | null
 }
 
 export function LawyerCard({
@@ -38,6 +39,7 @@ export function LawyerCard({
   response_time_hours,
   verified,
   availability_status,
+  recommendationReason,
 }: LawyerCardProps) {
   const ratingDisplay = formatLawyerRatingLabel(normalizeLawyerAverageRating(average_rating))
   const [bookingOpen, setBookingOpen] = useState(false)
@@ -112,6 +114,14 @@ export function LawyerCard({
                 +{specializations.length - 3} more
               </span>
             )}
+          </div>
+        )}
+
+        {/* AI Recommendation Reason */}
+        {recommendationReason && (
+          <div className="mb-3 flex items-start gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-primary/60" />
+            <p className="text-xs italic text-muted-foreground leading-relaxed">{recommendationReason}</p>
           </div>
         )}
 

@@ -122,3 +122,35 @@ function calculateMatchScore(profile: any, category: string, categoryKeywords: s
 
   return score
 }
+
+/** Build a short (≤120 char) client-side explanation for why a lawyer is recommended. */
+export function generateRecommendationReason(params: {
+  specializations: string[]
+  rating: number
+  caseType?: string | null
+  verified?: boolean
+  totalCases?: number
+}): string {
+  const { specializations, rating, caseType, verified, totalCases } = params
+  const topSpec = specializations[0] || "General Practice"
+  const ratingStr = rating > 0 ? `${rating.toFixed(1)}★` : null
+
+  if (caseType) {
+    const caseTypeLower = caseType.toLowerCase()
+    const matchingSpec = specializations.find(
+      (s) => s.toLowerCase().includes(caseTypeLower) || caseTypeLower.includes(s.toLowerCase()),
+    )
+    if (matchingSpec) {
+      let r = `Matched for your ${caseType} case`
+      if (ratingStr) r += ` · ${ratingStr} rated`
+      if (verified) r += " · Verified"
+      return r.length > 120 ? r.slice(0, 117) + "…" : r
+    }
+  }
+
+  let r = `Specializes in ${topSpec}`
+  if (ratingStr) r += ` · ${ratingStr} rated`
+  if (totalCases && totalCases > 0) r += ` · ${totalCases} cases`
+  else if (verified) r += " · Verified"
+  return r.length > 120 ? r.slice(0, 117) + "…" : r
+}

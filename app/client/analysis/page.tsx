@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 import { normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
+import { generateRecommendationReason } from "@/lib/ai/lawyer-matching"
 
 import { useSearchParams } from "next/navigation"
 
@@ -391,6 +392,12 @@ function AICaseAnalysisContent() {
                         response_time_hours={0}
                         verified={lawyer.verified}
                         availability_status="available"
+                        recommendationReason={generateRecommendationReason({
+                          specializations: lawyer.specializations ?? [],
+                          rating: Number(lawyer.rating) || 0,
+                          caseType: analysisResult?.category ?? null,
+                          verified: lawyer.verified,
+                        })}
                       />
                     ))}
                   </div>

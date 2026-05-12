@@ -3,6 +3,7 @@ import { stripe } from "@/lib/stripe/config"
 import { createClient } from "@/lib/supabase/server"
 import Stripe from "stripe"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
+import { sendEmail, buildEmailHtml } from "@/lib/email"
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
 
@@ -114,6 +115,29 @@ export async function POST(request: NextRequest) {
                 data: { appointment_id, payment_id },
               })
             }
+
+            // Email notification to client — fire and forget
+            const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
+            supabase
+              .from("profiles")
+              .select("email")
+              .eq("id", appointment.client_id)
+              .single()
+              .then(({ data: clientProfile }) => {
+                if (clientProfile?.email) {
+                  sendEmail({
+                    to: clientProfile.email,
+                    subject: "Payment Confirmed — Consultation Scheduled",
+                    html: buildEmailHtml({
+                      title: "Payment Confirmed",
+                      body: `Your payment for <strong>"${caseTitle}"</strong> has been received and your consultation has been scheduled. You'll find the details in your appointments.`,
+                      ctaText: "View Appointments",
+                      ctaUrl: `${siteUrl}/client/appointments`,
+                    }),
+                  })
+                }
+              })
+              .catch(() => {})
           }
 
           console.log(`[Stripe] Payment succeeded for appointment ${appointment_id}`)

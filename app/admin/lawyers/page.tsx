@@ -156,6 +156,13 @@ export default function AdminVerificationPage() {
         data: { verification_status: "approved" },
       })
 
+      // Email notification sent to lawyer — see /api/notify/email
+      fetch("/api/notify/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template: "verification_approved", data: { lawyer_id: lawyerId } }),
+      }).catch(() => {})
+
       setLawyers(lawyers.filter(l => l.id !== lawyerId))
 
       toast({
@@ -200,6 +207,13 @@ export default function AdminVerificationPage() {
         description: "Your verification was rejected. Please review your profile and upload updated license documents to request another review.",
         data: { verification_status: "rejected" },
       })
+
+      // Email notification sent to lawyer — see /api/notify/email
+      fetch("/api/notify/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template: "verification_rejected", data: { lawyer_id: lawyerId } }),
+      }).catch(() => {})
 
       setLawyers(lawyers.filter(l => l.id !== lawyerId))
 

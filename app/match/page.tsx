@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { LawyerCard } from "@/components/lawyer/lawyer-card"
+import { generateRecommendationReason } from "@/lib/ai/lawyer-matching"
 import { LawyerFilters, type FilterState } from "@/components/lawyer/lawyer-filters"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2, LayoutDashboard } from "lucide-react"
@@ -323,6 +324,13 @@ function MatchPageInner() {
                         response_time_hours={lawyer.response_time_hours}
                         verified={lawyer.verified}
                         availability_status={lawyer.availability_status}
+                        recommendationReason={generateRecommendationReason({
+                          specializations: lawyer.specializations,
+                          rating: lawyer.average_rating,
+                          caseType: filters.specializations[0] ?? null,
+                          verified: lawyer.verified,
+                          totalCases: lawyer.total_cases,
+                        })}
                       />
                     ))}
                   </div>
