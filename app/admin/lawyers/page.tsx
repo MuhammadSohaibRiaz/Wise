@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, CheckCircle, XCircle, ShieldCheck, User, Search, Filter, ExternalLink, AlertTriangle } from "lucide-react"
+import { Loader2, CheckCircle, XCircle, ShieldCheck, User, Search, ExternalLink, AlertTriangle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AdminHeader } from "@/components/admin/admin-header"
@@ -41,6 +41,7 @@ export default function AdminVerificationPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isProcessing, setIsProcessing] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
   const { toast } = useToast()
   const supabase = createClient()
   const router = useRouter()
@@ -255,6 +256,16 @@ export default function AdminVerificationPage() {
     )
   }
 
+  const q = searchTerm.toLowerCase().trim()
+  const filteredLawyers = q
+    ? lawyers.filter((l) => {
+        const fullName = `${l.first_name} ${l.last_name}`.toLowerCase()
+        return fullName.includes(q) || l.email.toLowerCase().includes(q) ||
+          l.lawyer_profile?.bar_license_number?.toLowerCase().includes(q) ||
+          l.lawyer_profile?.specializations?.some((s) => s.toLowerCase().includes(q))
+      })
+    : lawyers
+
   return (
     <div className="min-h-screen bg-gray-50/50">
       <AdminHeader />
@@ -273,23 +284,33 @@ export default function AdminVerificationPage() {
           <div className="flex items-center gap-3">
             <div className="relative flex-1 md:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input placeholder="Search by name or email..." className="pl-9 bg-white" />
+              <Input
+                placeholder="Search by name or email..."
+                className="pl-9 bg-white"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
-            <Button variant="outline" className="bg-white">
-              <Filter className="h-4 w-4 mr-2" />
-              Filter
-            </Button>
+            {searchTerm && (
+              <Button variant="outline" className="bg-white" onClick={() => setSearchTerm("")}>
+                Clear
+              </Button>
+            )}
           </div>
         </div>
 
-        {lawyers.length === 0 ? (
+        {filteredLawyers.length === 0 ? (
           <Card className="border-dashed border-2 py-16 text-center bg-white">
             <div className="bg-green-50 h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="h-8 w-8 text-green-600" />
             </div>
-            <h2 className="text-xl font-bold text-gray-900">All Lawyers Verified</h2>
+            <h2 className="text-xl font-bold text-gray-900">
+              {searchTerm ? "No Matching Lawyers" : "All Lawyers Verified"}
+            </h2>
             <p className="text-gray-500 mt-1 max-w-xs mx-auto">
-              There are no pending registrations waiting for review.
+              {searchTerm
+                ? `No pending lawyers match "${searchTerm}". Try a different search.`
+                : "There are no pending registrations waiting for review."}
             </p>
           </Card>
         ) : (
@@ -300,7 +321,7 @@ export default function AdminVerificationPage() {
               <span className="text-right">Actions</span>
             </div>
 
-            {lawyers.map((lawyer) => (
+            {filteredLawyers.map((lawyer) => (
               <Card key={lawyer.id} className="overflow-hidden bg-white hover:shadow-md transition-shadow border-gray-200">
                 <CardContent className="p-0">
                   <div className="flex flex-col md:flex-row items-stretch">

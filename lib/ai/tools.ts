@@ -1,31 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { tool } from "ai";
 import { z } from "zod";
-import { normalizeChatNavigationPath, type ChatRole } from "@/lib/chat-routes";
 import { searchLawyersFromSupabase } from "@/lib/lawyer-search";
 
 export const tools = {
-  navigateToPage: tool({
-    description:
-      "Navigates the user to a specific page on the platform. Use canonical paths from the system prompt; ambiguous paths like /settings or /dashboard will be corrected for the user's role.",
-    inputSchema: z.object({
-      path: z.string().describe('The path to navigate to, e.g., /client/analysis, /match, /client/cases'),
-    }),
-    execute: async ({ path }: { path: string }) => {
-      const supabase = await createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      let role: ChatRole = "guest";
-      if (user) {
-        const { data: profile } = await supabase.from("profiles").select("user_type").eq("id", user.id).single();
-        role = profile?.user_type === "lawyer" ? "lawyer" : "client";
-      }
-      const normalized = normalizeChatNavigationPath(path, role);
-      return { success: true, marker: `[NAVIGATE:${normalized}]`, path: normalized };
-    },
-  }),
-
   getProfileStatus: tool({
     description: 'Checks the current status of the logged-in user profile to see what information is missing.',
     inputSchema: z.object({}).passthrough(),

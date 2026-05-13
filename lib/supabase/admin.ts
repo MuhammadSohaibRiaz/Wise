@@ -1,3 +1,4 @@
+import "server-only"
 import { createClient } from "@supabase/supabase-js"
 
 /** Service-role client for cron/workers only — never import in client components. */

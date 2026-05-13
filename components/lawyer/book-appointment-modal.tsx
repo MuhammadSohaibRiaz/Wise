@@ -250,6 +250,8 @@ export function BookAppointmentModal({
       return
     }
 
+    let createdCaseId: string | null = null
+
     try {
       setIsLoading(true)
 
@@ -328,6 +330,7 @@ export function BookAppointmentModal({
 
       if (caseError) throw caseError
       if (!caseData) throw new Error("Failed to create case")
+      createdCaseId = caseData.id
 
       await appendCaseTimelineEvent(supabase, {
         caseId: caseData.id,
@@ -487,6 +490,14 @@ export function BookAppointmentModal({
     } catch (error: any) {
       console.error("[v0] Booking error:", error)
       console.error("[v0] Error details:", JSON.stringify(error, null, 2))
+
+      // Clean up orphaned case if appointment creation failed
+      if (createdCaseId) {
+        supabase.from("cases").delete().eq("id", createdCaseId).then(({ error: delErr }) => {
+          if (delErr) console.error("[v0] Failed to clean up orphaned case:", delErr)
+          else console.log("[v0] Cleaned up orphaned case:", createdCaseId)
+        })
+      }
       
       let errorMessage = "Failed to send appointment request. Please try again."
       if (error?.message) {

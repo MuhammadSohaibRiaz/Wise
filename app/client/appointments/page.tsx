@@ -435,11 +435,13 @@ export default function ClientAppointmentsPage() {
                     ? "border-yellow-200 bg-yellow-50/30 dark:bg-yellow-950/20 dark:border-yellow-800/50 shadow-sm"
                     : appointment.status === "scheduled"
                       ? "border-blue-200 bg-blue-50/30 dark:bg-blue-950/20 dark:border-blue-800/50 shadow-sm"
-                      : appointment.status === "attended" || appointment.status === "completed"
-                        ? "border-green-200 bg-green-50/30 dark:bg-green-950/20 dark:border-green-800/50"
-                        : appointment.status === "rejected"
-                          ? "border-red-200 bg-red-50/30 dark:bg-red-950/20 dark:border-red-800/50"
-                          : "border-border bg-card"
+                      : appointment.status === "rescheduled"
+                        ? "border-indigo-200 bg-indigo-50/30 dark:bg-indigo-950/20 dark:border-indigo-800/50 shadow-sm"
+                        : appointment.status === "attended" || appointment.status === "completed"
+                          ? "border-green-200 bg-green-50/30 dark:bg-green-950/20 dark:border-green-800/50"
+                          : appointment.status === "rejected"
+                            ? "border-red-200 bg-red-50/30 dark:bg-red-950/20 dark:border-red-800/50"
+                            : "border-border bg-card"
                 } p-6 transition-all hover:shadow-md`}
             >
               <div className="flex items-start justify-between gap-4">

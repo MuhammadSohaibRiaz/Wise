@@ -20,6 +20,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
+    const numericAmount = Number(amount)
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0 || numericAmount > 50000) {
+      return NextResponse.json({ error: "Invalid amount" }, { status: 400 })
+    }
+
     // Verify appointment belongs to user and is in awaiting_payment status
     const { data: appointment, error: appointmentError } = await supabase
       .from("appointments")
@@ -44,7 +49,7 @@ export async function POST(request: NextRequest) {
               name: `Consultation: ${(appointment.cases as any)?.title || (Array.isArray(appointment.cases) ? (appointment.cases[0] as any)?.title : "Appointment")}`,
               description: `Payment for appointment ${appointmentId}`,
             },
-            unit_amount: Math.round(amount * 100),
+            unit_amount: Math.round(numericAmount * 100),
           },
           quantity: 1,
         },
@@ -71,10 +76,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (!session.url) {
+      return NextResponse.json({ error: "Failed to create checkout session" }, { status: 500 })
+    }
+
     return NextResponse.json({ url: session.url })
   } catch (error: any) {
     console.error("[Stripe] Create checkout session error:", error)
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to create checkout session" }, { status: 500 })
   }
 }
 

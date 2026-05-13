@@ -417,14 +417,16 @@ export default function LawyerCaseDetailPage() {
 
       if (statusToApply === "pending_completion") {
         // Email notification sent to client — see /api/notify/email
-        fetch("/api/notify/email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            template: "case_completion_request",
-            data: { client_id: caseDetail.client?.id, lawyer_id: lawyerId, case_title: caseDetail.title, case_id: caseId },
-          }),
-        }).catch(() => {})
+        if (caseDetail.client?.id) {
+          fetch("/api/notify/email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              template: "case_completion_request",
+              data: { client_id: caseDetail.client.id, lawyer_id: lawyerId, case_title: caseDetail.title, case_id: caseId },
+            }),
+          }).catch(() => {})
+        }
 
         toast({
           title: "Case completion requested",

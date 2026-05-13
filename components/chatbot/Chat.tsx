@@ -55,26 +55,41 @@ export function Chat({ onClose }: { onClose: () => void }) {
   const activeCaseId = caseIdFromQuery || caseIdFromPath
   const caseContextPath = activeCaseId ? `${pathname}?case=${activeCaseId}` : pathname
   
+  const transportRef = useRef(new DefaultChatTransport({ api: '/api/chat' }));
   const { messages, sendMessage, setMessages, status, stop, error: chatError } = useChat({
-    transport: new DefaultChatTransport({ api: '/api/chat' }),
+    transport: transportRef.current,
     body: {
       currentPath: caseContextPath
     },
     onError: (error: any) => {
-      console.error("[Chat] useChat error:", error);
-      const errorMsg = error?.message || "Failed to get response from assistant";
-      setMessages((prev: any) => ([
-        ...prev,
-        {
-          id: Date.now().toString(),
-          role: "assistant",
-          parts: [{ type: "text", text: `Error: ${errorMsg}` }],
-        }
-      ]));
+      console.error("[Chat:Client] onError fired:", { message: error?.message, status: error?.status, raw: error });
     }
   } as any);
 
-  const isLoading = status !== 'ready';
+  const isLoading = status === 'streaming' || status === 'submitted';
+  const [chatErrorMsg, setChatErrorMsg] = useState<string | null>(null);
+
+  // Debug: log every status transition
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    if (prevStatusRef.current !== status) {
+      console.log(`[Chat:Client] status: ${prevStatusRef.current} → ${status} | messages=${messages.length} | error=${chatError ? (chatError as any).message : 'none'}`);
+      prevStatusRef.current = status;
+    }
+  }, [status, messages.length, chatError]);
+
+  useEffect(() => {
+    if (status !== 'error' || !chatError) return;
+    const raw = (chatError as any)?.message || String(chatError);
+    console.error("[Chat:Client] Error effect fired:", { raw, status });
+    const isToolError = raw.includes("Failed to call a function") || raw.includes("failed_generation");
+    const msg = isToolError
+      ? "I had trouble processing that. Could you try rephrasing your request?"
+      : raw.includes("rate limit") || raw.includes("429")
+        ? "I'm a bit busy right now. Please try again in a moment."
+        : "Something went wrong. Please try again.";
+    setChatErrorMsg(msg);
+  }, [status, chatError]);
 
   const safeInput = draft ?? '';
 
@@ -97,27 +112,44 @@ export function Chat({ onClose }: { onClose: () => void }) {
     return params;
   }, [activeCaseId, caseContextPath]);
 
+  const loadedCaseRef = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
+    // Only re-fetch if the case context actually changed (global ↔ case), not on every page nav
+    if (loadedCaseRef.current !== undefined && loadedCaseRef.current === (activeCaseId ?? null)) {
+      console.log("[Chat:Client] loadRoleAndHistory → skipped (same case context, page nav only)");
+      return;
+    }
+
     const loadRoleAndHistory = async () => {
-      setHistoryReady(false);
+      const isFirstLoad = loadedCaseRef.current === undefined;
+      console.log("[Chat:Client] loadRoleAndHistory → start", { caseContextPath, activeCaseId, isFirstLoad });
+
+      if (isFirstLoad) setHistoryReady(false);
+
       try {
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
+          console.log("[Chat:Client] loadRoleAndHistory → guest (no user)");
           setChatRole('guest');
+          loadedCaseRef.current = activeCaseId ?? null;
           setHistoryReady(true);
           return;
         }
         
-        // Load Profile
         const { data: profile } = await supabase.from('profiles').select('user_type, avatar_url').eq('id', user.id).maybeSingle();
-        setChatRole(profile?.user_type === 'lawyer' ? 'lawyer' : 'client');
+        const role = profile?.user_type === 'lawyer' ? 'lawyer' : 'client';
+        setChatRole(role);
         setUserAvatar(profile?.avatar_url ?? null);
+        console.log("[Chat:Client] loadRoleAndHistory → authenticated", { userId: user.id, role, email: user.email });
 
-        // Load History
-        const historyRes = await fetch(`/api/chat/history?${buildHistoryParams().toString()}`);
+        const historyUrl = `/api/chat/history?${buildHistoryParams().toString()}`;
+        console.log("[Chat:Client] loadRoleAndHistory → fetching history:", historyUrl);
+        const historyRes = await fetch(historyUrl);
         if (historyRes.ok) {
           const { messages: historyData, hasMore, nextCursor } = await historyRes.json();
+          console.log("[Chat:Client] loadRoleAndHistory → history loaded", { count: historyData?.length ?? 0, hasMore, nextCursor });
           setHasMoreHistory(Boolean(hasMore));
           setHistoryCursor(nextCursor || null);
           if (historyData && historyData.length > 0) {
@@ -125,16 +157,20 @@ export function Chat({ onClose }: { onClose: () => void }) {
           } else {
             setMessages([]);
           }
+        } else {
+          console.error("[Chat:Client] loadRoleAndHistory → history fetch failed", { status: historyRes.status, statusText: historyRes.statusText });
         }
+        loadedCaseRef.current = activeCaseId ?? null;
       } catch (err) {
-        console.error("[Chat] Load error:", err);
+        console.error("[Chat:Client] loadRoleAndHistory → error:", err);
         setChatRole('guest');
       } finally {
         setHistoryReady(true);
       }
     };
     void loadRoleAndHistory();
-  }, [buildHistoryParams, mapDbMessagesToUi, setMessages]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCaseId, setMessages]);
 
   const loadOlderHistory = useCallback(async () => {
     if (!historyCursor || isLoadingOlderHistory) return;
@@ -154,27 +190,30 @@ export function Chat({ onClose }: { onClose: () => void }) {
     }
   }, [buildHistoryParams, historyCursor, isLoadingOlderHistory, mapDbMessagesToUi, setMessages]);
 
-  const clearCurrentThread = useCallback(async () => {
-    const target = activeCaseId ? "this case thread" : "your global assistant history";
-    if (!window.confirm(`Clear ${target}? This cannot be undone.`)) return;
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  const clearCurrentThread = useCallback(async () => {
+    setShowDeleteConfirm(false);
     setIsClearingHistory(true);
     try {
       stop();
       const params = buildHistoryParams();
       if (!activeCaseId) params.set("scope", "global");
-      const res = await fetch(`/api/chat/history?${params.toString()}`, { method: "DELETE" });
+      const deleteUrl = `/api/chat/history?${params.toString()}`;
+      console.log("[Chat:Client] clearCurrentThread → DELETE", { url: deleteUrl, activeCaseId });
+      const res = await fetch(deleteUrl, { method: "DELETE" });
       const body = await res.json().catch(() => ({}));
+      console.log("[Chat:Client] clearCurrentThread → response", { status: res.status, ok: res.ok, body });
       if (!res.ok) throw new Error(body.error || "Failed to clear history");
       setMessages([]);
       setHasMoreHistory(false);
       setHistoryCursor(null);
+      setChatErrorMsg(null);
+      console.log("[Chat:Client] clearCurrentThread → success, local messages cleared");
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to clear history";
-      setMessages((prev: any) => ([
-        ...prev,
-        { id: Date.now().toString(), role: 'assistant', parts: [{ type: 'text', text: `Error: ${message}` }] }
-      ]));
+      console.error("[Chat:Client] clearCurrentThread → failed:", message);
+      setChatErrorMsg(message);
     } finally {
       setIsClearingHistory(false);
     }
@@ -190,37 +229,36 @@ export function Chat({ onClose }: { onClose: () => void }) {
 
   const isAllowedAction = useCallback(
     (label: string, path: string) => {
-      const normalized = normalizePath(path) ?? path;
+      // Block external URLs before normalization
+      if (/^https?:\/\//i.test(path) || path.startsWith("//") || /^www\./i.test(path)) return false;
+
+      const normalized = normalizePath(path);
+      if (!normalized) return false;
+
       const l = String(label || "").toLowerCase();
 
       // Hard block non-legal CTAs the model might hallucinate.
       const blockedKeywords = ["doctor", "surgeon", "hospital", "clinic", "medicine", "heart"];
       if (blockedKeywords.some((k) => l.includes(k))) return false;
 
-      // Only allow navigation inside WiseCase.
+      // Only allow navigation inside WiseCase — must start with /
       if (!normalized.startsWith("/")) return false;
 
-      // Allow-list key routes used by assistant.
+      // Reject paths that look like external URLs after normalization
+      if (/\/https?:\/\//i.test(normalized)) return false;
+
+      // Strict allow-list of WiseCase route prefixes (NO catch-all "/")
       const allowedPrefixes = [
         "/match",
         "/client/",
         "/lawyer/",
         "/admin/",
         "/auth/",
+        "/register",
         "/terms",
         "/privacy",
-        "/",
       ];
       if (!allowedPrefixes.some((p) => normalized === p || normalized.startsWith(p))) return false;
-
-      // Soft guard: assistant buttons should be related to WiseCase workflows.
-      const allowedLabelHints = ["lawyer", "case", "appointment", "analysis", "review", "profile", "dashboard", "settings", "dispute", "payment", "message", "notify"];
-      if (!allowedLabelHints.some((k) => l.includes(k))) {
-        // Still allow if the destination is clearly WiseCase core pages.
-        if (normalized === "/match") return true;
-        if (normalized.startsWith("/client/") || normalized.startsWith("/lawyer/")) return true;
-        return false;
-      }
 
       return true;
     },
@@ -292,14 +330,7 @@ export function Chat({ onClose }: { onClose: () => void }) {
       const summaries: string[] = [];
       const seen = new Set<string>();
       for (const part of getToolParts(m)) {
-        if (part?.state === 'output-error' && part?.errorText) {
-          const msg = `Tool error: ${part.errorText}`;
-          if (!seen.has(msg)) {
-            summaries.push(msg);
-            seen.add(msg);
-          }
-          continue;
-        }
+        if (part?.state === 'output-error') continue;
         if (part?.type === 'tool-getProfileStatus' && part?.state === 'output-available') {
           const output = part?.output ?? {};
           if (output?.error) {
@@ -356,7 +387,8 @@ export function Chat({ onClose }: { onClose: () => void }) {
   }, [getToolParts]);
 
   const navigateWithFeedback = useCallback((path: string) => {
-    const normalized = normalizePath(path) ?? path;
+    const normalized = normalizePath(path);
+    if (!normalized || /^https?:\/\//i.test(path) || !normalized.startsWith("/")) return;
     setPendingNavigationPath(normalized);
     startRouteTransition(() => {
       router.push(normalized);
@@ -365,46 +397,27 @@ export function Chat({ onClose }: { onClose: () => void }) {
 
   const sendText = async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || isLoading || isUploading) return;
+    if (!trimmed || isLoading || isUploading) {
+      console.log("[Chat:Client] sendText → blocked", { empty: !trimmed, isLoading, isUploading, status });
+      return;
+    }
+    console.log("[Chat:Client] sendText →", { text: trimmed.slice(0, 80), role: chatRole, messagesBefore: messages.length, status });
     setDraft('');
-    
-    const messageId = Date.now().toString();
-    let timeoutHandle: NodeJS.Timeout | null = null;
-    
+    setChatErrorMsg(null);
+
     try {
-      // Set a timeout to detect stuck loading state
-      timeoutHandle = setTimeout(() => {
-        console.warn("[Chat] Message timeout - no response after 15 seconds");
-        setMessages((prev: any) => {
-          const lastMessage = prev[prev.length - 1];
-          // Only show timeout if the last message is still loading
-          if (lastMessage?.role === 'assistant' && lastMessage?.content === 'Processing...') {
-            return [
-              ...prev.slice(0, -1),
-              {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                parts: [{ type: 'text', text: 'Request timed out. Please try again or contact support if the issue persists.' }],
-              }
-            ];
-          }
-          return prev;
-        });
-      }, 15000); // 15 second timeout
-      
       await sendMessage({ text: trimmed } as any);
+      console.log("[Chat:Client] sendText → sendMessage resolved", { messagesAfter: messages.length, status });
     } catch (err: any) {
-      console.error("[Chat] Send error:", err);
+      console.error("[Chat:Client] sendText → sendMessage threw:", { message: err?.message, err });
       setMessages((prev: any) => ([
         ...prev,
-        { 
-          id: Date.now().toString(), 
-          role: 'assistant', 
-          parts: [{ type: 'text', text: `Error: ${err.message || 'Failed to send message'}` }]
+        {
+          id: Date.now().toString(),
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Something went wrong. Please try again.' }]
         }
       ]));
-    } finally {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
     }
   };
 
@@ -471,9 +484,24 @@ export function Chat({ onClose }: { onClose: () => void }) {
   }, [messages, status, speak, getMessageText]);
   // --- End Voice Logic ---
 
+  const prevMsgCountRef = useRef(0);
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const count = messages.length;
+    if (count !== prevMsgCountRef.current) {
+      prevMsgCountRef.current = count;
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
   }, [messages]);
+
+  useEffect(() => {
+    if (status === 'ready' || status === 'error') {
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
+  }, [status]);
 
   useEffect(() => {
     const last = messages?.slice?.(-1)?.[0] as any;
@@ -614,19 +642,19 @@ export function Chat({ onClose }: { onClose: () => void }) {
       await Promise.all([
         supabase.from("ai_chat_messages").insert({
           user_id: user.id,
-          case_id: caseId,
+          case_id: activeCaseId,
           role: "user",
           content: `Uploaded document: ${file.name}`
         }),
         supabase.from("ai_chat_messages").insert({
           user_id: user.id,
-          case_id: caseId,
+          case_id: activeCaseId,
           role: "assistant",
           content: `I've received **${file.name}**. Analyzing it now...`
         }),
         supabase.from("ai_chat_messages").insert({
           user_id: user.id,
-          case_id: caseId,
+          case_id: activeCaseId,
           role: "assistant",
           content: analysisContent
         })
@@ -654,10 +682,10 @@ export function Chat({ onClose }: { onClose: () => void }) {
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => void clearCurrentThread()}
+            onClick={() => setShowDeleteConfirm(true)}
             className="text-primary-foreground hover:bg-primary-foreground/10 h-8 w-8"
             title={activeCaseId ? "Clear this case thread" : "Clear assistant history"}
-            disabled={isClearingHistory}
+            disabled={isClearingHistory || showDeleteConfirm}
           >
             {isClearingHistory ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
           </Button>
@@ -678,6 +706,15 @@ export function Chat({ onClose }: { onClose: () => void }) {
           </Button>
         </div>
       </CardHeader>
+      {showDeleteConfirm && (
+        <div className="flex items-center justify-between gap-2 px-3 py-2 bg-destructive/10 text-xs animate-in fade-in slide-in-from-top-1 duration-200">
+          <span className="text-destructive font-medium">Clear chat history? This cannot be undone.</span>
+          <div className="flex gap-1 shrink-0">
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+            <Button size="sm" variant="destructive" className="h-6 px-2 text-xs" onClick={() => void clearCurrentThread()}>Clear</Button>
+          </div>
+        </div>
+      )}
       {isRoutePending && (
         <div className="h-1 w-full bg-primary/20">
           <div className="h-full w-1/3 animate-pulse bg-primary" />
@@ -709,37 +746,56 @@ export function Chat({ onClose }: { onClose: () => void }) {
           <div className="text-center py-10 text-muted-foreground">
             <p className="text-sm italic">Hello! I'm your WiseCase Assistant. How can I help you today?</p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  void sendText(
-                    chatRole === 'lawyer'
-                      ? "Where can I review or upload case documents as a lawyer?"
-                      : "Analyze my documents",
-                  )
-                }
-              >
-                Analyze Doc
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  void sendText(
-                    chatRole === 'lawyer'
-                      ? "Take me to my lawyer appointments"
-                      : "View my appointments",
-                  )
-                }
-              >
-                Appointments
-              </Button>
+              {chatRole === 'guest' ? (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => void sendText("What can WiseCase help me with?")}>
+                    What can you do?
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => void sendText("Help me find a lawyer")}>
+                    Find a Lawyer
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      void sendText(
+                        chatRole === 'lawyer'
+                          ? "Where can I review or upload case documents as a lawyer?"
+                          : "Analyze my documents",
+                      )
+                    }
+                  >
+                    Analyze Doc
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      void sendText(
+                        chatRole === 'lawyer'
+                          ? "Take me to my lawyer appointments"
+                          : "View my appointments",
+                      )
+                    }
+                  >
+                    Appointments
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         )}
 
-        {messages.map((m) => (
+        {messages.map((m) => {
+          if ((m as any).role === 'assistant') {
+            const txt = getMessageText(m as any);
+            const stripped = txt.replace(/\[NAVIGATE:.*?\]/g, '').replace(/\[VIEW_ANALYSIS:.*?\]/g, '').replace(/\[ACTION:.*?:.*?\]/g, '').trim();
+            if (!stripped && !getToolSummary(m as any)) return null;
+          }
+          return (
           <div key={(m as any).id} className={cn("flex items-start gap-3 w-full", (m as any).role === 'user' ? "flex-row-reverse" : "flex-row")}>
             {/* Avatar */}
             {(m as any).role === 'user' ? (
@@ -775,9 +831,9 @@ export function Chat({ onClose }: { onClose: () => void }) {
                 const navPath = getNavigatePath(m as any);
                 const profileFromSearch = (m as any).role === "assistant" ? getLawyerProfileHrefFromMessage(m) : null;
                 const viewAnalysisId = rawText.match(/\[VIEW_ANALYSIS:(.*?)\]/)?.[1];
-                const renderedText = cleanText || toolSummary || ((m as any).role === 'assistant' ? 'Processing...' : '');
+                const renderedText = cleanText || toolSummary || '';
                 const isAutoNavMessage = isExplicitNavigationText(cleanText);
-                
+
                 return (
                   <div className={cn(
                     "rounded-2xl px-4 py-2 text-sm shadow-sm",
@@ -871,15 +927,9 @@ export function Chat({ onClose }: { onClose: () => void }) {
               })()}
             </div>
           </div>
-        ))}
-        {(() => {
-          if (messages.length === 0) return false;
-          if (isClearingHistory) return false;
-          const last = messages[messages.length - 1] as any;
-          const lastLooksLikeAssistantError =
-            last?.role === "assistant" && getMessageText(last).trimStart().startsWith("Error:");
-          return (isLoading || isUploading) && !lastLooksLikeAssistantError;
-        })() && (
+        );
+        })}
+        {(status === 'submitted' || isUploading) && messages.length > 0 && !isClearingHistory && (
           <div className="flex justify-start items-start gap-3 animate-in fade-in slide-in-from-bottom-2">
             <Avatar className="shrink-0 h-8 w-8 border">
               <AvatarImage src="/legal_assistant_avatar.png" alt="WiseCase Assistant" className="object-cover" />
@@ -902,6 +952,15 @@ export function Chat({ onClose }: { onClose: () => void }) {
         </>
         )}
       </CardContent>
+
+      {chatErrorMsg && (
+        <div className="px-3 py-2 bg-destructive/10 border-t border-destructive/20 flex items-center gap-2 text-xs text-destructive">
+          <span className="flex-1">{chatErrorMsg}</span>
+          <button onClick={() => setChatErrorMsg(null)} className="shrink-0 opacity-60 hover:opacity-100">
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
 
       <CardFooter className="p-3 border-t bg-background">
         <form

@@ -6,6 +6,7 @@ function escapeRegex(str: string): string {
 
 /** Match lawyers whose specializations overlap the given category or text hint (works server + browser). */
 export async function matchLawyersWithCategory(supabase: SupabaseClient, category: string) {
+  if (!category || typeof category !== "string") return []
   // Search for lawyers whose specializations array contains the category
   const { data, error } = await supabase
     .from("profiles")
@@ -131,7 +132,8 @@ export function generateRecommendationReason(params: {
   verified?: boolean
   totalCases?: number
 }): string {
-  const { specializations, rating, caseType, verified, totalCases } = params
+  const { specializations: rawSpecs, rating, caseType, verified, totalCases } = params
+  const specializations = rawSpecs || []
   const topSpec = specializations[0] || "General Practice"
   const ratingStr = rating > 0 ? `${rating.toFixed(1)}★` : null
 

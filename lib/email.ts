@@ -40,8 +40,13 @@ export async function sendEmail({ to, subject, html }: SendEmailParams): Promise
   }
 }
 
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+}
+
 interface EmailTemplateParams {
   title: string
+  /** HTML body content — callers must pre-escape any user-supplied text. */
   body: string
   ctaText: string
   ctaUrl: string
@@ -49,6 +54,9 @@ interface EmailTemplateParams {
 
 /** Build a clean, inline-styled HTML email with WiseCase branding. */
 export function buildEmailHtml({ title, body, ctaText, ctaUrl }: EmailTemplateParams): string {
+  const safeTitle = escapeHtml(title)
+  const safeCta = escapeHtml(ctaText)
+  const safeUrl = encodeURI(ctaUrl)
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -62,9 +70,9 @@ export function buildEmailHtml({ title, body, ctaText, ctaUrl }: EmailTemplatePa
         </td></tr>
         <!-- Body -->
         <tr><td style="padding:32px">
-          <h2 style="margin:0 0 16px;color:#111827;font-size:18px;font-weight:600">${title}</h2>
+          <h2 style="margin:0 0 16px;color:#111827;font-size:18px;font-weight:600">${safeTitle}</h2>
           <p style="margin:0 0 24px;color:#374151;font-size:15px;line-height:1.6">${body}</p>
-          <a href="${ctaUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:6px;font-size:14px;font-weight:600">${ctaText}</a>
+          <a href="${safeUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:6px;font-size:14px;font-weight:600">${safeCta}</a>
         </td></tr>
         <!-- Footer -->
         <tr><td style="padding:20px 32px;border-top:1px solid #e5e7eb">

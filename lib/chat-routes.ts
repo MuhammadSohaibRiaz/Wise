@@ -3,10 +3,17 @@ export type ChatRole = "guest" | "client" | "lawyer"
 /**
  * Normalize AI/tool navigation paths to real app routes and correct role mistakes.
  */
-export function normalizeChatNavigationPath(path: string, role: ChatRole): string {
+export function normalizeChatNavigationPath(path: string, role: ChatRole): string | null {
   let p = (path || "").trim()
+
+  // Reject external URLs and protocol-relative paths
+  if (/^https?:\/\//i.test(p) || p.startsWith("//") || /^www\./i.test(p)) return null
+
   if (!p.startsWith("/")) p = `/${p}`
   const lower = p.toLowerCase()
+
+  // Reject paths that still look like external URLs after normalization (e.g. "/https://...")
+  if (/\/https?:\/\//i.test(lower)) return null
 
   if (lower === "/login") {
     return role === "lawyer" ? "/auth/lawyer/sign-in" : "/auth/client/sign-in"
@@ -34,6 +41,9 @@ export function normalizeChatNavigationPath(path: string, role: ChatRole): strin
     if (role === "client") return "/client/appointments"
     return "/auth/client/sign-in"
   }
+
+  // Removed/deprecated pages → redirect to valid alternatives
+  if (lower === "/client/ai-recommendations") return "/match"
 
   // Fix common wrong-role paths
   if (role === "lawyer") {

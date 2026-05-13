@@ -19,6 +19,14 @@ export async function POST(req: NextRequest) {
 
     const supabase = await createClient()
 
+    // Auth check must happen before any data access
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     if (skipAnalysis) {
       const { data: analysis } = await supabase
         .from("document_analysis")
@@ -44,13 +52,6 @@ export async function POST(req: NextRequest) {
 
     if (docError || !document) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 })
-    }
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     let allowed = document.uploaded_by === user.id

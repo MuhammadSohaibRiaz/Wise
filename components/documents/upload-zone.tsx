@@ -31,12 +31,13 @@ export function UploadZone({ caseId, onUploadComplete, onUploadError }: UploadZo
     onDrop,
     accept: {
       "application/pdf": [".pdf"],
-      "image/jpeg": [".jpg", ".jpeg", ".jgp"],
+      "image/jpeg": [".jpg", ".jpeg"],
       "image/png": [".png"],
       "application/msword": [".doc"],
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
     },
     maxFiles: 1,
+    maxSize: 10 * 1024 * 1024,
     disabled: uploading,
   })
 

@@ -53,14 +53,14 @@ async function resolveAuthorizedCaseId(
 }
 
 export async function POST(req: Request) {
+  const t0 = Date.now();
   try {
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
-    // Parse request with validation
     let body: any;
     try {
       body = await req.json();
     } catch (parseError) {
-      console.error("[Chat API] Failed to parse JSON:", parseError);
+      console.error("[Chat:API] ✗ JSON parse failed:", parseError);
       return new Response(
         JSON.stringify({ error: "Invalid request format" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -69,22 +69,22 @@ export async function POST(req: Request) {
 
     const { messages, currentPath } = body;
     const requestedCaseId = extractCaseIdFromPath(currentPath);
+    console.log(`[Chat:API] ▶ POST | msgs=${messages?.length ?? '?'} | path=${currentPath} | requestedCase=${requestedCaseId || 'none'} | ip=${ip}`);
     
-    // Validate messages array
     if (!Array.isArray(messages)) {
-      console.error("[Chat API] Invalid messages format:", typeof messages);
+      console.error("[Chat:API] ✗ messages is not an array:", typeof messages);
       return new Response(
         JSON.stringify({ error: "Messages must be an array" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // Convert messages with error handling
     let modelMessages: any;
     try {
       modelMessages = await convertToModelMessages(messages);
+      console.log(`[Chat:API]   convertToModelMessages → ${modelMessages?.length ?? 0} model messages`);
     } catch (convertError) {
-      console.error("[Chat API] Failed to convert messages:", convertError);
+      console.error("[Chat:API] ✗ convertToModelMessages failed:", convertError);
       return new Response(
         JSON.stringify({ error: "Failed to process messages" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -94,6 +94,8 @@ export async function POST(req: Request) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     const caseId = user ? await resolveAuthorizedCaseId(supabase, user.id, requestedCaseId) : null
+    console.log(`[Chat:API]   auth → ${user ? `user=${user.id.slice(0,8)}… email=${user.email}` : 'GUEST'} | caseId=${caseId || 'none'}`);
+
     const throttle = applySimpleRateLimit({
       namespace: "api-chat-post",
       key: user?.id || ip,
@@ -101,6 +103,7 @@ export async function POST(req: Request) {
       windowMs: 60_000,
     })
     if (!throttle.ok) {
+      console.warn(`[Chat:API] ✗ rate limited (retry in ${throttle.retryAfterSec}s)`);
       return new Response(JSON.stringify({ error: "Too many chat requests. Please wait a moment." }), {
         status: 429,
         headers: {
@@ -116,8 +119,12 @@ export async function POST(req: Request) {
     let authContext = "";
     if (!user) {
       authContext =
-        `Current User: Guest (not logged in). For any personalized profile, cases, appointments, or uploads, explain they must sign in. ` +
-        `Use [NAVIGATE:/auth/client/sign-in] for general/client login; if they say they are a lawyer logging in, use [NAVIGATE:/auth/lawyer/sign-in].`;
+        `Current User: Guest (not logged in). ` +
+        `Guests can browse lawyers at /match and ask general legal questions. ` +
+        `For anything personal (cases, appointments, uploads, analysis), tell them to sign in. ` +
+        `Use [ACTION:Sign In:/auth/client/sign-in] or [ACTION:Sign Up:/auth/client/register] buttons. ` +
+        `If they say they are a lawyer, use [ACTION:Lawyer Sign In:/auth/lawyer/sign-in]. ` +
+        `Keep responses short and helpful.`;
     } else {
       const { data: profile } = await supabase.from("profiles").select("user_type, first_name").eq("id", user.id).maybeSingle();
       const role = profile?.user_type === "lawyer" ? "lawyer" : "client";
@@ -129,136 +136,101 @@ export async function POST(req: Request) {
           `Document analysis chat uploads still use \`/client/analysis\` only when analyzing own docs as on that page — prefer directing lawyers to their dashboard or profile for practice settings.`;
       } else {
         authContext =
-          `Current User: ${user.email}, role **client** (${first}). **Always use client routes**: dashboard \`/client/dashboard\`, settings \`/client/settings\`, appointments \`/client/appointments\`, cases \`/client/cases\`, analysis \`/client/analysis\`, AI recommendations \`/client/ai-recommendations\`, match \`/match\`.`;
+          `Current User: ${user.email}, role **client** (${first}). **Always use client routes**: dashboard \`/client/dashboard\`, settings \`/client/settings\`, appointments \`/client/appointments\`, cases \`/client/cases\`, analysis \`/client/analysis\`, browse lawyers \`/match\`.`;
       }
     }
 
+    if (!process.env.GROQ_API_KEY) {
+      console.error("[Chat:API] ✗ GROQ_API_KEY missing");
+      return new Response(
+        JSON.stringify({ error: "Chat service is not properly configured. Please contact support." }),
+        { status: 503, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const saveChatMessages = async (text: string, toolCalls?: unknown, toolResults?: unknown) => {
+      if (!user) { console.log("[Chat:API]   onFinish → skip save (guest)"); return; }
+      try {
+        const lastUserMessage = messages[messages.length - 1]
+        if (lastUserMessage && lastUserMessage.role === "user") {
+          const userText = extractTextFromUiMessage(lastUserMessage)
+          await supabase.from("ai_chat_messages").insert({
+            user_id: user.id,
+            case_id: caseId,
+            role: "user",
+            content: userText || "[User message]",
+          });
+        }
+        await supabase.from("ai_chat_messages").insert({
+          user_id: user.id,
+          case_id: caseId,
+          role: "assistant",
+          content: text,
+          metadata: toolCalls ? { toolCalls, toolResults } : undefined,
+        });
+        console.log(`[Chat:API]   onFinish → saved to DB (text=${text.length}chars, tools=${toolCalls ? 'yes' : 'no'})`);
+      } catch (saveError) {
+        console.error("[Chat:API] ✗ onFinish → DB save failed:", saveError);
+      }
+    };
+
+    const systemPrompt = `${systemMessage.content}\n\n${authContext}${pageContext}`;
+
+    const useTools = !!user;
+    console.log(`[Chat:API]   streaming → tools=${useTools} | model=llama-3.3-70b-versatile | systemPromptLen=${systemPrompt.length}`);
     let result;
     try {
-      // Validate Groq API key before attempting to call
-      if (!process.env.GROQ_API_KEY) {
-        throw new Error("[CRITICAL] GROQ_API_KEY is not configured. Please set it in your environment variables.");
-      }
-
       result = await streamText({
         model: groq("llama-3.3-70b-versatile"),
-        system: `${systemMessage.content}\n\n${authContext}${pageContext}`,
+        system: systemPrompt,
         messages: modelMessages,
-        tools,
-        stopWhen: stepCountIs(8),
-        onFinish: async ({ text, toolCalls, toolResults }) => {
-          if (user) {
-            try {
-              // 1. Save user's last message (robust: supports parts-based UI messages)
-              const lastUserMessage = messages[messages.length - 1]
-              if (lastUserMessage && lastUserMessage.role === "user") {
-                const userText = extractTextFromUiMessage(lastUserMessage)
-                await supabase.from("ai_chat_messages").insert({
-                  user_id: user.id,
-                  case_id: caseId,
-                  role: "user",
-                  content: userText || "[User message]",
-                });
-              }
-
-              // 2. Save assistant response
-              await supabase.from("ai_chat_messages").insert({
-                user_id: user.id,
-                case_id: caseId,
-                role: "assistant",
-                content: text,
-                metadata: { toolCalls, toolResults },
-              });
-            } catch (saveError) {
-              console.error("[Chat API] Failed to save messages to database:", saveError);
-              // Don't fail the entire request just because DB save failed
-            }
-          }
-        },
+        ...(useTools ? { tools, stopWhen: stepCountIs(3) } : {}),
+        onFinish: async ({ text, toolCalls, toolResults }) => saveChatMessages(text, toolCalls, toolResults),
       });
+      console.log(`[Chat:API]   streamText → ok (${Date.now() - t0}ms)`);
     } catch (toolError: any) {
-      // Check if this is a Groq auth error or other API error
       const errorMessage = toolError?.message || String(toolError);
-      const isAuthError = errorMessage.includes("GROQ_API_KEY") || 
-                         errorMessage.includes("401") || 
+      console.warn(`[Chat:API] ✗ streamText threw (${Date.now() - t0}ms):`, errorMessage);
+
+      const isAuthError = errorMessage.includes("GROQ_API_KEY") ||
+                         errorMessage.includes("401") ||
                          errorMessage.includes("Unauthorized") ||
                          errorMessage.includes("api_key");
-      
+
       if (isAuthError) {
-        console.error("[Chat API] Groq API authentication failed:", errorMessage);
+        console.error("[Chat:API] ✗ auth error, not retrying");
         return new Response(
-          JSON.stringify({ 
-            error: "Chat service is not properly configured. Please contact support." 
-          }),
+          JSON.stringify({ error: "Chat service is not properly configured. Please contact support." }),
           { status: 503, headers: { "Content-Type": "application/json" } }
         );
       }
 
-      // For other tool-call errors, try fallback without tools
-      console.warn("[Chat API] Tool-call generation failed, attempting fallback:", errorMessage);
-      
       try {
+        console.log("[Chat:API]   fallback → retrying without tools...");
+        const systemWithNav = `${systemPrompt}\n\n[IMPORTANT] Tool calling is temporarily unavailable. Reply with plain text only. For navigation, include [NAVIGATE:/path] or [ACTION:Label:/path] markers in your text.`;
         result = await streamText({
           model: groq("llama-3.3-70b-versatile"),
-          system: `${systemMessage.content}\n\n${authContext}${pageContext}`,
+          system: systemWithNav,
           messages: modelMessages,
-          // No tools in fallback
-          onFinish: async ({ text }) => {
-            if (user) {
-              try {
-                // Save messages in fallback case too
-                const lastUserMessage = messages[messages.length - 1]
-                if (lastUserMessage && lastUserMessage.role === "user") {
-                  const userText = extractTextFromUiMessage(lastUserMessage)
-                  await supabase.from("ai_chat_messages").insert({
-                    user_id: user.id,
-                    case_id: caseId,
-                    role: "user",
-                    content: userText || "[User message]",
-                  });
-                }
-                await supabase.from("ai_chat_messages").insert({
-                  user_id: user.id,
-                  case_id: caseId,
-                  role: "assistant",
-                  content: text,
-                });
-              } catch (saveError) {
-                console.error("[Chat API] Fallback: Failed to save messages:", saveError);
-              }
-            }
-          },
+          onFinish: async ({ text }) => saveChatMessages(text),
         });
-      } catch (fallbackError) {
-        console.error("[Chat API] Fallback also failed:", fallbackError);
-        const fallbackMessage = fallbackError?.message || String(fallbackError);
-        
-        // Determine appropriate error response
-        let statusCode = 500;
-        let errorMsg = "Sorry, I'm temporarily unavailable. Please try again in a moment.";
-        
-        if (fallbackMessage.includes("GROQ_API_KEY") || fallbackMessage.includes("401")) {
-          statusCode = 503;
-          errorMsg = "Chat service is not configured. Please contact support.";
-        } else if (fallbackMessage.includes("rate limit") || fallbackMessage.includes("429")) {
-          statusCode = 429;
-          errorMsg = "I'm currently busy. Please wait a moment and try again.";
-        } else if (fallbackMessage.includes("timeout")) {
-          statusCode = 504;
-          errorMsg = "The request took too long. Please try again.";
-        }
-        
+        console.log(`[Chat:API]   fallback → ok (${Date.now() - t0}ms)`);
+      } catch (fallbackError: any) {
+        console.error(`[Chat:API] ✗ fallback also failed (${Date.now() - t0}ms):`, fallbackError?.message || fallbackError);
+        const msg = fallbackError?.message || String(fallbackError);
+        const statusCode = msg.includes("429") || msg.includes("rate limit") ? 429 : 500;
         return new Response(
-          JSON.stringify({ error: errorMsg }),
+          JSON.stringify({ error: statusCode === 429 ? "I'm currently busy. Please wait a moment." : "Sorry, I'm temporarily unavailable. Please try again." }),
           { status: statusCode, headers: { "Content-Type": "application/json" } }
         );
       }
     }
 
+    console.log(`[Chat:API] ✓ returning stream (${Date.now() - t0}ms)`);
     return result.toUIMessageStreamResponse();
   } catch (error: any) {
     const errorMessage = error?.message || String(error);
-    console.error("[Chat API] Unhandled error:", { message: errorMessage, error });
+    console.error(`[Chat:API] ✗ UNHANDLED (${Date.now() - t0}ms):`, { message: errorMessage, stack: error?.stack?.split('\n').slice(0, 3) });
     
     // Return a user-friendly error response
     const statusCode = error?.status || 500;

@@ -230,8 +230,8 @@ export default function PaymentsPage() {
                       <h3 className="font-semibold">
                         {payment.case?.title || "Payment"}
                       </h3>
-                      <Badge className={statusConfig[payment.status].className}>
-                        {statusConfig[payment.status].label}
+                      <Badge className={(statusConfig[payment.status] ?? statusConfig.pending).className}>
+                        {(statusConfig[payment.status] ?? statusConfig.pending).label}
                       </Badge>
                     </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">

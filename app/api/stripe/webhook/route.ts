@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
 
             await supabase.from("notifications").insert({
               user_id: appointment.client_id,
+              created_by: appointment.client_id,
               type: "payment_update",
               title: "Payment Successful",
               description: `Your payment for "${caseTitle}" has been confirmed.`,
@@ -109,6 +110,7 @@ export async function POST(request: NextRequest) {
             if (appointment.lawyer_id) {
               await supabase.from("notifications").insert({
                 user_id: appointment.lawyer_id,
+                created_by: appointment.client_id,
                 type: "payment_update",
                 title: "Payment Received",
                 description: `Payment received for consultation "${caseTitle}".`,
@@ -116,28 +118,27 @@ export async function POST(request: NextRequest) {
               })
             }
 
-            // Email notification to client — fire and forget
+            // Email notification to client
             const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
-            supabase
-              .from("profiles")
-              .select("email")
-              .eq("id", appointment.client_id)
-              .single()
-              .then(({ data: clientProfile }) => {
-                if (clientProfile?.email) {
-                  sendEmail({
-                    to: clientProfile.email,
-                    subject: "Payment Confirmed — Consultation Scheduled",
-                    html: buildEmailHtml({
-                      title: "Payment Confirmed",
-                      body: `Your payment for <strong>"${caseTitle}"</strong> has been received and your consultation has been scheduled. You'll find the details in your appointments.`,
-                      ctaText: "View Appointments",
-                      ctaUrl: `${siteUrl}/client/appointments`,
-                    }),
-                  })
-                }
-              })
-              .catch(() => {})
+            try {
+              const { data: clientProfile } = await supabase
+                .from("profiles")
+                .select("email")
+                .eq("id", appointment.client_id)
+                .single()
+              if (clientProfile?.email) {
+                await sendEmail({
+                  to: clientProfile.email,
+                  subject: "Payment Confirmed — Consultation Scheduled",
+                  html: buildEmailHtml({
+                    title: "Payment Confirmed",
+                    body: `Your payment for <strong>"${caseTitle}"</strong> has been received and your consultation has been scheduled. You'll find the details in your appointments.`,
+                    ctaText: "View Appointments",
+                    ctaUrl: `${siteUrl}/client/appointments`,
+                  }),
+                })
+              }
+            } catch { /* email is supplementary */ }
           }
 
           console.log(`[Stripe] Payment succeeded for appointment ${appointment_id}`)
@@ -146,11 +147,12 @@ export async function POST(request: NextRequest) {
       }
 
       case "payment_intent.succeeded": {
+        // Idempotent fallback — checkout.session.completed already handles the full flow.
+        // This only ensures the payment record is marked completed if it wasn't already.
         const paymentIntent = event.data.object as Stripe.PaymentIntent
-        const { appointment_id, payment_id } = paymentIntent.metadata
+        const { payment_id } = paymentIntent.metadata
 
-        if (appointment_id && payment_id) {
-          // Update payment status
+        if (payment_id) {
           await supabase
             .from("payments")
             .update({
@@ -161,70 +163,7 @@ export async function POST(request: NextRequest) {
             })
             .eq("id", payment_id)
 
-          const { data: updatedAppointment } = await supabase
-            .from("appointments")
-            .update({
-              status: "scheduled",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", appointment_id)
-            .select("case_id")
-            .single()
-
-          if (updatedAppointment?.case_id) {
-            await supabase
-              .from("cases")
-              .update({
-                status: "in_progress",
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", updatedAppointment.case_id)
-
-            await appendCaseTimelineEvent(supabase, {
-              caseId: updatedAppointment.case_id,
-              actorId: null,
-              eventType: CaseTimelineEventType.PAYMENT_COMPLETED,
-              metadata: { appointment_id, payment_id, source: "stripe_webhook_intent" },
-            })
-            await appendCaseTimelineEvent(supabase, {
-              caseId: updatedAppointment.case_id,
-              actorId: null,
-              eventType: CaseTimelineEventType.CASE_ACTIVATED,
-              metadata: { source: "stripe_webhook_intent" },
-            })
-
-            console.log(`[Stripe] Updated case ${updatedAppointment.case_id} to in_progress`)
-          }
-
-          const { data: appointment } = await supabase
-            .from("appointments")
-            .select("client_id, lawyer_id, cases(title)")
-            .eq("id", appointment_id)
-            .single()
-
-          if (appointment) {
-            const caseTitle = (appointment.cases as any)?.title || (Array.isArray(appointment.cases) ? (appointment.cases[0] as any)?.title : "consultation")
-
-            await supabase.from("notifications").insert({
-              user_id: appointment.client_id,
-              type: "payment_update",
-              title: "Payment Successful",
-              description: `Your payment for "${caseTitle}" has been confirmed.`,
-              data: { appointment_id, payment_id },
-            })
-
-            if (appointment.lawyer_id) {
-              await supabase.from("notifications").insert({
-                user_id: appointment.lawyer_id,
-                type: "payment_update",
-                title: "Payment Received",
-                description: `Payment received for consultation "${caseTitle}".`,
-                data: { appointment_id, payment_id },
-              })
-            }
-          }
-
-          console.log(`[Stripe] Payment succeeded for appointment ${appointment_id}`)
+          console.log(`[Stripe] payment_intent.succeeded — ensured payment ${payment_id} is marked completed`)
         }
         break
       }

@@ -10,11 +10,13 @@ export function ProgressBar() {
   const searchParams = useSearchParams()
   const trickleRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const safetyRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isRunning = useRef(false)
 
   const cleanup = useCallback(() => {
     if (trickleRef.current) { clearInterval(trickleRef.current); trickleRef.current = null }
     if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
+    if (safetyRef.current) { clearTimeout(safetyRef.current); safetyRef.current = null }
   }, [])
 
   const start = useCallback(() => {
@@ -31,6 +33,15 @@ export function ProgressBar() {
         return Math.min(p + Math.random() * inc + 1, 88)
       })
     }, 250)
+
+    safetyRef.current = setTimeout(() => {
+      if (isRunning.current) {
+        cleanup()
+        isRunning.current = false
+        setProgress(100)
+        setTimeout(() => { setVisible(false); setProgress(0) }, 200)
+      }
+    }, 8000)
   }, [cleanup])
 
   const done = useCallback(() => {
@@ -69,7 +80,7 @@ export function ProgressBar() {
     const origReplace = history.replaceState.bind(history)
 
     history.pushState = function (...args: Parameters<typeof origPush>) {
-      start()
+      if (args[2] && String(args[2]) !== window.location.href) start()
       return origPush(...args)
     }
     history.replaceState = function (...args: Parameters<typeof origReplace>) {

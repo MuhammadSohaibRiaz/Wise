@@ -27,14 +27,18 @@ type QueuedAnalysisJob = {
   } | null
 }
 
-async function pollAnalysisJob(jobId: string): Promise<QueuedAnalysisJob> {
+async function pollAnalysisJob(jobId: string, signal?: AbortSignal): Promise<QueuedAnalysisJob> {
   const maxAttempts = 150
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const res = await fetch(`/api/analyze-document/job/${jobId}`)
+    if (signal?.aborted) throw new DOMException("Polling aborted", "AbortError")
+    const res = await fetch(`/api/analyze-document/job/${jobId}`, { signal })
     const job = (await res.json()) as QueuedAnalysisJob & { error?: string }
     if (!res.ok) throw new Error(job.error || "Could not check analysis status")
     if (job.status === "completed" || job.status === "failed") return job
-    await new Promise((r) => setTimeout(r, 2000))
+    await new Promise((r) => {
+      const timer = setTimeout(r, 2000)
+      signal?.addEventListener("abort", () => { clearTimeout(timer); r(undefined) }, { once: true })
+    })
   }
   throw new Error("Analysis is taking longer than expected. Check History or try again.")
 }

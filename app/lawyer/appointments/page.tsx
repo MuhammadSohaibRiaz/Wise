@@ -123,8 +123,8 @@ export default function LawyerAppointmentsPage() {
           status: apt.status || "pending",
           request_message: apt.request_message,
           notes: apt.notes,
-          case: apt.cases || {},
-          client: apt.profiles || {},
+          case: apt.cases || { id: "", title: "Unknown", case_type: "", description: "", hourly_rate: null },
+          client: apt.profiles || { id: "", first_name: "Unknown", last_name: "", avatar_url: null, email: "" },
         })),
       )
       setError(null)
