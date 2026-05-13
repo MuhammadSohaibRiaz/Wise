@@ -197,6 +197,14 @@ export function ClientRequests({ hideTitle = false }: ClientRequestsProps) {
 
       if (error) throw error
 
+      await supabase
+        .from("cases")
+        .update({
+          status: "in_progress",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", target.case_id)
+
       setRequests(requests.filter((r) => r.id !== requestId))
 
       await notifyAppointmentUpdate(
@@ -265,7 +273,7 @@ export function ClientRequests({ hideTitle = false }: ClientRequestsProps) {
         .from("cases")
         .update({
           lawyer_id: null,
-          status: "open",
+          status: "closed",
           updated_at: new Date().toISOString(),
         })
         .eq("id", target.case_id)

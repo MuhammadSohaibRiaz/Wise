@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { createClient } from "@/lib/supabase/client"
 import Link from "next/link"
+import { ArrowLeft } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
 export default function ResetPasswordPage() {
@@ -60,7 +61,14 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-background px-4">
+    <main className="min-h-screen flex items-center justify-center bg-background px-4 relative">
+      <Link
+        href="/auth/client/sign-in"
+        className="absolute top-4 right-4 sm:top-6 sm:right-6 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors z-10"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back
+      </Link>
       <div className="w-full max-w-md space-y-6">
         <div className="space-y-2 text-center">
           <h1 className="text-3xl font-bold">Create New Password</h1>

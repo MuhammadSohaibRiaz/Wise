@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/client"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { LAW_SPECIALIZATIONS } from "@/lib/specializations"
 import { FileUpload } from "@/components/auth/file-upload"
-import { Loader2 } from "lucide-react"
+import { Loader2, ArrowLeft } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
 export default function LawyerRegisterPage() {
@@ -131,7 +131,14 @@ export default function LawyerRegisterPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
+    <main className="min-h-screen flex items-center justify-center bg-background px-4 py-12 relative">
+      <Link
+        href="/auth/lawyer/sign-in"
+        className="absolute top-4 right-4 sm:top-6 sm:right-6 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors z-10"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back
+      </Link>
       <div className="w-full max-w-md space-y-6">
         <div className="space-y-2 text-center">
           <h1 className="text-3xl font-bold">Join as a Lawyer</h1>

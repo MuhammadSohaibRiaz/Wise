@@ -52,6 +52,8 @@ function AICaseAnalysisContent() {
   const [history, setHistory] = useState<any[]>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
   const [activeTab, setActiveTab] = useState("analyze")
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const { toast } = useToast()
   const searchParams = useSearchParams()
   const documentIdParam = searchParams.get("documentId")
@@ -154,43 +156,55 @@ function AICaseAnalysisContent() {
   const fetchHistory = async () => {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) {
+      console.warn("[Analysis] fetchHistory: no user session")
+      setIsLoadingHistory(false)
+      return
+    }
 
     setIsLoadingHistory(true)
-    const { data, error } = await supabase
-      .from("documents")
-      .select(`
-        id,
-        file_name,
-        status,
-        created_at,
-        document_analysis (
+    try {
+      const { data, error } = await supabase
+        .from("documents")
+        .select(`
           id,
-          summary,
-          risk_assessment,
-          risk_level,
-          urgency,
-          seriousness,
-          recommendations,
-          category,
-          analysis_status,
-          legal_citations,
-          disclaimer,
-          is_legal_document
-        )
-      `)
-      .eq("uploaded_by", user.id)
-      .order("created_at", { ascending: false })
+          file_name,
+          status,
+          created_at,
+          document_analysis (
+            id,
+            summary,
+            risk_assessment,
+            risk_level,
+            urgency,
+            seriousness,
+            recommendations,
+            category,
+            analysis_status,
+            legal_citations,
+            disclaimer
+          )
+        `)
+        .eq("uploaded_by", user.id)
+        .order("created_at", { ascending: false })
 
-    if (data) {
-      const legalOnly = data.filter((doc) => {
-        const analysis = Array.isArray(doc.document_analysis) ? doc.document_analysis[0] : null
-        if (!analysis) return true
-        return analysis.is_legal_document !== false
-      })
-      setHistory(legalOnly)
+      if (error) {
+        console.error("[Analysis] fetchHistory query error:", error.message, error.details, error.hint)
+        toast({
+          title: "Could not load history",
+          description: error.message,
+          variant: "destructive",
+        })
+        setIsLoadingHistory(false)
+        return
+      }
+
+      setHistory(data ?? [])
+    } catch (err: any) {
+      console.error("[Analysis] fetchHistory unexpected error:", err)
+    } finally {
+      setIsLoadingHistory(false)
     }
-    setIsLoadingHistory(false)
   }
 
   const handleUploadComplete = async (documentId: string) => {
@@ -259,20 +273,25 @@ function AICaseAnalysisContent() {
     }
   }
 
-  const handleDeleteDocument = async (documentId: string, fileName: string) => {
-    if (!window.confirm(`Delete "${fileName}" and its analysis? This cannot be undone.`)) return
-
+  const handleDeleteDocument = async (documentId: string) => {
     try {
-      const supabase = createClient()
+      setIsDeleting(true)
+      const res = await fetch("/api/documents/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId }),
+      })
 
-      await supabase.from("document_analysis").delete().eq("document_id", documentId)
-      await supabase.from("documents").delete().eq("id", documentId)
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || "Failed to delete document")
 
       setHistory((prev) => prev.filter((d: any) => d.id !== documentId))
-
-      toast({ title: "Deleted", description: `"${fileName}" has been removed.` })
+      toast({ title: "Deleted", description: "Document and analysis have been removed." })
     } catch (err: any) {
       toast({ title: "Delete failed", description: err.message || "Could not delete document.", variant: "destructive" })
+    } finally {
+      setIsDeleting(false)
+      setConfirmDeleteId(null)
     }
   }
 
@@ -476,17 +495,40 @@ function AICaseAnalysisContent() {
                                 Failed
                               </Badge>
                             )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-muted-foreground hover:text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleDeleteDocument(item.id, item.file_name)
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {confirmDeleteId === item.id ? (
+                              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  disabled={isDeleting}
+                                  onClick={() => handleDeleteDocument(item.id)}
+                                >
+                                  {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Delete"}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  disabled={isDeleting}
+                                  onClick={() => setConfirmDeleteId(null)}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-muted-foreground hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setConfirmDeleteId(item.id)
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </CardContent>
                       </Card>

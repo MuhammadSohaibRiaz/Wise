@@ -223,7 +223,8 @@ export default function ClientCaseDetailPage() {
       setTimelineEvents((timelineData as CaseTimelineEventRow[]) || [])
 
       // Check if client already left a review for this case
-      const { data: existingReview } = await supabase
+      // Once hasReviewed is true (from DB or from modal onSuccess), never reset to false
+      const { data: existingReview, error: reviewCheckErr } = await supabase
         .from("reviews")
         .select("id")
         .eq("case_id", caseId)
@@ -231,7 +232,12 @@ export default function ClientCaseDetailPage() {
         .limit(1)
         .maybeSingle()
 
-      setHasReviewed(!!existingReview)
+      if (reviewCheckErr) {
+        console.warn("[CaseDetail] Could not check review status:", reviewCheckErr.message)
+      }
+      if (existingReview) {
+        setHasReviewed(true)
+      }
 
       setError(null)
     } catch (error) {

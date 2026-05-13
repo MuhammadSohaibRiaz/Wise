@@ -254,6 +254,14 @@ export default function LawyerAppointmentsPage() {
 
       console.log("[Appointments] Update successful:", updatedData)
 
+      await supabase
+        .from("cases")
+        .update({
+          status: "in_progress",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", targetAppointment.case.id)
+
       // Update local state
       setAppointments(
         appointments.map((apt) => {
@@ -336,12 +344,12 @@ export default function LawyerAppointmentsPage() {
 
       if (error) throw error
 
-      // Free the client to book another lawyer after a declined request
+      // Close the case — a new case is auto-created on re-booking
       await supabase
         .from("cases")
         .update({
           lawyer_id: null,
-          status: "open",
+          status: "closed",
           updated_at: new Date().toISOString(),
         })
         .eq("id", targetAppointment.case.id)
@@ -963,57 +971,6 @@ export default function LawyerAppointmentsPage() {
                                 "Mark Consultation Held"
                               )}
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="mt-2"
-                              disabled={processingId === appointment.id}
-                              onClick={() => openRescheduleFor(appointment)}
-                            >
-                              Reschedule
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              className="mt-2"
-                              disabled={processingId === appointment.id}
-                              onClick={() => void handleLawyerCancel(appointment.id)}
-                            >
-                              Cancel
-                            </Button>
-                            {rescheduleOpenId === appointment.id && (
-                              <div className="mt-2 w-full rounded-md border p-2">
-                                <label className="mb-1 block text-[11px] text-muted-foreground">New date & time</label>
-                                <input
-                                  type="datetime-local"
-                                  className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
-                                  value={rescheduleDraftById[appointment.id] || ""}
-                                  min={toDatetimeLocalValue(new Date().toISOString())}
-                                  onChange={(e) =>
-                                    setRescheduleDraftById((prev) => ({ ...prev, [appointment.id]: e.target.value }))
-                                  }
-                                />
-                                <div className="mt-2 flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    className="h-7 px-2 text-xs"
-                                    disabled={processingId === appointment.id}
-                                    onClick={() => void handleConfirmReschedule(appointment.id)}
-                                  >
-                                    Confirm
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 px-2 text-xs"
-                                    disabled={processingId === appointment.id}
-                                    onClick={() => setRescheduleOpenId(null)}
-                                  >
-                                    Close
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
                           </>
                         )}
                       </div>

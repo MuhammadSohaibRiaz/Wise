@@ -25,13 +25,13 @@ export function SiteHeader() {
 
   return (
     <header className="w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-      <div className="mx-auto max-w-7xl px-4 py-4 flex items-center justify-between">
+      <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-8">
-          <Link href="/" className="font-bold text-2xl tracking-tighter text-primary flex items-center gap-2">
+          <Link href="/" className="font-bold text-xl sm:text-2xl tracking-tighter text-primary flex items-center gap-2">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-white text-xs font-bold">CW</span>
+              <span className="text-white text-xs font-bold">WC</span>
             </div>
-            CaseWise
+            <span className="hidden sm:inline">WiseCase</span>
           </Link>
           
           <nav aria-label="Primary" className="hidden md:flex items-center gap-6">
@@ -52,30 +52,30 @@ export function SiteHeader() {
           </nav>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1 sm:gap-3">
           <Link
             href="/auth/lawyer/sign-in"
-            className="hidden lg:block text-xs font-medium text-muted-foreground hover:text-primary px-3"
+            className="text-[11px] sm:text-xs font-medium text-muted-foreground hover:text-primary px-2 sm:px-3"
           >
             For Lawyers
           </Link>
-          <div className="h-4 w-[1px] bg-border hidden lg:block mx-2" />
+          <div className="h-4 w-[1px] bg-border" />
           
           <Link
             href="/auth/client/sign-in"
-            className="text-sm font-medium hover:text-primary transition-colors px-3 py-2"
+            className="text-xs sm:text-sm font-medium hover:text-primary transition-colors px-2 sm:px-3 py-2"
           >
             Sign In
           </Link>
           
           <Link
             href="/auth/client/register"
-            className="inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground px-5 py-2 text-sm font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all active:scale-95"
+            className="inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all active:scale-95"
           >
-            Join CaseWise
+            Join WiseCase
           </Link>
           
-          <div className="ml-2">
+          <div className="ml-1 sm:ml-2">
             <ThemeToggle />
           </div>
         </div>

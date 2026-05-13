@@ -58,18 +58,15 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-background px-4">
+    <main className="min-h-screen flex items-center justify-center bg-background px-4 relative">
+      <Link
+        href="/auth/client/sign-in"
+        className="absolute top-4 right-4 sm:top-6 sm:right-6 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors z-10"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back
+      </Link>
       <div className="w-full max-w-md space-y-6">
-        <div className="space-y-2">
-          <Link
-            href="/auth/client/sign-in"
-            className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to sign in
-          </Link>
-        </div>
-
         <div className="space-y-2 text-center">
           <h1 className="text-3xl font-bold">Reset Password</h1>
           <p className="text-muted-foreground">Enter your email and we'll send you a link to reset your password</p>
