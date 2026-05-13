@@ -294,19 +294,26 @@ export function MessagesShell({ userType }: MessagesShellProps) {
     async (messageIds: string[], caseId: string) => {
       if (!messageIds.length) return
 
-      const { error } = await supabase.from("messages").update({ is_read: true }).in("id", messageIds)
-
-      if (error) {
-        console.error("[v0] Mark read error:", error)
-        return
-      }
-
       setUnreadCounts((prev) => ({
         ...prev,
         [caseId]: Math.max(0, (prev[caseId] || 0) - messageIds.length),
       }))
+
+      try {
+        const res = await fetch("/api/messages/mark-read", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageIds }),
+        })
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}))
+          console.error("[v0] Mark read API error:", json.error)
+        }
+      } catch (err) {
+        console.error("[v0] Mark read error:", err)
+      }
     },
-    [supabase],
+    [],
   )
 
   const loadMessages = useCallback(
