@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useRouter, usePathname } from "next/navigation"
+import { usePathname } from "next/navigation"
 import { ClientSidebar } from "@/components/client/sidebar"
 import { ClientHeader } from "@/components/client/header"
 import { useState, useEffect, useMemo, Suspense } from "react"
@@ -14,36 +14,20 @@ export default function ClientLayout({
   children: React.ReactNode
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const router = useRouter()
   const pathname = usePathname()
   const [isLoading, setIsLoading] = useState(true)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
 
-  // All hooks must be called before any conditional returns
   const toggleSidebar = useMemo(() => () => setSidebarOpen((prev) => !prev), [])
 
   useEffect(() => {
-    const checkAuth = async () => {
+    const init = async () => {
       const supabase = createClient()
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      if (!session) {
-        router.push("/auth/client/sign-in")
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setIsLoading(false)
         return
       }
 
-      // Check user_type - only allow clients
-      const { data: profile } = await supabase.from("profiles").select("user_type").eq("id", session.user.id).single()
-
-      if (profile?.user_type !== "client") {
-        router.push(profile?.user_type === "lawyer" ? "/lawyer/dashboard" : "/auth/client/sign-in")
-        return
-      }
-
-      setIsAuthenticated(true)
-      // Set initial state based on screen size
       const handleResize = () => {
         if (window.innerWidth >= 768) {
           setSidebarOpen(true)
@@ -56,24 +40,8 @@ export default function ClientLayout({
       return () => window.removeEventListener("resize", handleResize)
     }
 
-    checkAuth()
-  }, [router])
-
-  // Only re-check auth on pathname change if not authenticated
-  useEffect(() => {
-    if (!isAuthenticated && !isLoading) {
-      const checkAuth = async () => {
-        const supabase = createClient()
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        if (!session) {
-          router.push("/auth/client/sign-in")
-        }
-      }
-      checkAuth()
-    }
-  }, [pathname, isAuthenticated, isLoading, router])
+    init()
+  }, [])
 
   if (isLoading) {
     return (

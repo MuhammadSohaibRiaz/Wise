@@ -9,7 +9,7 @@ function getResend(): Resend {
   return _resend
 }
 
-const FROM_ADDRESS = "WiseCase <onboarding@resend.dev>"
+const FROM_ADDRESS = "WiseCase <noreply@rapidnextech.com>"
 
 interface SendEmailParams {
   to: string

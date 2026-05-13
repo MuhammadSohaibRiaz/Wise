@@ -5,7 +5,6 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   let response = NextResponse.next({ request })
 
-  // Public routes
   const publicRoutes = ["/", "/auth", "/match", "/terms", "/privacy", "/client/lawyer", "/api/chat"]
   const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route + "/"))
 
@@ -31,12 +30,25 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  function createRedirect(dest: string) {
+    const url = request.nextUrl.clone()
+    url.pathname = dest
+    const redirectResponse = NextResponse.redirect(url)
+    response.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value)
+    })
+    return redirectResponse
+  }
+
   const needsRoleCheck = !isPublicRoute && (pathname.startsWith("/admin") || pathname.startsWith("/client/") || pathname.startsWith("/lawyer/"))
 
   if (!user && !isPublicRoute) {
-    const url = request.nextUrl.clone()
-    url.pathname = pathname.startsWith("/admin") ? "/auth/admin/sign-in" : "/auth/client/sign-in"
-    return NextResponse.redirect(url)
+    const dest = pathname.startsWith("/admin")
+      ? "/auth/admin/sign-in"
+      : pathname.startsWith("/lawyer/")
+        ? "/auth/lawyer/sign-in"
+        : "/auth/client/sign-in"
+    return createRedirect(dest)
   }
 
   if (user && needsRoleCheck) {
@@ -49,21 +61,15 @@ export async function updateSession(request: NextRequest) {
     const userType = profile?.user_type
 
     if (pathname.startsWith("/admin") && userType !== "admin") {
-      const url = request.nextUrl.clone()
-      url.pathname = "/auth/admin/sign-in"
-      return NextResponse.redirect(url)
+      return createRedirect("/auth/admin/sign-in")
     }
 
     if (pathname.startsWith("/client/") && userType === "lawyer") {
-      const url = request.nextUrl.clone()
-      url.pathname = "/lawyer/dashboard"
-      return NextResponse.redirect(url)
+      return createRedirect("/lawyer/dashboard")
     }
 
     if (pathname.startsWith("/lawyer/") && userType === "client") {
-      const url = request.nextUrl.clone()
-      url.pathname = "/client/dashboard"
-      return NextResponse.redirect(url)
+      return createRedirect("/client/dashboard")
     }
   }
 

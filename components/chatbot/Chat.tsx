@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { normalizeChatNavigationPath, type ChatRole } from '@/lib/chat-routes';
+import { toast } from '@/hooks/use-toast';
 
 type QueuedAnalysisJob = {
   status: string
@@ -67,7 +68,6 @@ export function Chat({ onClose }: { onClose: () => void }) {
   } as any);
 
   const isLoading = status === 'streaming' || status === 'submitted';
-  const [chatErrorMsg, setChatErrorMsg] = useState<string | null>(null);
 
   // Debug: log every status transition
   const prevStatusRef = useRef(status);
@@ -78,18 +78,32 @@ export function Chat({ onClose }: { onClose: () => void }) {
     }
   }, [status, messages.length, chatError]);
 
+  const errorRecoveredRef = useRef<string | null>(null);
   useEffect(() => {
     if (status !== 'error' || !chatError) return;
     const raw = (chatError as any)?.message || String(chatError);
-    console.error("[Chat:Client] Error effect fired:", { raw, status });
-    const isToolError = raw.includes("Failed to call a function") || raw.includes("failed_generation");
-    const msg = isToolError
-      ? "I had trouble processing that. Could you try rephrasing your request?"
-      : raw.includes("rate limit") || raw.includes("429")
-        ? "I'm a bit busy right now. Please try again in a moment."
-        : "Something went wrong. Please try again.";
-    setChatErrorMsg(msg);
-  }, [status, chatError]);
+    console.error("[Chat:Client] Error → recovering with assistant message:", raw);
+
+    if (errorRecoveredRef.current === raw) return;
+    errorRecoveredRef.current = raw;
+
+    const isRateLimit = raw.includes("rate limit") || raw.includes("429");
+    const recoveryText = isRateLimit
+      ? "I'm a bit busy right now. Please wait a moment and try again."
+      : "I can only assist with **WiseCase platform navigation** and **Pakistani legal matters**. If you have a legal question or need help finding a lawyer, I'm happy to help!\n\n[ACTION:Browse Lawyers:/match]";
+
+    setMessages((prev: any[]) => [
+      ...prev,
+      {
+        id: `recovery-${Date.now()}`,
+        role: "assistant",
+        parts: [{ type: "text", text: recoveryText }],
+        createdAt: new Date(),
+      },
+    ]);
+
+    setTimeout(() => { errorRecoveredRef.current = null; }, 2000);
+  }, [status, chatError, setMessages]);
 
   const safeInput = draft ?? '';
 
@@ -208,12 +222,11 @@ export function Chat({ onClose }: { onClose: () => void }) {
       setMessages([]);
       setHasMoreHistory(false);
       setHistoryCursor(null);
-      setChatErrorMsg(null);
       console.log("[Chat:Client] clearCurrentThread → success, local messages cleared");
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to clear history";
       console.error("[Chat:Client] clearCurrentThread → failed:", message);
-      setChatErrorMsg(message);
+      toast({ variant: "destructive", title: "Error", description: message });
     } finally {
       setIsClearingHistory(false);
     }
@@ -403,7 +416,6 @@ export function Chat({ onClose }: { onClose: () => void }) {
     }
     console.log("[Chat:Client] sendText →", { text: trimmed.slice(0, 80), role: chatRole, messagesBefore: messages.length, status });
     setDraft('');
-    setChatErrorMsg(null);
 
     try {
       await sendMessage({ text: trimmed } as any);
@@ -952,15 +964,6 @@ export function Chat({ onClose }: { onClose: () => void }) {
         </>
         )}
       </CardContent>
-
-      {chatErrorMsg && (
-        <div className="px-3 py-2 bg-destructive/10 border-t border-destructive/20 flex items-center gap-2 text-xs text-destructive">
-          <span className="flex-1">{chatErrorMsg}</span>
-          <button onClick={() => setChatErrorMsg(null)} className="shrink-0 opacity-60 hover:opacity-100">
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      )}
 
       <CardFooter className="p-3 border-t bg-background">
         <form
