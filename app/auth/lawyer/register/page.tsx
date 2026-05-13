@@ -7,12 +7,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { AuthAlert } from "@/components/auth/auth-alert"
 import { createClient } from "@/lib/supabase/client"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { LAW_SPECIALIZATIONS } from "@/lib/specializations"
 import { FileUpload } from "@/components/auth/file-upload"
 import { Loader2 } from "lucide-react"
+import { toast } from "@/hooks/use-toast"
 
 export default function LawyerRegisterPage() {
   const router = useRouter()
@@ -24,42 +24,41 @@ export default function LawyerRegisterPage() {
   const [barLicense, setBarLicense] = useState("")
   const [practiceArea, setPracticeArea] = useState("")
   const [licenseFile, setLicenseFile] = useState<File | null>(null)
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+
+  const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
+  const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError("")
-    setSuccess("")
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match")
+      showError("Passwords do not match")
       return
     }
 
     if (password.length < 6) {
-      setError("Password must be at least 6 characters long")
+      showError("Password must be at least 6 characters long")
       return
     }
 
     if (!barLicense.trim()) {
-      setError("Bar license number is required")
+      showError("Bar license number is required")
       return
     }
 
     if (!/^PKB-\d{6}$/.test(barLicense.trim())) {
-      setError("Bar license must be in format PKB-XXXXXX (e.g. PKB-123456)")
+      showError("Bar license must be in format PKB-XXXXXX (e.g. PKB-123456)")
       return
     }
 
     if (!practiceArea.trim()) {
-      setError("Please select a primary practice area")
+      showError("Please select a primary practice area")
       return
     }
 
     if (!licenseFile) {
-      setError("Please upload your bar license document for admin verification")
+      showError("Please upload your bar license document for admin verification")
       return
     }
 
@@ -69,7 +68,6 @@ export default function LawyerRegisterPage() {
       const supabase = createClient()
       const normalizedEmail = email.trim().toLowerCase()
 
-      // 1. SIGN UP
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: normalizedEmail,
         password,
@@ -87,13 +85,12 @@ export default function LawyerRegisterPage() {
       })
 
       if (signUpError) {
-        setError(signUpError.message)
+        showError(signUpError.message)
         setIsLoading(false)
         return
       }
 
       if (data.user) {
-        // 2. UPLOAD LICENSE FILE
         const fileExt = licenseFile.name.split(".").pop()
         const fileName = `${data.user.id}-${Date.now()}.${fileExt}`
         const filePath = `licenses/${fileName}`
@@ -104,13 +101,12 @@ export default function LawyerRegisterPage() {
 
         if (uploadError) {
           console.error("Storage upload error:", uploadError)
-          setSuccess("Account created, but license upload failed. You can upload it later from your profile.")
+          showSuccess("Account created, but license upload failed. You can upload it later from your profile.")
         } else {
           const { data: { publicUrl } } = supabase.storage
             .from("verifications")
             .getPublicUrl(filePath)
 
-          // 3. UPDATE LAWYER PROFILE
           await supabase
             .from("lawyer_profiles")
             .update({
@@ -122,13 +118,13 @@ export default function LawyerRegisterPage() {
             })
             .eq("id", data.user.id)
 
-          setSuccess("Registration successful! Your account is now pending admin verification. Please check your email to confirm your account.")
+          showSuccess("Registration successful! Your account is now pending admin verification.")
         }
 
         setTimeout(() => router.push("/auth/lawyer/sign-in"), 1000)
       }
     } catch (err: any) {
-      setError(err.message || "An unexpected error occurred.")
+      showError(err.message || "An unexpected error occurred.")
     } finally {
       setIsLoading(false)
     }
@@ -141,9 +137,6 @@ export default function LawyerRegisterPage() {
           <h1 className="text-3xl font-bold">Join as a Lawyer</h1>
           <p className="text-muted-foreground">Submit your credentials for verification</p>
         </div>
-
-        {error && <AuthAlert type="error" message={error} />}
-        {success && <AuthAlert type="success" message={success} />}
 
         <form onSubmit={handleRegister} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">

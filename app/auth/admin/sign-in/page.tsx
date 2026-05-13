@@ -6,31 +6,28 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { AuthAlert } from "@/components/auth/auth-alert"
 import { createClient } from "@/lib/supabase/client"
 import { ShieldCheck, Lock, Loader2 } from "lucide-react"
+import { toast } from "@/hooks/use-toast"
 
 export default function AdminSignInPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [adminPin, setAdminPin] = useState("")
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
-  // For this FYP, we'll use a simple hardcoded PIN for extra security
-  // In a production app, this would be an environment variable
   const REQUIRED_PIN = "1234" 
+
+  const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
+  const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError("")
-    setSuccess("")
     setIsLoading(true)
 
     if (adminPin !== REQUIRED_PIN) {
-      setError("Invalid Security PIN. Access denied.")
+      showError("Invalid Security PIN. Access denied.")
       setIsLoading(false)
       return
     }
@@ -39,12 +36,12 @@ export default function AdminSignInPage() {
       const supabase = createClient()
 
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim().toLowerCase(),
         password,
       })
 
       if (signInError) {
-        setError(signInError.message)
+        showError(signInError.message)
         setIsLoading(false)
         return
       }
@@ -52,12 +49,11 @@ export default function AdminSignInPage() {
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (userError || !user) {
-        setError("Failed to verify account.")
+        showError("Failed to verify account.")
         setIsLoading(false)
         return
       }
 
-      // Verify user_type is admin
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("user_type")
@@ -65,7 +61,7 @@ export default function AdminSignInPage() {
         .single()
 
       if (profileError || !profile) {
-        setError("Failed to verify account permissions.")
+        showError("Failed to verify account permissions.")
         await supabase.auth.signOut()
         setIsLoading(false)
         return
@@ -73,17 +69,17 @@ export default function AdminSignInPage() {
 
       if (profile.user_type !== "admin") {
         await supabase.auth.signOut()
-        setError("This account does not have administrative privileges.")
+        showError("This account does not have administrative privileges.")
         setIsLoading(false)
         return
       }
 
-      setSuccess("Welcome, Admin. Redirecting...")
+      showSuccess("Welcome, Admin. Redirecting...")
       setTimeout(() => {
         router.push("/admin/lawyers")
       }, 1500)
     } catch (err) {
-      setError("An unexpected error occurred.")
+      showError("An unexpected error occurred.")
     } finally {
       setIsLoading(false)
     }
@@ -103,9 +99,6 @@ export default function AdminSignInPage() {
           </h1>
           <p className="text-slate-400 font-medium">Secure Administrative Portal</p>
         </div>
-
-        {error && <AuthAlert type="error" message={error} />}
-        {success && <AuthAlert type="success" message={success} />}
 
         <form onSubmit={handleSignIn} className="space-y-6 mt-8">
           <div className="space-y-2">

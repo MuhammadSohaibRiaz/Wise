@@ -7,31 +7,30 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { AuthAlert } from "@/components/auth/auth-alert"
 import { createClient } from "@/lib/supabase/client"
 import Link from "next/link"
+import { toast } from "@/hooks/use-toast"
 
 export default function ResetPasswordPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+
+  const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
+  const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError("")
-    setSuccess("")
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match")
+      showError("Passwords do not match")
       return
     }
 
     if (password.length < 6) {
-      setError("Password must be at least 6 characters long")
+      showError("Password must be at least 6 characters long")
       return
     }
 
@@ -45,16 +44,16 @@ export default function ResetPasswordPage() {
       })
 
       if (updateError) {
-        setError(updateError.message)
+        showError(updateError.message)
         return
       }
 
-      setSuccess("Password reset successfully! Redirecting to sign in...")
+      showSuccess("Password reset successfully! Redirecting to sign in...")
       setTimeout(() => {
         router.push("/auth/client/sign-in")
       }, 2000)
     } catch (err) {
-      setError("An unexpected error occurred. Please try again.")
+      showError("An unexpected error occurred. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -67,9 +66,6 @@ export default function ResetPasswordPage() {
           <h1 className="text-3xl font-bold">Create New Password</h1>
           <p className="text-muted-foreground">Enter your new password below</p>
         </div>
-
-        {error && <AuthAlert type="error" message={error} />}
-        {success && <AuthAlert type="success" message={success} />}
 
         <form onSubmit={handleResetPassword} className="space-y-4">
           <div className="space-y-2">

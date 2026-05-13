@@ -7,21 +7,20 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { AuthAlert } from "@/components/auth/auth-alert"
 import { createClient } from "@/lib/supabase/client"
 import { ArrowLeft } from "lucide-react"
+import { toast } from "@/hooks/use-toast"
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
+  const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
+  const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
+
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError("")
-    setSuccess("")
     setIsLoading(true)
 
     try {
@@ -35,17 +34,17 @@ export default function ForgotPasswordPage() {
 
       if (resetError) {
         console.log("[v0] Password reset error:", resetError)
-        setError(resetError.message)
+        showError(resetError.message)
         return
       }
 
-      setSuccess(
-        "Password reset link sent! Check your email for instructions. If you don't see it in 5 minutes, check your spam folder.",
+      showSuccess(
+        "Password reset link sent! Check your email for instructions.",
       )
       setSubmitted(true)
       setEmail("")
     } catch (err) {
-      setError("An unexpected error occurred. Please try again.")
+      showError("An unexpected error occurred. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -68,9 +67,6 @@ export default function ForgotPasswordPage() {
           <h1 className="text-3xl font-bold">Reset Password</h1>
           <p className="text-muted-foreground">Enter your email and we'll send you a link to reset your password</p>
         </div>
-
-        {error && <AuthAlert type="error" message={error} />}
-        {success && <AuthAlert type="success" message={success} />}
 
         {!submitted ? (
           <form onSubmit={handleForgotPassword} className="space-y-4">

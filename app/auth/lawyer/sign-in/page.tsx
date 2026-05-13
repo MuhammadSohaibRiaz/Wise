@@ -8,54 +8,51 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { AuthAlert } from "@/components/auth/auth-alert"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2 } from "lucide-react"
+import { toast } from "@/hooks/use-toast"
 
 export default function LawyerSignInPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+
+  const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
+  const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError("")
-    setSuccess("")
     setIsLoading(true)
 
     try {
       const supabase = createClient()
 
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim().toLowerCase(),
         password,
       })
 
       if (signInError) {
         if (signInError.message.includes("Invalid login credentials")) {
-          setError("Invalid email or password. Please try again.")
+          showError("Invalid email or password. Please try again.")
         } else if (signInError.message.includes("Email not confirmed")) {
-          setError("Please confirm your email before signing in.")
+          showError("Please confirm your email before signing in.")
         } else {
-          setError(signInError.message)
+          showError(signInError.message)
         }
         setIsLoading(false)
         return
       }
 
-      // Get the user from session after successful sign-in
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (userError || !user) {
-        setError("Failed to verify account. Please try again.")
+        showError("Failed to verify account. Please try again.")
         setIsLoading(false)
         return
       }
 
-      // Verify user_type is lawyer
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("user_type")
@@ -63,7 +60,7 @@ export default function LawyerSignInPage() {
         .single()
 
       if (profileError || !profile) {
-        setError("Failed to verify account. Please try again.")
+        showError("Failed to verify account. Please try again.")
         await supabase.auth.signOut()
         setIsLoading(false)
         return
@@ -71,7 +68,7 @@ export default function LawyerSignInPage() {
 
       if (profile.user_type !== "lawyer") {
         await supabase.auth.signOut()
-        setError(
+        showError(
           profile.user_type === "client"
             ? "This is a client account. Please use the client sign-in page."
             : "Invalid account type. Please contact support.",
@@ -80,10 +77,10 @@ export default function LawyerSignInPage() {
         return
       }
 
-      setSuccess("Sign in successful! Redirecting...")
+      showSuccess("Sign in successful! Redirecting...")
       router.push("/lawyer/dashboard")
     } catch (err) {
-      setError("An unexpected error occurred. Please try again.")
+      showError("An unexpected error occurred. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -96,9 +93,6 @@ export default function LawyerSignInPage() {
           <h1 className="text-3xl font-bold">Lawyer Sign In</h1>
           <p className="text-muted-foreground">Manage your cases and consultations</p>
         </div>
-
-        {error && <AuthAlert type="error" message={error} />}
-        {success && <AuthAlert type="success" message={success} />}
 
         <form onSubmit={handleSignIn} className="space-y-4">
           <div className="space-y-2">

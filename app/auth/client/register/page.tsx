@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { AuthAlert } from "@/components/auth/auth-alert"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2 } from "lucide-react"
+import { toast } from "@/hooks/use-toast"
 
 export default function ClientRegisterPage() {
   const router = useRouter()
@@ -19,29 +19,27 @@ export default function ClientRegisterPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+
+  const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
+  const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError("")
-    setSuccess("")
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match")
+      showError("Passwords do not match")
       return
     }
 
     if (password.length < 6) {
-      setError("Password must be at least 6 characters long")
+      showError("Password must be at least 6 characters long")
       return
     }
 
-    // Stronger password validation for evaluation quality
     const strongPassword = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/
     if (!strongPassword.test(password)) {
-      setError("Password must be at least 8 characters and include uppercase, lowercase, and a number.")
+      showError("Password must be at least 8 characters and include uppercase, lowercase, and a number.")
       return
     }
 
@@ -51,17 +49,14 @@ export default function ClientRegisterPage() {
       const supabase = createClient()
       const normalizedEmail = email.trim().toLowerCase()
 
-      // Test connection first
       const { error: connectionError } = await supabase.from("profiles").select("id").limit(1)
 
       if (connectionError) {
         console.error("Supabase connection error:", connectionError)
         if (connectionError.message.includes("Invalid API key") || connectionError.message.includes("JWT")) {
-          setError(
-            "❌ Supabase connection failed! Please check your .env.local file. Make sure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set correctly."
-          )
+          showError("Supabase connection failed! Please check your environment configuration.")
         } else {
-          setError(`Connection error: ${connectionError.message}`)
+          showError(`Connection error: ${connectionError.message}`)
         }
         setIsLoading(false)
         return
@@ -74,7 +69,7 @@ export default function ClientRegisterPage() {
         .maybeSingle()
 
       if (existingProfile) {
-        setError("This email is already registered. Please sign in instead.")
+        showError("This email is already registered. Please sign in instead.")
         return
       }
 
@@ -95,37 +90,29 @@ export default function ClientRegisterPage() {
       if (signUpError) {
         console.error("Sign up error:", signUpError)
         if (signUpError.message.includes("already registered")) {
-          setError("This email is already registered. Please sign in instead.")
+          showError("This email is already registered. Please sign in instead.")
         } else if (signUpError.message.includes("Invalid API key") || signUpError.message.includes("JWT")) {
-          setError(
-            "❌ Supabase configuration error! Please check your .env.local file and restart the dev server."
-          )
+          showError("Supabase configuration error! Please check your environment and restart the dev server.")
         } else {
-          setError(signUpError.message)
+          showError(signUpError.message)
         }
         return
       }
 
       if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-        setError("This email is already registered. Please sign in instead.")
+        showError("This email is already registered. Please sign in instead.")
         return
       }
 
       if (data.user) {
-        setSuccess("Registration successful! Please check your email to confirm your account.")
+        showSuccess("Registration successful! Redirecting to sign in...")
         setTimeout(() => {
           router.push("/auth/client/sign-in")
         }, 800)
       }
     } catch (err: any) {
       console.error("Registration error:", err)
-      if (err.message && err.message.includes("Missing Supabase")) {
-        setError(
-          "❌ Supabase is not configured! Please create a .env.local file with NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY. See SETUP_INSTRUCTIONS.md for details."
-        )
-      } else {
-        setError(err.message || "An unexpected error occurred. Please try again.")
-      }
+      showError(err.message || "An unexpected error occurred. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -138,9 +125,6 @@ export default function ClientRegisterPage() {
           <h1 className="text-3xl font-bold">Create Client Account</h1>
           <p className="text-muted-foreground">Find and book the right lawyer for your needs</p>
         </div>
-
-        {error && <AuthAlert type="error" message={error} />}
-        {success && <AuthAlert type="success" message={success} />}
 
         <form onSubmit={handleRegister} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -194,7 +178,7 @@ export default function ClientRegisterPage() {
               required
               disabled={isLoading}
             />
-            <p className="text-xs text-muted-foreground">At least 6 characters</p>
+            <p className="text-xs text-muted-foreground">At least 8 characters, with uppercase, lowercase, and a number</p>
           </div>
 
           <div className="space-y-2">
