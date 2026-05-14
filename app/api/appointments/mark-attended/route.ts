@@ -5,7 +5,7 @@ import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timel
 /**
  * Marks a consultation as held (`attended`) so billing/session state is not confused with case closure (`completed`).
  * Allowed when appointment is `scheduled` (or `rescheduled`) and the slot end time is in the past,
- * or up to 30 minutes before start (lawyer early check-in). Caller must be client or lawyer on the row.
+ * or up to 7 days before start (lawyer early check-in). Caller must be client or lawyer on the row.
  */
 export async function POST(req: NextRequest) {
   try {

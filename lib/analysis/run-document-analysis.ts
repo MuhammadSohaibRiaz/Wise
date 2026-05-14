@@ -103,13 +103,18 @@ export async function runDocumentAnalysis(
 
   let isImageMode = false
   let dataUrl = ""
+  const lowerName = document.file_name?.toLowerCase() ?? ""
   const isImage =
-    document.file_type?.startsWith("image/") || document.file_name?.toLowerCase().endsWith(".jgp")
+    document.file_type?.startsWith("image/") ||
+    lowerName.endsWith(".jpg") ||
+    lowerName.endsWith(".jpeg") ||
+    lowerName.endsWith(".png")
 
   if (!extractedText && isImage) {
     isImageMode = true
     const mimeType =
-      document.file_type || (document.file_name?.toLowerCase().endsWith(".jgp") ? "image/jpeg" : "image/jpeg")
+      document.file_type ||
+      (lowerName.endsWith(".png") ? "image/png" : "image/jpeg")
     const base64Image = fileBuffer.toString("base64")
     dataUrl = `data:${mimeType};base64,${base64Image}`
     extractedText = "[Image Document - Analyzed directly via Vision AI]"

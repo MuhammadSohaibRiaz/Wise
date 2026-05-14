@@ -1,0 +1,5 @@
+export * from './src/client/AssistantWidget'
+export * from './src/server/createAssistantRoute'
+export * from './src/server/pineconeRetriever'
+export * from './src/server/defaults'
+export * from './src/server/types'

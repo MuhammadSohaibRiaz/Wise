@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { stripe } from "@/lib/stripe/config"
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import Stripe from "stripe"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
-import { sendEmail, buildEmailHtml } from "@/lib/email"
+import { sendEmail, buildEmailHtml, escapeHtml } from "@/lib/email"
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
 
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Webhook Error: ${error.message}` }, { status: 400 })
   }
 
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   try {
     switch (event.type) {
@@ -134,12 +134,13 @@ export async function POST(request: NextRequest) {
                 .eq("id", appointment.client_id)
                 .single()
               if (clientProfile?.email) {
+                const safeCaseTitle = escapeHtml(caseTitle)
                 await sendEmail({
                   to: clientProfile.email,
                   subject: "Payment Confirmed — Consultation Scheduled",
                   html: buildEmailHtml({
                     title: "Payment Confirmed",
-                    body: `Your payment for <strong>"${caseTitle}"</strong> has been received and your consultation has been scheduled. You'll find the details in your appointments.`,
+                    body: `Your payment for <strong>"${safeCaseTitle}"</strong> has been received and your consultation has been scheduled. You'll find the details in your appointments.`,
                     ctaText: "View Appointments",
                     ctaUrl: `${siteUrl}/client/appointments`,
                   }),
@@ -199,20 +200,19 @@ export async function POST(request: NextRequest) {
             if (appointment) {
               const caseTitle = (appointment.cases as any)?.title || (Array.isArray(appointment.cases) ? (appointment.cases[0] as any)?.title : "consultation")
 
-              // Notify client
               await supabase.from("notifications").insert({
                 user_id: appointment.client_id,
+                created_by: appointment.client_id,
                 type: "payment_update",
                 title: "Payment Failed",
                 description: `Payment failed for "${caseTitle}". Please try again.`,
                 data: { appointment_id, payment_id, status: "failed" },
               })
 
-              // Notify lawyer
               if (appointment.lawyer_id) {
-                const caseTitle = (appointment.cases as any)?.title || (Array.isArray(appointment.cases) ? (appointment.cases[0] as any)?.title : "consultation")
                 await supabase.from("notifications").insert({
                   user_id: appointment.lawyer_id,
+                  created_by: appointment.client_id,
                   type: "payment_update",
                   title: "Payment Failed",
                   description: `Client payment failed for "${caseTitle}".`,

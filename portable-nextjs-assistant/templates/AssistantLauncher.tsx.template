@@ -1,0 +1,32 @@
+'use client'
+
+import { useState } from 'react'
+import { AssistantWidget } from '@/portable-nextjs-assistant/src/client/AssistantWidget'
+
+export default function AssistantLauncher() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div style={{ position: 'fixed', right: 20, bottom: 20, zIndex: 9999 }}>
+      {open ? (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <button onClick={() => setOpen(false)} style={{ border: '1px solid #ddd', borderRadius: 8, padding: '6px 10px', background: '#fff' }}>
+              Close
+            </button>
+          </div>
+          <AssistantWidget
+            apiPath="/api/assistant"
+            title="Website Assistant"
+            greeting="Hi! I can help with your website workflows."
+            userContext={{ isAuthenticated: false, userType: null }}
+          />
+        </div>
+      ) : (
+        <button onClick={() => setOpen(true)} style={{ border: '1px solid #ddd', borderRadius: 999, padding: '12px 16px', background: '#111', color: '#fff' }}>
+          AI Assistant
+        </button>
+      )}
+    </div>
+  )
+}

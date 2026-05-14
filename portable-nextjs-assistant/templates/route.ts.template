@@ -1,0 +1,24 @@
+import { createAssistantRoute } from '@/portable-nextjs-assistant/src/server/createAssistantRoute'
+import { createPineconeRetriever } from '@/portable-nextjs-assistant/src/server/pineconeRetriever'
+import { defaultFastReply, defaultSystemPrompt } from '@/portable-nextjs-assistant/src/server/defaults'
+
+// Replace this with your embedding provider (OpenAI/Groq/etc.)
+async function embedText(text: string): Promise<number[]> {
+  throw new Error('Implement embedText() for your target project')
+}
+
+const retrieveContext = createPineconeRetriever({
+  embedText,
+  collectionFilter: 'knowledge_base',
+})
+
+export const runtime = 'nodejs'
+
+export const POST = createAssistantRoute({
+  getSystemPrompt: defaultSystemPrompt,
+  fastReply: defaultFastReply,
+  retrieveContext,
+  model: process.env.ASSISTANT_MODEL || 'llama-3.3-70b-versatile',
+  temperature: Number(process.env.ASSISTANT_TEMPERATURE || 0.3),
+  topK: Number(process.env.ASSISTANT_TOPK || 7),
+})

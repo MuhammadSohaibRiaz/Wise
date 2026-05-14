@@ -29,13 +29,11 @@ export default function TestConnectionPage() {
     }
 
     try {
-      // Test 1: Create client
       try {
         const supabase = createClient()
         testResults.clientCreation.success = true
         testResults.clientCreation.client = supabase
 
-        // Test 2: Test auth connection
         try {
           const { error: authError } = await supabase.auth.getSession()
           if (authError) {
@@ -47,7 +45,6 @@ export default function TestConnectionPage() {
           testResults.authTest.error = err.message
         }
 
-        // Test 3: Test database connection
         try {
           const { data, error: dbError } = await supabase.from("profiles").select("id").limit(1)
           if (dbError) {
@@ -100,7 +97,6 @@ export default function TestConnectionPage() {
 
             {results && (
               <div className="space-y-6 mt-6">
-                {/* Environment Variables */}
                 <div className="space-y-2">
                   <h3 className="font-semibold flex items-center gap-2">
                     Environment Variables
@@ -148,7 +144,6 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key_here`}
                   )}
                 </div>
 
-                {/* Client Creation */}
                 <div className="space-y-2">
                   <h3 className="font-semibold flex items-center gap-2">
                     Client Creation
@@ -165,7 +160,6 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key_here`}
                   )}
                 </div>
 
-                {/* Auth Test */}
                 <div className="space-y-2">
                   <h3 className="font-semibold flex items-center gap-2">
                     Authentication Connection
@@ -182,7 +176,6 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key_here`}
                   )}
                 </div>
 
-                {/* Database Test */}
                 <div className="space-y-2">
                   <h3 className="font-semibold flex items-center gap-2">
                     Database Connection
@@ -199,12 +192,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key_here`}
                   )}
                   {results.databaseTest.success && (
                     <div className="bg-green-50 border border-green-200 rounded-md p-4 text-sm text-green-700">
-                      ✅ Successfully connected to Supabase database!
+                      Successfully connected to Supabase database!
                     </div>
                   )}
                 </div>
 
-                {/* Summary */}
                 {results.clientCreation.success &&
                   results.authTest.success &&
                   results.databaseTest.success && (
@@ -254,7 +246,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here`}
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
-                  Supabase Dashboard → Settings → API
+                  Supabase Dashboard &rarr; Settings &rarr; API
                 </a>
               </p>
             </div>
@@ -270,4 +262,3 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here`}
     </main>
   )
 }
-

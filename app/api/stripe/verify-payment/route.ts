@@ -115,19 +115,19 @@ export async function POST(request: NextRequest) {
             if (appointment) {
                 const caseTitle = (appointment.cases as any)?.title || (Array.isArray(appointment.cases) ? (appointment.cases[0] as any)?.title : "consultation")
 
-                // Notify client
                 await supabase.from("notifications").insert({
                     user_id: appointment.client_id,
+                    created_by: user.id,
                     type: "payment_update",
                     title: "Payment Successful",
                     description: `Your payment for "${caseTitle}" has been confirmed.`,
                     data: { appointment_id, payment_id },
                 })
 
-                // Notify lawyer
                 if (appointment.lawyer_id) {
                     await supabase.from("notifications").insert({
                         user_id: appointment.lawyer_id,
+                        created_by: user.id,
                         type: "payment_update",
                         title: "Payment Received",
                         description: `Payment received for consultation "${caseTitle}".`,

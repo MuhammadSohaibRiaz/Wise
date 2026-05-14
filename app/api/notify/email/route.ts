@@ -169,12 +169,14 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Lawyer email not found" }, { status: 404 })
         }
 
+        const safeFirstName = profile.first_name ? escapeHtml(profile.first_name) : ""
+
         await sendEmail({
           to: profile.email,
           subject: "Your WiseCase account has been verified",
           html: buildEmailHtml({
             title: "Verification Approved",
-            body: `Congratulations${profile.first_name ? `, ${profile.first_name}` : ""}! Your bar license has been verified. You can now access all platform features and start accepting cases.`,
+            body: `Congratulations${safeFirstName ? `, ${safeFirstName}` : ""}! Your bar license has been verified. You can now access all platform features and start accepting cases.`,
             ctaText: "Go to Dashboard",
             ctaUrl: `${siteUrl}/lawyer/dashboard`,
           }),

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { sendEmail, buildEmailHtml } from "@/lib/email"
+import { sendEmail, buildEmailHtml, escapeHtml } from "@/lib/email"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 
 const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || "support@wisecaseapp.com"
@@ -109,20 +109,25 @@ export async function POST(req: NextRequest) {
       timeStyle: "short",
     })
 
+    const safeUserName = escapeHtml(userName)
+    const safeUserEmail = escapeHtml(userEmail)
+    const safeCaseTitle = escapeHtml(caseTitle || "N/A")
+    const safeMessage = escapeHtml(message).replace(/\n/g, "<br>")
+
     await sendEmail({
       to: SUPPORT_EMAIL,
       subject: `Support Request — Appointment ${appointmentId.slice(0, 8)}`,
       html: buildEmailHtml({
         title: "Appointment Cancellation Request",
         body: `
-          <strong>User:</strong> ${userName} (${userEmail})<br>
+          <strong>User:</strong> ${safeUserName} (${safeUserEmail})<br>
           <strong>Appointment ID:</strong> ${appointmentId}<br>
-          <strong>Case:</strong> ${caseTitle || "N/A"}<br>
+          <strong>Case:</strong> ${safeCaseTitle}<br>
           <strong>Scheduled Time:</strong> ${scheduledAtFormatted}<br>
           <strong>Reschedule Count:</strong> ${row.reschedule_count}/3<br>
           <strong>Duration:</strong> ${row.duration_minutes} minutes<br><br>
           <strong>User's Message:</strong><br>
-          ${message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\n/g, "<br>")}
+          ${safeMessage}
         `.trim(),
         ctaText: "Review in Admin Panel",
         ctaUrl: `${(
