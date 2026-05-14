@@ -38,7 +38,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Appointment not found or invalid" }, { status: 404 })
     }
 
-    // Create Stripe Checkout Session
+    const siteUrl = (
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : null) ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+      request.headers.get("origin") ||
+      "http://localhost:3000"
+    ).replace(/\/$/, "")
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: [
@@ -55,8 +64,8 @@ export async function POST(request: NextRequest) {
         },
       ],
       mode: "payment",
-      success_url: `${request.headers.get("origin") || "http://localhost:3000"}/client/appointments?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${request.headers.get("origin") || "http://localhost:3000"}/client/appointments?payment=cancelled`,
+      success_url: `${siteUrl}/client/appointments?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${siteUrl}/client/appointments?payment=cancelled`,
       metadata: {
         appointment_id: appointmentId,
         payment_id: paymentId,

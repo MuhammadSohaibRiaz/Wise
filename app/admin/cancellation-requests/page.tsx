@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, CheckCircle, XCircle, AlertTriangle, Calendar, Clock, User, FileText } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { AdminHeader } from "@/components/admin/admin-header"
+import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { useRouter } from "next/navigation"
 import {
   Dialog,
@@ -24,6 +25,7 @@ interface CancellationRequest {
   scheduled_at: string
   duration_minutes: number
   reschedule_count: number
+  previous_status: string | null
   case_id: string
   case_title: string
   case_type: string
@@ -91,6 +93,7 @@ export default function AdminCancellationRequestsPage() {
           scheduled_at,
           duration_minutes,
           reschedule_count,
+          previous_status,
           case_id,
           cases (
             id,
@@ -120,6 +123,7 @@ export default function AdminCancellationRequestsPage() {
         scheduled_at: apt.scheduled_at,
         duration_minutes: apt.duration_minutes,
         reschedule_count: apt.reschedule_count || 0,
+        previous_status: apt.previous_status || null,
         case_id: apt.cases?.id || apt.case_id || "",
         case_title: apt.cases?.title || "Unknown",
         case_type: apt.cases?.case_type || "",
@@ -142,7 +146,7 @@ export default function AdminCancellationRequestsPage() {
 
       const { error } = await supabase
         .from("appointments")
-        .update({ status: "cancelled", updated_at: new Date().toISOString() })
+        .update({ status: "cancelled", previous_status: null, updated_at: new Date().toISOString() })
         .eq("id", request.id)
         .eq("status", "cancellation_requested")
 
@@ -200,6 +204,16 @@ export default function AdminCancellationRequestsPage() {
         },
       ])
 
+      if (request.case_id) {
+        const { data: { user: adminUser } } = await supabase.auth.getUser()
+        await appendCaseTimelineEvent(supabase, {
+          caseId: request.case_id,
+          actorId: adminUser?.id || null,
+          eventType: CaseTimelineEventType.CANCELLATION_RESOLVED,
+          metadata: { appointment_id: request.id, resolution: "approved" },
+        })
+      }
+
       setRequests((prev) => prev.filter((r) => r.id !== request.id))
       toast({ title: "Cancellation Approved", description: "Both parties have been notified." })
     } catch (error) {
@@ -214,9 +228,10 @@ export default function AdminCancellationRequestsPage() {
     try {
       setProcessingId(request.id)
 
+      const restoredStatus = request.previous_status === "rescheduled" ? "rescheduled" : "scheduled"
       const { error } = await supabase
         .from("appointments")
-        .update({ status: "scheduled", updated_at: new Date().toISOString() })
+        .update({ status: restoredStatus, previous_status: null, updated_at: new Date().toISOString() })
         .eq("id", request.id)
         .eq("status", "cancellation_requested")
 
@@ -262,17 +277,26 @@ export default function AdminCancellationRequestsPage() {
           type: "appointment_update",
           title: "Cancellation Rejected",
           description: `Your cancellation request for "${request.case_title}" was rejected. Please attend your appointment as scheduled.${rejectReason ? ` Reason: ${rejectReason}` : ""}`,
-          data: { appointment_id: request.id, status: "scheduled" },
+          data: { appointment_id: request.id, status: restoredStatus },
         },
         {
           user_id: request.lawyer.id,
           created_by: user?.id || request.lawyer.id,
           type: "appointment_update",
           title: "Cancellation Rejected",
-          description: `The cancellation request for "${request.case_title}" was rejected. The appointment remains scheduled.${rejectReason ? ` Reason: ${rejectReason}` : ""}`,
-          data: { appointment_id: request.id, status: "scheduled" },
+          description: `The cancellation request for "${request.case_title}" was rejected. The appointment remains active.${rejectReason ? ` Reason: ${rejectReason}` : ""}`,
+          data: { appointment_id: request.id, status: restoredStatus },
         },
       ])
+
+      if (request.case_id) {
+        await appendCaseTimelineEvent(supabase, {
+          caseId: request.case_id,
+          actorId: user?.id || null,
+          eventType: CaseTimelineEventType.CANCELLATION_RESOLVED,
+          metadata: { appointment_id: request.id, resolution: "rejected", reason: rejectReason || undefined },
+        })
+      }
 
       setRequests((prev) => prev.filter((r) => r.id !== request.id))
       setRejectTarget(null)
@@ -393,6 +417,12 @@ export default function AdminCancellationRequestsPage() {
                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Reschedule Count</p>
                         <p className="text-sm font-medium">{request.reschedule_count}/3</p>
                       </div>
+                      {request.previous_status && (
+                        <div>
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status Before Request</p>
+                          <Badge variant="outline" className="text-xs capitalize">{request.previous_status.replace(/_/g, " ")}</Badge>
+                        </div>
+                      )}
                     </div>
                   </div>
 

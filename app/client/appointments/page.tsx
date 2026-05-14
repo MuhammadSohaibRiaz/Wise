@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, AlertCircle, Calendar, Clock, FileText, CreditCard, CheckCircle2, XCircle, CalendarClock, MessageSquare } from "lucide-react"
-import { appointmentStatusLabel, appointmentWorkflowPhase } from "@/lib/appointments-status"
+import { appointmentStatusLabel, appointmentWorkflowPhase, APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 import { PaymentButton } from "@/components/payments/payment-button"
 import {
   Dialog,
@@ -21,7 +21,7 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog"
-import "react-day-picker/dist/style.css"
+import "react-day-picker/style.css"
 
 interface Appointment {
   id: string
@@ -45,12 +45,6 @@ interface Appointment {
   }
 }
 
-const TIME_SLOTS = Array.from({ length: 17 }, (_, i) => {
-  const hour = Math.floor(i / 2) + 9
-  const min = i % 2 === 0 ? "00" : "30"
-  return `${String(hour).padStart(2, "0")}:${min}`
-})
-
 export default function ClientAppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -65,6 +59,8 @@ export default function ClientAppointmentsPage() {
   const [rescheduleDate, setRescheduleDate] = useState<Date | undefined>(undefined)
   const [rescheduleTime, setRescheduleTime] = useState("")
   const [rescheduleError, setRescheduleError] = useState("")
+  const [rescheduleSlots, setRescheduleSlots] = useState<string[]>([])
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false)
 
   // Cancel state
   const [cancelTarget, setCancelTarget] = useState<Appointment | null>(null)
@@ -246,20 +242,54 @@ export default function ClientAppointmentsPage() {
                 : apt,
             ),
           )
+          const old = payload.old as any
           if (updated.status === "awaiting_payment") {
             toast({
               title: "Payment Required",
               description: "Your appointment has been approved. Please complete payment to confirm your booking.",
             })
           } else if (updated.status === "scheduled") {
-            toast({
-              title: "Appointment Confirmed",
-              description: "Your payment was successful and your appointment is now confirmed.",
-            })
+            if (old?.status === "cancellation_requested") {
+              toast({
+                title: "Cancellation Denied",
+                description: "Your cancellation request was reviewed and denied by admin. The appointment remains active.",
+                variant: "destructive",
+              })
+            } else {
+              toast({
+                title: "Appointment Confirmed",
+                description: "Your payment was successful and your appointment is now confirmed.",
+              })
+            }
           } else if (updated.status === "rescheduled") {
+            if (old?.status === "cancellation_requested") {
+              toast({
+                title: "Cancellation Denied",
+                description: "Your cancellation request was reviewed and denied by admin. The appointment remains active.",
+                variant: "destructive",
+              })
+            } else {
+              toast({
+                title: "Appointment Rescheduled",
+                description: "Your appointment has been rescheduled. Check the new time.",
+              })
+            }
+          } else if (updated.status === "cancelled") {
+            if (old?.status === "cancellation_requested") {
+              toast({
+                title: "Cancellation Approved",
+                description: "Your cancellation request has been approved. The appointment has been cancelled.",
+              })
+            } else {
+              toast({
+                title: "Appointment Cancelled",
+                description: "Your appointment has been cancelled.",
+              })
+            }
+          } else if (updated.status === "cancellation_requested") {
             toast({
-              title: "Appointment Rescheduled",
-              description: "Your appointment has been rescheduled. Check the new time.",
+              title: "Cancellation Under Review",
+              description: "A cancellation request has been submitted and is under admin review.",
             })
           }
         },
@@ -301,6 +331,69 @@ export default function ClientAppointmentsPage() {
       supabase.removeChannel(channel)
     }
   }, [clientId, toast])
+
+  // Fetch available slots when reschedule date is selected
+  useEffect(() => {
+    if (!rescheduleDate || !rescheduleTarget) {
+      setRescheduleSlots([])
+      return
+    }
+
+    const fetchSlots = async () => {
+      setIsLoadingSlots(true)
+      setRescheduleTime("")
+      try {
+        const supabase = createClient()
+        const dateStr = rescheduleDate.toISOString().split("T")[0]
+        const now = new Date()
+        const isToday = rescheduleDate.toDateString() === now.toDateString()
+
+        const { data: booked } = await supabase
+          .from("appointments")
+          .select("scheduled_at, duration_minutes")
+          .eq("lawyer_id", rescheduleTarget.lawyer.id)
+          .gte("scheduled_at", `${dateStr}T00:00:00`)
+          .lte("scheduled_at", `${dateStr}T23:59:59`)
+          .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
+          .neq("id", rescheduleTarget.id)
+
+        const duration = rescheduleTarget.duration_minutes || 60
+        const startHour = 9
+        const endHour = 18
+        const slots: string[] = []
+
+        for (let hour = startHour; hour < endHour; hour++) {
+          for (let minute = 0; minute < 60; minute += 30) {
+            const slotTime = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+            const slotDateTime = new Date(rescheduleDate)
+            slotDateTime.setHours(hour, minute, 0, 0)
+            const slotEnd = new Date(slotDateTime.getTime() + duration * 60000)
+            const endOfDay = new Date(rescheduleDate)
+            endOfDay.setHours(endHour, 0, 0, 0)
+
+            if (slotEnd > endOfDay) continue
+            if (isToday && slotDateTime <= now) continue
+
+            const isBooked = booked?.some((apt) => {
+              const aptStart = new Date(apt.scheduled_at)
+              const aptEnd = new Date(aptStart.getTime() + (apt.duration_minutes || 60) * 60000)
+              return !(slotEnd <= aptStart || slotDateTime >= aptEnd)
+            })
+
+            if (!isBooked) slots.push(slotTime)
+          }
+        }
+
+        setRescheduleSlots(slots)
+      } catch {
+        setRescheduleSlots([])
+      } finally {
+        setIsLoadingSlots(false)
+      }
+    }
+
+    fetchSlots()
+  }, [rescheduleDate, rescheduleTarget])
 
   // --- Handlers ---
 
@@ -439,12 +532,6 @@ export default function ClientAppointmentsPage() {
     (apt.status === "scheduled" || apt.status === "rescheduled") &&
     apt.reschedule_count < 3 &&
     new Date(apt.scheduled_at).getTime() - Date.now() > 2 * 60 * 60 * 1000
-
-  const canCancelPrePayment = (apt: Appointment) =>
-    apt.status === "pending" || apt.status === "awaiting_payment"
-
-  const isPaidAppointment = (apt: Appointment) =>
-    apt.status === "scheduled" || apt.status === "rescheduled"
 
   // --- Render helpers ---
 
@@ -741,6 +828,22 @@ export default function ClientAppointmentsPage() {
                     </div>
                   )}
 
+                  {/* Rejected */}
+                  {appointment.status === "rejected" && (
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground italic">This request was declined by the lawyer.</p>
+                      <a href="/match" className="text-xs text-primary hover:underline mt-1 inline-block">Find another lawyer &rarr;</a>
+                    </div>
+                  )}
+
+                  {/* Completed */}
+                  {appointment.status === "completed" && (
+                    <div className="text-right">
+                      <p className="text-xs text-green-700 dark:text-green-400 font-medium">Case completed</p>
+                      <a href={`/client/cases/${appointment.case.id}`} className="text-xs text-primary hover:underline mt-1 inline-block">View case details &rarr;</a>
+                    </div>
+                  )}
+
                   {/* Cancelled */}
                   {appointment.status === "cancelled" && (
                     <p className="text-xs text-muted-foreground text-right italic">This appointment was cancelled</p>
@@ -776,18 +879,26 @@ export default function ClientAppointmentsPage() {
             {rescheduleDate && (
               <div>
                 <label className="text-sm font-medium mb-1 block">Select Time</label>
-                <Select value={rescheduleTime} onValueChange={(v) => { setRescheduleTime(v); setRescheduleError("") }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a time slot" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TIME_SLOTS.map((slot) => (
-                      <SelectItem key={slot} value={slot}>
-                        {slot}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {isLoadingSlots ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading available slots...
+                  </div>
+                ) : rescheduleSlots.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2">No available slots on this date. Please pick another date.</p>
+                ) : (
+                  <Select value={rescheduleTime} onValueChange={(v) => { setRescheduleTime(v); setRescheduleError("") }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a time slot" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {rescheduleSlots.map((slot) => (
+                        <SelectItem key={slot} value={slot}>
+                          {slot}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             )}
             {rescheduleError && (

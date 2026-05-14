@@ -13,7 +13,7 @@ interface UpcomingAppointment {
   id: string
   scheduled_at: string
   duration_minutes: number
-  status: "scheduled" | "awaiting_payment"
+  status: "scheduled" | "awaiting_payment" | "rescheduled" | "cancellation_requested"
   case: {
     title: string
   }
@@ -55,7 +55,7 @@ export function UpcomingAppointments({ hideTitle = false }: UpcomingAppointments
           )
         `)
         .eq("lawyer_id", sessionData.session.user.id)
-        .in("status", ["scheduled", "awaiting_payment"])
+        .in("status", ["scheduled", "awaiting_payment", "rescheduled", "cancellation_requested"])
         .gte("scheduled_at", new Date().toISOString())
         .order("scheduled_at", { ascending: true })
         .limit(3)
@@ -176,7 +176,9 @@ export function UpcomingAppointments({ hideTitle = false }: UpcomingAppointments
                     variant={apt.status === "scheduled" ? "default" : "secondary"}
                     className={cn(
                       "text-[10px] uppercase tracking-wider",
-                      apt.status === "awaiting_payment" && "bg-yellow-100 text-yellow-700 hover:bg-yellow-100"
+                      apt.status === "awaiting_payment" && "bg-yellow-100 text-yellow-700 hover:bg-yellow-100",
+                      apt.status === "rescheduled" && "bg-indigo-100 text-indigo-700 hover:bg-indigo-100",
+                      apt.status === "cancellation_requested" && "bg-amber-100 text-amber-700 hover:bg-amber-100",
                     )}
                   >
                     {apt.status === "awaiting_payment" ? (
@@ -184,7 +186,9 @@ export function UpcomingAppointments({ hideTitle = false }: UpcomingAppointments
                         <CreditCard className="h-3 w-3" />
                         Awaiting Payment
                       </div>
-                    ) : "Confirmed"}
+                    ) : apt.status === "rescheduled" ? "Rescheduled"
+                      : apt.status === "cancellation_requested" ? "Under Review"
+                      : "Confirmed"}
                   </Badge>
                   <Button 
                     size="sm" 

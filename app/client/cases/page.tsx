@@ -118,7 +118,7 @@ export default function MyCasesPage() {
           .from("appointments")
           .select("id, case_id, scheduled_at, status")
           .in("case_id", caseIds)
-          .in("status", ["pending", "scheduled", "awaiting_payment", "rescheduled"])
+          .in("status", ["pending", "scheduled", "awaiting_payment", "rescheduled", "cancellation_requested"])
           .order("scheduled_at", { ascending: true })
 
         if (appointmentsData) {

@@ -1,105 +1,368 @@
 # WiseCase Codebase Index
 
-This file is a fast navigation map of the repository, with special focus on Supabase and executed SQL scripts in `scripts/`.
+Last indexed: 2026-05-14
 
-## 1) Repository map
+This is the working navigation map for the WiseCase FYP codebase. It is based on local source inspection, the executed Supabase SQL history in `scripts/`, and a production build check.
 
-- `app/`: Next.js App Router pages and API route handlers.
-- `components/`: feature UI components (`admin`, `auth`, `chat`, `client`, `lawyer`, `payments`, `notifications`, `ui`).
-- `lib/`: shared logic and integrations (Supabase clients/middleware, AI tools, Stripe, notifications).
-- `hooks/`: reusable React hooks.
-- `data/`: static data/constants.
-- `scripts/`: SQL files executed in Supabase SQL editor (schema evolution source of truth).
-- `public/`, `styles/`: static assets and styling.
-- `rag-chatbot-export/rag-chatbot-export/`: separate nested project (Next.js + Payload + Pinecone).
+## 1) Stack and Build
 
-## 2) Main stack
+- Framework: Next.js 14 App Router, React 18, TypeScript.
+- Backend/data: Supabase Auth, Postgres, RLS, Storage, Realtime.
+- Payments: Stripe Checkout plus older Payment Intent route.
+- AI: Vercel AI SDK, Groq, `groq-sdk`.
+- Document extraction: `pdf-parse-fork`; image files are sent to Groq vision model.
+- Styling/UI: Tailwind CSS 4, Radix UI, lucide-react.
 
-- Frontend/app: Next.js 14, React 18, TypeScript.
-- Data/auth/storage: Supabase (`@supabase/ssr`, `@supabase/supabase-js`).
-- Payments: Stripe.
-- AI: Vercel AI SDK + Groq.
-- OCR/PDF: `tesseract.js`, `pdf-parse-fork`.
+Build command checked:
 
-## 3) Runtime entry points
+- `npm run build`: passes.
+- Important caveat: `next.config.mjs` has `eslint.ignoreDuringBuilds = true` and `typescript.ignoreBuildErrors = true`, so the build does not prove lint or type correctness.
 
-- App layout: `app/layout.tsx`
-- Home page: `app/page.tsx`
-- Middleware: `middleware.ts` and `lib/supabase/middleware.ts`
-- Auth callback: `app/auth/callback/route.ts`
-- Key APIs:
-  - `app/api/chat/route.ts`
-  - `app/api/chat/history/route.ts`
-  - `app/api/analyze-document/route.ts`
-  - `app/api/stripe/*`
+## 2) Repository Map
 
-## 4) Supabase SQL timeline (`scripts/`)
+- `app/`: Next.js pages, layouts, API routes, sitemap/robots.
+- `components/`: feature components and shared UI primitives.
+- `lib/`: Supabase clients, business logic, AI, notifications, Stripe, lifecycle helpers.
+- `hooks/`: toast and unread-message hooks.
+- `data/`: static app data.
+- `scripts/`: Supabase SQL editor execution history. Treat this as the DB migration source of truth unless live DB introspection proves otherwise.
+- `supabase/`: local Supabase config.
+- `public/`: images and static assets.
+- `rag-chatbot-export/rag-chatbot-export/`: separate exported chatbot/Payload/Pinecone project, not wired as the main app runtime.
 
-Intended execution order (by numeric prefix):
+## 3) Runtime Entrypoints
 
-- `001`-`010`: base profile/case/appointment/document/payment/review/message tables + auth trigger.
-- `011`-`016`: certifications, profile/lawyer profile field expansions, appointment request statuses.
-- `018`-`024`: storage buckets, notifications system, document analysis RLS fix.
-- `025`-`033`: realtime optional setup, access policy adjustments, AI chat table, case studies, admin role, recursion/policy fixes, disputes.
-- `034`-`036`: document analysis legal/history field updates (with consolidation in `036`).
-- `037`: explicit lawyer verification workflow state (`pending`/`approved`/`rejected`).
-- Extra utility seed: `scripts/seed_dummy_lawyers.sql`.
+Core app:
 
-Note: migration number `017` is missing; `034` + `035` are partially consolidated by `036`.
+- Root layout: `app/layout.tsx`
+- Home: `app/page.tsx`
+- Middleware: `middleware.ts`, `lib/supabase/middleware.ts`
+- Supabase browser client: `lib/supabase/client.ts`
+- Supabase server client: `lib/supabase/server.ts`
+- Supabase service-role client: `lib/supabase/admin.ts`
 
-## 5) Supabase schema index (high-level)
+Auth pages/routes:
 
-Core identity and people:
+- Client sign in/register: `app/auth/client/*`
+- Lawyer sign in/register: `app/auth/lawyer/*`
+- Admin sign in: `app/auth/admin/sign-in/page.tsx`
+- Callback: `app/auth/callback/route.ts`
+- Reset/forgot password: `app/auth/reset-password`, `app/auth/forgot-password`
+
+Dashboards:
+
+- Client: `app/client/dashboard/page.tsx`
+- Lawyer: `app/lawyer/dashboard/page.tsx`
+- Admin: `app/admin/dashboard/page.tsx`
+
+## 4) Environment Variables
+
+Required or actively referenced:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `GROQ_API_KEY`
+- `RESEND_API_KEY`
+- `CRON_SECRET`
+- `NEXT_PUBLIC_SITE_URL`
+- `NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL`
+- `SUPPORT_EMAIL`
+
+Risk:
+
+- `app/test-connection/page.tsx` displays Supabase env status and partial anon key. Keep it away from production users.
+
+## 5) Supabase SQL Timeline
+
+Base schema:
+
+- `001_create_profiles.sql`: `profiles`, user role check initially `client | lawyer`, profile RLS.
+- `002_create_lawyer_profiles.sql`: `lawyer_profiles`, public/own RLS.
+- `003_create_cases.sql`: `cases`, initial statuses `open | in_progress | completed | closed`.
+- `004_create_appointments.sql`: `appointments`, initial statuses `scheduled | completed | cancelled | rescheduled`.
+- `005_create_documents.sql`: `documents`.
+- `006_create_document_analysis.sql`: `document_analysis`.
+- `007_create_payments.sql`: `payments`.
+- `008_create_reviews.sql`: `reviews`.
+- `009_create_messages.sql`: `messages`.
+- `010_create_triggers.sql`: auth user insert trigger creates `profiles`.
+
+Early expansion:
+
+- `011_add_certifications_table.sql`: lawyer certifications.
+- `012_add_profile_fields.sql`: profile/avatar/availability/response fields.
+- `013_seed_test_data.sql`: test seed data.
+- `014_auto_create_lawyer_profile.sql`: trigger creates `lawyer_profiles` for lawyers.
+- `015_add_certifications_public_policy.sql`: public certifications policy.
+- `016_add_appointment_request_status.sql`: appointment request lifecycle columns/statuses.
+- `017` is missing.
+- `018_create_storage_bucket.sql`: `avatars` bucket and policies.
+- `019_create_notifications.sql`: notifications table.
+- `020_extend_notifications_types.sql`: adds `system` and `payment_update`.
+- `021_add_awaiting_payment_status.sql`: appointment `awaiting_payment`, `payments.appointment_id`.
+- `022_fix_notifications_is_read_policy.sql`: notification update policy.
+- `023_create_documents_storage.sql`: `documents` bucket.
+- `024_fix_document_analysis_rls.sql`: insert/update/select policies for analysis.
+- `025_optional_notifications_realtime.sql`: optional realtime setup.
+- `026_profiles_case_counterparty_access.sql`: profile visibility for case/appointment counterparties.
+- `027_create_ai_chat_messages.sql`: assistant history table.
+- `028_create_case_studies.sql`: lawyer portfolio cases.
+- `029_add_pending_completion_status.sql`: `cases.pending_completion`.
+- `030_add_admin_role.sql`: adds `admin` role.
+- `031_fix_profiles_recursion.sql`: `is_admin()` and admin RLS without recursion.
+- `032_create_portfolio_storage.sql`: `case-studies` and `verifications` buckets, verification fields.
+- `033_create_disputes.sql`: `case_disputes`, `handle_updated_at()`, overloaded `is_admin(user_id uuid)`.
+
+AI/document/schema consolidation:
+
+- `034_add_analysis_legal_fields.sql`: extra legal-analysis fields.
+- `035_fix_analysis_history_fields.sql`: analysis history fields.
+- `036_consolidated_analysis_updates.sql`: consolidated analysis fields.
+- `037_add_is_legal_flag.sql`: `document_analysis.is_legal_document`.
+- `037_add_lawyer_verification_status.sql`: duplicate number, adds lawyer verification status fields.
+- `038_add_ai_license_match.sql`: license match fields.
+
+Case/appointment lifecycle:
+
+- `039_case_completion_workflow.sql`: completion metadata, pending-completion trigger, case-completed appointment sync.
+- `040_cases_private_notes.sql`: private lawyer notes on cases.
+- `041_fix_appointments_completed_while_case_active.sql`: legacy repair helper.
+- `042_appointments_attended_status.sql`: adds `attended`, defines `completed` as closed-with-case.
+- `043_phase1_case_centric_foundation.sql`: `case_drafts`, `case_timeline_events`, `ai_security_logs`, analysis metadata, trust fields, Stripe Checkout session id.
+- `044_appointments_status_transition_guard.sql`: DB status transition guard.
+- `045_document_analysis_jobs.sql`: async analysis job queue.
+- `046_ai_chat_messages_case_scope.sql`: `ai_chat_messages.case_id`.
+- `047_require_attended_before_case_completion.sql`: requires attended/completed appointment before case completion.
+- `048_auto_recompute_lawyer_rating.sql`: DB trigger recomputes lawyer rating.
+- `049_make_documents_case_id_nullable.sql`: standalone analysis documents.
+- `050_add_reschedule_count.sql`: `reschedule_count`, `previous_status`, `cancellation_requested`.
+
+Seed/utility:
+
+- `seed_dummy_lawyers.sql`
+
+## 6) Current Backend Tables
+
+Identity/profile:
+
 - `profiles`
 - `lawyer_profiles`
 - `certifications`
 
-Case and operations:
+Cases and operations:
+
 - `cases`
+- `case_drafts`
+- `case_timeline_events`
+- `case_disputes`
 - `appointments`
 - `messages`
 - `reviews`
 - `payments`
 - `notifications`
-- `case_disputes`
 
 Documents and AI:
+
 - `documents`
 - `document_analysis`
+- `document_analysis_jobs`
 - `ai_chat_messages`
+- `ai_security_logs`
 - `case_studies`
 
-Storage buckets in scripts:
+Storage buckets:
+
 - `avatars`
 - `documents`
 - `case-studies`
 - `verifications`
 
-## 6) Trigger/functions in SQL
+## 7) Final Status Models
 
-- `handle_new_user()` + trigger on `auth.users` (auto-create `profiles`).
-- `handle_new_lawyer_profile()` + trigger on `profiles` insert.
-- `is_admin()` helper functions for RLS checks.
-- `handle_updated_at()` trigger utility (used by disputes).
+Case status:
 
-## 7) High-priority consistency checks already identified
+- `open`
+- `in_progress`
+- `pending_completion`
+- `completed`
+- `closed`
 
-- `components/cases/dispute-modal.tsx` sets `cases.status = "disputed"`, while SQL status constraints allow `open`, `in_progress`, `pending_completion`, `completed`, `closed`.
-- Storage/privacy and public-read policies should be reviewed for:
-  - `scripts/023_create_documents_storage.sql`
-  - `scripts/032_create_portfolio_storage.sql`
-  - broad `lawyer_profiles` public select policy.
+Appointment status:
 
-## 8) App-to-table usage hotspots
+- `pending`
+- `awaiting_payment`
+- `scheduled`
+- `attended`
+- `completed`
+- `cancelled`
+- `rescheduled`
+- `rejected`
+- `cancellation_requested`
 
-- Profiles/lawyer data: `app/lawyer/profile/page.tsx`, `app/match/page.tsx`, `app/admin/lawyers/page.tsx`.
-- Cases/appointments/payments: `app/client/dashboard/page.tsx`, `app/client/cases/[id]/page.tsx`, `app/lawyer/cases/[id]/page.tsx`, `app/api/stripe/*`.
-- Documents/analysis: `app/client/analysis/page.tsx`, `app/api/analyze-document/route.ts`.
-- Messages: `components/chat/messages-shell.tsx`.
-- Notifications: `components/notifications/notification-bell.tsx`, `lib/notifications.ts`.
-- Disputes: `components/cases/dispute-modal.tsx`, `app/admin/disputes/page.tsx`.
-- AI chat history: `app/api/chat/route.ts`, `app/api/chat/history/route.ts`.
+Important semantics:
 
----
+- `attended` means the consultation happened and can be billed.
+- `completed` on appointments means the appointment was closed because the case was completed.
+- `pending_completion` on cases is the lawyer/client completion request handshake.
+- `completed` case must come from `pending_completion` due to script `047`.
+- `cancellation_requested` is an admin-reviewed paid-appointment cancellation state.
 
-If this index diverges from production Supabase state, prefer actual DB introspection as canonical, then update this file.
+## 8) Major App Flows
+
+Client document analysis:
+
+- UI: `app/client/analysis/page.tsx`, `components/documents/upload-zone.tsx`, `components/documents/analysis-results-view.tsx`
+- API: `app/api/analyze-document/route.ts`
+- Worker/cron: `app/api/cron/process-analysis-jobs/route.ts`, `lib/analysis/process-analysis-job.ts`
+- Core AI: `lib/analysis/run-document-analysis.ts`
+- Draft bridge to booking: `lib/case-drafts.ts`
+
+Booking and appointments:
+
+- Booking modal: `components/lawyer/book-appointment-modal.tsx`
+- Lawyer requests list: `components/lawyer/client-requests.tsx`
+- Client appointments: `app/client/appointments/page.tsx`
+- Lawyer appointments: `app/lawyer/appointments/page.tsx`
+- APIs: `app/api/appointments/cancel`, `reschedule`, `mark-attended`, `support-ticket`
+- Shared semantics: `lib/appointments-status.ts`, `lib/appointment-display.ts`
+
+Case workspace:
+
+- Client cases list/detail: `app/client/cases/page.tsx`, `app/client/cases/[id]/page.tsx`
+- Lawyer cases list/detail: `app/lawyer/cases/page.tsx`, `app/lawyer/cases/[id]/page.tsx`
+- Lifecycle UI: `lib/case-lifecycle-stages.ts`, `components/cases/case-progress-stepper.tsx`
+- Timeline: `lib/case-timeline.ts`, `components/cases/case-activity-feed.tsx`
+- Disputes: `lib/case-disputes.ts`, `components/cases/dispute-modal.tsx`, `app/admin/disputes/page.tsx`
+
+Payments:
+
+- Client payment UI: `components/payments/*`, `app/client/payments/page.tsx`, `app/client/appointments/page.tsx`
+- Checkout: `app/api/stripe/create-checkout-session/route.ts`
+- Legacy Payment Intent: `app/api/stripe/create-payment-intent/route.ts`
+- Verification after redirect: `app/api/stripe/verify-payment/route.ts`
+- Webhook: `app/api/stripe/webhook/route.ts`
+- Stripe config: `lib/stripe/config.ts`
+
+Notifications/email:
+
+- In-app helper: `lib/notifications.ts`
+- Bell/listener: `components/notifications/*`
+- Email API: `app/api/notify/email/route.ts`
+- Email helper: `lib/email.ts`
+
+Chatbot:
+
+- UI: `components/chatbot/Chat.tsx`, `components/chatbot/chatbot.tsx`
+- API: `app/api/chat/route.ts`
+- History API: `app/api/chat/history/route.ts`
+- Case context: `lib/chat-case-context.ts`
+- Route normalization: `lib/chat-routes.ts`
+- Tools: `lib/ai/tools.ts`
+- Chat data/prompt: `lib/chatBotData.ts`
+
+Lawyer verification/profile:
+
+- Lawyer register: `app/auth/lawyer/register/page.tsx`
+- Lawyer layout verification prompt: `app/lawyer/layout.tsx`
+- Lawyer profile: `app/lawyer/profile/page.tsx`
+- Admin verification: `app/admin/lawyers/page.tsx`
+- License verify API: `app/api/lawyer/verify-license/route.ts`
+
+## 9) Current High-Priority Risks
+
+1. Stripe webhook likely fails DB writes under RLS.
+   - File: `app/api/stripe/webhook/route.ts`
+   - It uses `createClient()` from `lib/supabase/server.ts`, not `createAdminClient()`.
+   - Stripe webhooks have no Supabase user cookie, so updates/inserts against RLS tables are likely blocked.
+
+2. Some direct notification inserts omit `created_by`.
+   - `notifications.created_by` is `not null` and insert policy requires `auth.uid() = created_by`.
+   - `app/api/stripe/verify-payment/route.ts` inserts `payment_update` notifications without `created_by`.
+   - `app/api/stripe/webhook/route.ts` payment failure branch also inserts without `created_by`.
+   - Prefer `createNotification()` or explicit `created_by`.
+
+3. `mark-attended` allows attendance far earlier than its comment says.
+   - File: `app/api/appointments/mark-attended/route.ts`
+   - Comment says past slot or 30 minutes before start.
+   - Code uses `const allowEarlyMs = 7 * 24 * 60 * 60_000`, allowing 7 days early.
+
+4. Image detection has a typo.
+   - File: `lib/analysis/run-document-analysis.ts`
+   - Checks `.jgp` instead of `.jpg`.
+   - MIME-based image detection still catches normal uploaded JPEGs, but extension fallback is wrong.
+
+5. Build skips type and lint validation.
+   - File: `next.config.mjs`
+   - This masks TypeScript, lint, and possible dead-code issues.
+
+6. Encoding/mojibake exists in many comments/log strings.
+   - Examples: `â€”`, `âœ`, `â†`, `â€¢`.
+   - Mostly cosmetic, but user-facing text also includes this in several pages/components.
+
+7. SQL numbering and consolidation are imperfect.
+   - Missing `017`.
+   - Two different `037` scripts.
+   - `034` and `035` overlap with `036`.
+   - Future migration work should preserve execution order carefully.
+
+## 10) Known Improved/Fresh Areas
+
+Recent modified worktree already contains changes around:
+
+- cancellation requests
+- reschedule count
+- support-ticket cancellation flow
+- appointment status UI
+- payment verification/checkouts
+- case timeline event types
+- email helper
+
+Modified files at index time:
+
+- `app/admin/cancellation-requests/page.tsx`
+- `app/api/appointments/reschedule/route.ts`
+- `app/api/appointments/support-ticket/route.ts`
+- `app/api/notify/email/route.ts`
+- `app/api/stripe/create-checkout-session/route.ts`
+- `app/api/stripe/verify-payment/route.ts`
+- `app/api/stripe/webhook/route.ts`
+- `app/client/appointments/page.tsx`
+- `app/client/cases/[id]/page.tsx`
+- `app/client/cases/page.tsx`
+- `app/client/dashboard/page.tsx`
+- `app/lawyer/appointments/page.tsx`
+- `app/lawyer/cases/[id]/page.tsx`
+- `components/lawyer/availability-calendar.tsx`
+- `components/lawyer/book-appointment-modal.tsx`
+- `components/lawyer/client-requests.tsx`
+- `components/lawyer/upcoming-appointments.tsx`
+- `lib/case-timeline.ts`
+- `lib/email.ts`
+- `scripts/050_add_reschedule_count.sql`
+
+These were present before this index refresh and should be treated as user/current-work changes unless intentionally edited.
+
+## 11) Best Next Fix Order
+
+1. Patch Stripe webhook to use `createAdminClient()` and make webhook writes idempotent.
+2. Patch direct notification inserts to include `created_by` or use `createNotification()`.
+3. Correct `mark-attended` time window to match business rules.
+4. Fix `.jgp` typo to `.jpg`.
+5. Remove or gate production access to `/test-connection`.
+6. Run a real type check/lint pass after temporarily disabling the `next.config.mjs` ignores or adding separate scripts.
+7. Normalize mojibake in user-facing strings.
+
+## 12) Implementation Notes for Future Work
+
+- Prefer `lib/appointments-status.ts` for appointment status semantics instead of hard-coding arrays.
+- Use `appendCaseTimelineEvent()` for meaningful lifecycle changes, but expect it to fail gracefully if old DB scripts are missing.
+- Use `createNotification()` unless a server route intentionally uses service role and sets `created_by`.
+- For server-to-server jobs/webhooks, use `createAdminClient()`.
+- For user-facing API routes, use `createClient()` and enforce row ownership before mutating data.
+- For case completion, do not bypass the DB lifecycle: lawyer requests `pending_completion`, client confirms `completed`.
+- For paid appointment cancellation, use `cancellation_requested` and admin resolution rather than direct cancellation.
+- For standalone document analysis, `documents.case_id` may be null after script `049`.

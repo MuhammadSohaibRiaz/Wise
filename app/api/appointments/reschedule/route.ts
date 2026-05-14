@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { notifyAppointmentUpdate } from "@/lib/notifications"
+import { APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000
@@ -87,23 +88,30 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // --- Conflict check: 60 min buffer ---
+    const dayStart = new Date(newTime)
+    dayStart.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(newTime)
+    dayEnd.setHours(23, 59, 59, 999)
+
     const { data: existingAppointments, error: conflictErr } = await supabase
       .from("appointments")
       .select("id, scheduled_at, duration_minutes")
       .eq("lawyer_id", row.lawyer_id)
-      .in("status", ["scheduled", "rescheduled", "awaiting_payment"])
+      .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
       .neq("id", appointmentId)
+      .gte("scheduled_at", dayStart.toISOString())
+      .lte("scheduled_at", dayEnd.toISOString())
 
     if (conflictErr) {
       return NextResponse.json({ error: "Failed to check for conflicts" }, { status: 500 })
     }
 
     const slotStart = newTime.getTime()
-    const slotEnd = slotStart + SLOT_BUFFER_MINUTES * 60 * 1000
+    const actualDuration = Math.max(row.duration_minutes || SLOT_BUFFER_MINUTES, SLOT_BUFFER_MINUTES)
+    const slotEnd = slotStart + actualDuration * 60 * 1000
     const hasConflict = (existingAppointments || []).some((apt) => {
       const aptStart = new Date(apt.scheduled_at).getTime()
-      const aptEnd = aptStart + (apt.duration_minutes || SLOT_BUFFER_MINUTES) * 60 * 1000
+      const aptEnd = aptStart + Math.max(apt.duration_minutes || SLOT_BUFFER_MINUTES, SLOT_BUFFER_MINUTES) * 60 * 1000
       return !(slotEnd <= aptStart || slotStart >= aptEnd)
     })
 

@@ -57,7 +57,7 @@ interface Appointment {
   id: string
   scheduled_at: string
   duration_minutes: number
-  status: string
+  status: "pending" | "awaiting_payment" | "scheduled" | "attended" | "completed" | "cancelled" | "rescheduled" | "rejected" | "cancellation_requested"
   notes: string | null
 }
 

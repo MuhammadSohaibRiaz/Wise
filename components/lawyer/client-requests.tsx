@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { notifyAppointmentUpdate } from "@/lib/notifications"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
+import { APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 
 interface AppointmentRequest {
   id: string
@@ -165,7 +166,7 @@ export function ClientRequests({ hideTitle = false }: ClientRequestsProps) {
         .from("appointments")
         .select("id, scheduled_at, duration_minutes")
         .eq("lawyer_id", lawyerId)
-        .in("status", ["scheduled", "rescheduled", "awaiting_payment", "attended"])
+        .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
         .neq("id", requestId)
 
       if (scheduleError) throw scheduleError

@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 
 interface AvailabilityCalendarProps {
   lawyerId: string
@@ -30,7 +31,7 @@ export function AvailabilityCalendar({ lawyerId }: AvailabilityCalendarProps) {
           .eq("lawyer_id", lawyerId)
           .gte("scheduled_at", monthStart)
           .lte("scheduled_at", monthEnd)
-          .in("status", ["scheduled", "attended", "completed"])
+          .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
 
         if (error) {
           console.error("[v0] Error fetching booked slots:", error)

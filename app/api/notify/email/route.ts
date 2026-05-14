@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
-import { sendEmail, buildEmailHtml } from "@/lib/email"
+import { sendEmail, buildEmailHtml, escapeHtml } from "@/lib/email"
 
 type EmailTemplate =
   | "case_completion_request"
@@ -71,16 +71,19 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Client email not found" }, { status: 404 })
         }
 
-        const lawyerName = lawyerRes.data
-          ? `${lawyerRes.data.first_name || ""} ${lawyerRes.data.last_name || ""}`.trim() || "Your lawyer"
-          : "Your lawyer"
+        const lawyerName = escapeHtml(
+          lawyerRes.data
+            ? `${lawyerRes.data.first_name || ""} ${lawyerRes.data.last_name || ""}`.trim() || "Your lawyer"
+            : "Your lawyer",
+        )
+        const safeCaseTitle = escapeHtml(case_title || "your case")
 
         await sendEmail({
           to: clientRes.data.email,
           subject: "Action Required: Your lawyer has requested case completion",
           html: buildEmailHtml({
             title: "Case Completion Requested",
-            body: `${lawyerName} has requested to mark <strong>"${case_title || "your case"}"</strong> as complete. Please review the case details and confirm or decline this request.`,
+            body: `${lawyerName} has requested to mark <strong>"${safeCaseTitle}"</strong> as complete. Please review the case details and confirm or decline this request.`,
             ctaText: "Review Case",
             ctaUrl: `${siteUrl}/client/cases/${case_id}`,
           }),
@@ -103,16 +106,19 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Client email not found" }, { status: 404 })
         }
 
-        const lawyerName = lawyerRes.data
-          ? `${lawyerRes.data.first_name || ""} ${lawyerRes.data.last_name || ""}`.trim() || "Your lawyer"
-          : "Your lawyer"
+        const lawyerName = escapeHtml(
+          lawyerRes.data
+            ? `${lawyerRes.data.first_name || ""} ${lawyerRes.data.last_name || ""}`.trim() || "Your lawyer"
+            : "Your lawyer",
+        )
+        const safeCaseTitle = escapeHtml(case_title || "your case")
 
         await sendEmail({
           to: clientRes.data.email,
           subject: "Your consultation request has been accepted",
           html: buildEmailHtml({
             title: "Appointment Accepted",
-            body: `${lawyerName} has accepted your consultation request for <strong>"${case_title || "your case"}"</strong>. Please proceed to payment to confirm your appointment.`,
+            body: `${lawyerName} has accepted your consultation request for <strong>"${safeCaseTitle}"</strong>. Please proceed to payment to confirm your appointment.`,
             ctaText: "View Appointment",
             ctaUrl: `${siteUrl}/client/appointments`,
           }),
@@ -134,12 +140,14 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Client email not found" }, { status: 404 })
         }
 
+        const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
+
         await sendEmail({
           to: profile.email,
           subject: "Payment Confirmed — Consultation Scheduled",
           html: buildEmailHtml({
             title: "Payment Confirmed",
-            body: `Your payment${case_title ? ` for <strong>"${case_title}"</strong>` : ""} has been received and your consultation has been scheduled. You'll find the details in your appointments.`,
+            body: `Your payment${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} has been received and your consultation has been scheduled. You'll find the details in your appointments.`,
             ctaText: "View Appointments",
             ctaUrl: `${siteUrl}/client/appointments`,
           }),
@@ -217,13 +225,15 @@ export async function POST(req: NextRequest) {
 
         const formattedTime = new_time ? new Date(new_time).toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" }) : "a new time"
         const appointmentsUrl = recipient_role === "lawyer" ? `${siteUrl}/lawyer/appointments` : `${siteUrl}/client/appointments`
+        const safeActorName = escapeHtml(actor_name || "The other party")
+        const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
 
         await sendEmail({
           to: profile.email,
           subject: "Your appointment has been rescheduled",
           html: buildEmailHtml({
             title: "Appointment Rescheduled",
-            body: `${actor_name || "The other party"} has rescheduled your consultation${case_title ? ` for <strong>"${case_title}"</strong>` : ""} to <strong>${formattedTime}</strong>. If this time doesn't work, you can reschedule from your appointments page.`,
+            body: `${safeActorName} has rescheduled your consultation${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} to <strong>${formattedTime}</strong>. If this time doesn't work, you can reschedule from your appointments page.`,
             ctaText: "View Appointments",
             ctaUrl: appointmentsUrl,
           }),
@@ -246,13 +256,15 @@ export async function POST(req: NextRequest) {
         }
 
         const appointmentsUrl = recipient_role === "lawyer" ? `${siteUrl}/lawyer/appointments` : `${siteUrl}/client/appointments`
+        const safeActorName = escapeHtml(actor_name || "The other party")
+        const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
 
         await sendEmail({
           to: profile.email,
           subject: "Appointment Cancelled",
           html: buildEmailHtml({
             title: "Appointment Cancelled",
-            body: `${actor_name || "The other party"} has cancelled the consultation appointment${case_title ? ` for <strong>"${case_title}"</strong>` : ""}. You can book a new appointment if needed.`,
+            body: `${safeActorName} has cancelled the consultation appointment${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""}. You can book a new appointment if needed.`,
             ctaText: "View Appointments",
             ctaUrl: appointmentsUrl,
           }),
@@ -276,6 +288,8 @@ export async function POST(req: NextRequest) {
 
         const isApproved = resolution === "approved"
         const appointmentsUrl = recipient_role === "lawyer" ? `${siteUrl}/lawyer/appointments` : `${siteUrl}/client/appointments`
+        const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
+        const safeReason = reason ? escapeHtml(reason) : ""
 
         await sendEmail({
           to: profile.email,
@@ -283,8 +297,8 @@ export async function POST(req: NextRequest) {
           html: buildEmailHtml({
             title: isApproved ? "Cancellation Approved" : "Cancellation Request Rejected",
             body: isApproved
-              ? `Your cancellation request${case_title ? ` for <strong>"${case_title}"</strong>` : ""} has been approved by the admin. The appointment has been cancelled.${reason ? `<br><br><strong>Reason:</strong> ${reason}` : ""}`
-              : `Your cancellation request${case_title ? ` for <strong>"${case_title}"</strong>` : ""} has been rejected by the admin. The appointment remains scheduled.${reason ? `<br><br><strong>Reason:</strong> ${reason}` : ""} Please attend your appointment as planned.`,
+              ? `Your cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} has been approved by the admin. The appointment has been cancelled.${safeReason ? `<br><br><strong>Reason:</strong> ${safeReason}` : ""}`
+              : `Your cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} has been rejected by the admin. The appointment remains scheduled.${safeReason ? `<br><br><strong>Reason:</strong> ${safeReason}` : ""} Please attend your appointment as planned.`,
             ctaText: "View Appointments",
             ctaUrl: appointmentsUrl,
           }),

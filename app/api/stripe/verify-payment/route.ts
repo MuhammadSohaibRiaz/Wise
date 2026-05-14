@@ -61,13 +61,19 @@ export async function POST(request: NextRequest) {
                     updated_at: new Date().toISOString(),
                 })
                 .eq("id", appointment_id)
+                .eq("status", "awaiting_payment")
                 .select("case_id")
-                .single()
+                .maybeSingle()
 
             if (appointmentError) {
                 console.error("[Payment Verify] Error updating appointment:", appointmentError)
-            } else {
-                console.log(`[Payment Verify] ✅ Appointment ${appointment_id} marked as scheduled`)
+            }
+
+            if (!updatedAppointment && !appointmentError) {
+                return NextResponse.json(
+                    { error: "Appointment is no longer available for payment" },
+                    { status: 400 },
+                )
             }
 
             // Update case status to in_progress

@@ -53,7 +53,6 @@ export async function POST(request: NextRequest) {
             })
             .eq("id", payment_id)
 
-          // Paid consults stay **scheduled** until the session is actually held; case moves to in_progress.
           const { data: updatedAppointment } = await supabase
             .from("appointments")
             .update({
@@ -61,8 +60,9 @@ export async function POST(request: NextRequest) {
               updated_at: new Date().toISOString(),
             })
             .eq("id", appointment_id)
+            .eq("status", "awaiting_payment")
             .select("case_id")
-            .single()
+            .maybeSingle()
 
           if (updatedAppointment?.case_id) {
             await supabase

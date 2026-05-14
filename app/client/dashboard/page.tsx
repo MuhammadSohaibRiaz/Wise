@@ -116,7 +116,7 @@ export default function ClientDashboardPage() {
         `,
         )
         .eq("client_id", uid)
-        .in("status", ["scheduled", "pending", "awaiting_payment", "rescheduled"])
+        .in("status", ["scheduled", "pending", "awaiting_payment", "rescheduled", "cancellation_requested"])
         .gte("scheduled_at", new Date().toISOString())
         .order("scheduled_at", { ascending: true })
         .limit(1)

@@ -27,6 +27,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Message must be at least 20 characters" }, { status: 400 })
     }
 
+    if (message.length > 2000) {
+      return NextResponse.json({ error: "Message must not exceed 2000 characters" }, { status: 400 })
+    }
+
     const { data: row, error: fetchErr } = await supabase
       .from("appointments")
       .select("id, client_id, lawyer_id, status, scheduled_at, duration_minutes, case_id, reschedule_count")
@@ -48,11 +52,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Update appointment status to cancellation_requested
     const { error: updErr } = await supabase
       .from("appointments")
       .update({
         status: "cancellation_requested",
+        previous_status: row.status,
         updated_at: new Date().toISOString(),
       })
       .eq("id", appointmentId)
@@ -118,10 +122,15 @@ export async function POST(req: NextRequest) {
           <strong>Reschedule Count:</strong> ${row.reschedule_count}/3<br>
           <strong>Duration:</strong> ${row.duration_minutes} minutes<br><br>
           <strong>User's Message:</strong><br>
-          ${message.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")}
+          ${message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\n/g, "<br>")}
         `.trim(),
         ctaText: "Review in Admin Panel",
-        ctaUrl: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/admin/cancellation-requests`,
+        ctaUrl: `${(
+          process.env.NEXT_PUBLIC_SITE_URL ||
+          (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : null) ||
+          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+          "http://localhost:3000"
+        ).replace(/\/$/, "")}/admin/cancellation-requests`,
       }),
     })
 

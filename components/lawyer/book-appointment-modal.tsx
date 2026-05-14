@@ -11,12 +11,13 @@ import {
   markLatestDraftLawyerSelection,
 } from "@/lib/case-drafts"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
+import { APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, Calendar, Clock, FileText, AlertCircle, CheckCircle } from "lucide-react"
-import "react-day-picker/dist/style.css"
+import "react-day-picker/style.css"
 
 interface BookAppointmentModalProps {
   open: boolean
@@ -67,7 +68,7 @@ export function BookAppointmentModal({
           .from("appointments")
           .select("scheduled_at")
           .eq("lawyer_id", lawyerId)
-          .in("status", ["scheduled", "attended", "completed", "pending", "awaiting_payment"])
+          .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
           .gte("scheduled_at", new Date().toISOString())
 
         if (error) {
@@ -163,7 +164,7 @@ export function BookAppointmentModal({
           .eq("lawyer_id", lawyerId)
           .gte("scheduled_at", `${dateStr}T00:00:00`)
           .lte("scheduled_at", `${dateStr}T23:59:59`)
-          .in("status", ["scheduled", "attended", "completed", "pending", "awaiting_payment"])
+          .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
 
         if (error) throw error
 
@@ -198,7 +199,11 @@ export function BookAppointmentModal({
               return !(slotEndTime <= aptDate || slotDateTime >= aptEndTime)
             })
 
-            if (!isBooked && hour < endHour - 1) {
+            const slotEndTime = new Date(slotDateTime.getTime() + duration * 60000)
+            const endOfDay = new Date(selectedDate)
+            endOfDay.setHours(endHour, 0, 0, 0)
+
+            if (!isBooked && slotEndTime <= endOfDay) {
               slots.push(slotTime)
             }
           }
@@ -289,7 +294,7 @@ export function BookAppointmentModal({
             .from("appointments")
             .select("id, scheduled_at, duration_minutes")
             .eq("lawyer_id", lawyerId)
-            .in("status", ["pending", "scheduled"])
+            .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
             .gte("scheduled_at", dayStart.toISOString())
             .lt("scheduled_at", dayEnd.toISOString())
 

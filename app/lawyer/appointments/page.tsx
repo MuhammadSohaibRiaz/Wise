@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, AlertCircle, Calendar, Clock, FileText, User, Check, X, CalendarClock, MessageSquare, XCircle } from "lucide-react"
 import { LawyerDashboardHeader } from "@/components/lawyer/dashboard-header"
 import { notifyAppointmentUpdate } from "@/lib/notifications"
-import { appointmentStatusLabel, appointmentWorkflowPhase } from "@/lib/appointments-status"
+import { appointmentStatusLabel, appointmentWorkflowPhase, APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import {
   Dialog,
@@ -22,7 +22,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
-import "react-day-picker/dist/style.css"
+import "react-day-picker/style.css"
 
 interface Appointment {
   id: string
@@ -168,6 +168,7 @@ export default function LawyerAppointmentsPage() {
         { event: "UPDATE", schema: "public", table: "appointments", filter: `lawyer_id=eq.${lawyerId}` },
         (payload) => {
           const updated = payload.new as any
+          const old = payload.old as any
           setAppointments((prev) =>
             prev.map((apt) =>
               apt.id === updated.id
@@ -175,6 +176,23 @@ export default function LawyerAppointmentsPage() {
                 : apt,
             ),
           )
+          if (updated.status === "rescheduled") {
+            if (old?.status === "cancellation_requested") {
+              toast({ title: "Cancellation Denied", description: "The admin has denied the cancellation request. The appointment remains active." })
+            } else {
+              toast({ title: "Appointment Rescheduled", description: "The client has rescheduled this appointment. Please check the new time." })
+            }
+          } else if (updated.status === "cancellation_requested") {
+            toast({ title: "Cancellation Requested", description: "A cancellation request has been submitted for one of your appointments." })
+          } else if (updated.status === "cancelled") {
+            if (old?.status === "cancellation_requested") {
+              toast({ title: "Cancellation Approved", description: "The admin has approved the cancellation request." })
+            } else {
+              toast({ title: "Appointment Cancelled", description: "An appointment has been cancelled." })
+            }
+          } else if (updated.status === "scheduled" && old?.status === "cancellation_requested") {
+            toast({ title: "Cancellation Denied", description: "The admin has denied the cancellation request. The appointment remains active." })
+          }
         },
       )
       .subscribe()
@@ -199,7 +217,7 @@ export default function LawyerAppointmentsPage() {
         .from("appointments")
         .select("id, scheduled_at, duration_minutes")
         .eq("lawyer_id", lawyerId)
-        .in("status", ["scheduled", "rescheduled", "awaiting_payment"])
+        .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
         .neq("id", appointmentId)
 
       const slotStart = new Date(targetAppointment.scheduled_at).getTime()
@@ -462,12 +480,6 @@ export default function LawyerAppointmentsPage() {
     (apt.status === "scheduled" || apt.status === "rescheduled") &&
     apt.reschedule_count < 3 &&
     new Date(apt.scheduled_at).getTime() - Date.now() > 2 * 60 * 60 * 1000
-
-  const canCancelPrePayment = (apt: Appointment) =>
-    apt.status === "pending" || apt.status === "awaiting_payment"
-
-  const isPaidAppointment = (apt: Appointment) =>
-    apt.status === "scheduled" || apt.status === "rescheduled"
 
   // --- Sections ---
   const pendingAppointments = appointments.filter((apt) => apt.status === "pending")
@@ -823,6 +835,24 @@ export default function LawyerAppointmentsPage() {
                       {/* Cancellation Requested */}
                       {appointment.status === "cancellation_requested" && (
                         <p className="text-xs text-amber-700 dark:text-amber-400 font-medium text-right">Under admin review</p>
+                      )}
+
+                      {/* Rejected */}
+                      {appointment.status === "rejected" && (
+                        <p className="text-xs text-muted-foreground italic text-right">You rejected this request</p>
+                      )}
+
+                      {/* Completed */}
+                      {appointment.status === "completed" && (
+                        <div className="text-right">
+                          <p className="text-xs text-green-700 dark:text-green-400 font-medium">Case completed</p>
+                          <a href={`/lawyer/cases/${appointment.case.id}`} className="text-xs text-primary hover:underline mt-1 inline-block">View case &rarr;</a>
+                        </div>
+                      )}
+
+                      {/* Cancelled */}
+                      {appointment.status === "cancelled" && (
+                        <p className="text-xs text-muted-foreground italic text-right">This appointment was cancelled</p>
                       )}
                     </div>
                   </div>
