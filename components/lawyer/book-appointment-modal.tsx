@@ -59,7 +59,7 @@ export function BookAppointmentModal({
 
   const supabase = createClient()
 
-  // Fetch booked dates for calendar
+  // Fetch dates that have at least one booking (for visual indicator only, NOT disabling)
   useEffect(() => {
     const fetchBookedDates = async () => {
       try {
@@ -75,8 +75,8 @@ export function BookAppointmentModal({
           return
         }
 
-        const dates = (data || []).map((apt) => new Date(apt.scheduled_at).toISOString().split("T")[0])
-        setBookedDates(dates)
+        const uniqueDates = [...new Set((data || []).map((apt) => new Date(apt.scheduled_at).toISOString().split("T")[0]))]
+        setBookedDates(uniqueDates)
       } catch (error) {
         console.error("[v0] Unexpected error fetching booked dates:", error)
       }
@@ -527,23 +527,20 @@ export function BookAppointmentModal({
     return cost
   }
 
-  // Check if date is disabled (past or fully booked)
   const isDateDisabled = (date: Date) => {
-    const dateStr = date.toISOString().split("T")[0]
-    return isPast(startOfDay(date)) || bookedDates.includes(dateStr)
+    return isPast(startOfDay(date))
   }
 
-  // Get date modifiers for calendar
   const dateModifiers = {
-    booked: (date: Date) => {
+    hasBookings: (date: Date) => {
       const dateStr = date.toISOString().split("T")[0]
-      return bookedDates.includes(dateStr)
+      return bookedDates.includes(dateStr) && !isPast(startOfDay(date))
     },
     past: (date: Date) => isPast(startOfDay(date)),
   }
 
   const dateModifiersClassNames = {
-    booked: "bg-red-100 text-red-700 cursor-not-allowed opacity-50",
+    hasBookings: "bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 font-semibold",
     past: "bg-muted text-muted-foreground cursor-not-allowed opacity-50",
   }
 
@@ -611,11 +608,11 @@ export function BookAppointmentModal({
                     }}
                   />
                 </div>
-                {selectedDate && bookedDates.includes(selectedDate.toISOString().split("T")[0]) && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    This date has limited availability. Please select a time slot below.
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground mt-2">
+                  {selectedDate && bookedDates.includes(selectedDate.toISOString().split("T")[0])
+                    ? "This date has some bookings. Available time slots are shown below."
+                    : "Amber-highlighted dates have existing bookings but may still have open slots."}
+                </p>
               </div>
 
               <div>

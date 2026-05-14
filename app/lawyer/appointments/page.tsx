@@ -1,23 +1,37 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { DayPicker } from "react-day-picker"
+import { isPast, startOfDay, addDays, format } from "date-fns"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, AlertCircle, Calendar, Clock, FileText, User, Check, X } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Loader2, AlertCircle, Calendar, Clock, FileText, User, Check, X, CalendarClock, MessageSquare, XCircle } from "lucide-react"
 import { LawyerDashboardHeader } from "@/components/lawyer/dashboard-header"
 import { notifyAppointmentUpdate } from "@/lib/notifications"
 import { appointmentStatusLabel, appointmentWorkflowPhase } from "@/lib/appointments-status"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import "react-day-picker/dist/style.css"
 
 interface Appointment {
   id: string
   scheduled_at: string
   duration_minutes: number
-  status: "pending" | "awaiting_payment" | "scheduled" | "attended" | "completed" | "cancelled" | "rescheduled" | "rejected"
+  status: "pending" | "awaiting_payment" | "scheduled" | "attended" | "completed" | "cancelled" | "rescheduled" | "rejected" | "cancellation_requested"
   request_message?: string
   notes?: string
+  reschedule_count: number
   case: {
     id: string
     title: string
@@ -34,43 +48,33 @@ interface Appointment {
   }
 }
 
+const TIME_SLOTS = Array.from({ length: 17 }, (_, i) => {
+  const hour = Math.floor(i / 2) + 9
+  const min = i % 2 === 0 ? "00" : "30"
+  return `${String(hour).padStart(2, "0")}:${min}`
+})
+
 export default function LawyerAppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [lawyerId, setLawyerId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [processingId, setProcessingId] = useState<string | null>(null)
-  const [rescheduleDraftById, setRescheduleDraftById] = useState<Record<string, string>>({})
-  const [rescheduleOpenId, setRescheduleOpenId] = useState<string | null>(null)
   const { toast } = useToast()
 
-  const toDatetimeLocalValue = (iso: string) => {
-    const d = new Date(iso)
-    const pad = (n: number) => String(n).padStart(2, "0")
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  }
+  // Reschedule state
+  const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null)
+  const [rescheduleDate, setRescheduleDate] = useState<Date | undefined>(undefined)
+  const [rescheduleTime, setRescheduleTime] = useState("")
+  const [rescheduleError, setRescheduleError] = useState("")
 
-  const hasLawyerSlotConflict = async (
-    supabase: ReturnType<typeof createClient>,
-    args: { lawyerId: string; appointmentId: string; scheduledAtIso: string; durationMinutes: number },
-  ) => {
-    const { data: blockedAppointments, error } = await supabase
-      .from("appointments")
-      .select("id, scheduled_at, duration_minutes")
-      .eq("lawyer_id", args.lawyerId)
-      .in("status", ["scheduled", "rescheduled", "awaiting_payment"])
-      .neq("id", args.appointmentId)
+  // Cancel state
+  const [cancelTarget, setCancelTarget] = useState<Appointment | null>(null)
 
-    if (error) throw error
-
-    const slotStart = new Date(args.scheduledAtIso)
-    const slotEnd = new Date(slotStart.getTime() + args.durationMinutes * 60000)
-    return (blockedAppointments || []).some((apt) => {
-      const aptStart = new Date(apt.scheduled_at)
-      const aptEnd = new Date(aptStart.getTime() + apt.duration_minutes * 60000)
-      return !(slotEnd <= aptStart || slotStart >= aptEnd)
-    })
-  }
+  // Support ticket state
+  const [supportTarget, setSupportTarget] = useState<Appointment | null>(null)
+  const [supportMessage, setSupportMessage] = useState("")
+  const [supportSubmitting, setSupportSubmitting] = useState(false)
 
   const loadAppointments = useCallback(async () => {
     try {
@@ -95,6 +99,7 @@ export default function LawyerAppointmentsPage() {
             status,
             request_message,
             notes,
+            reschedule_count,
             cases (
               id,
               title,
@@ -123,13 +128,14 @@ export default function LawyerAppointmentsPage() {
           status: apt.status || "pending",
           request_message: apt.request_message,
           notes: apt.notes,
+          reschedule_count: apt.reschedule_count || 0,
           case: apt.cases || { id: "", title: "Unknown", case_type: "", description: "", hourly_rate: null },
           client: apt.profiles || { id: "", first_name: "Unknown", last_name: "", avatar_url: null, email: "" },
         })),
       )
       setError(null)
     } catch (error) {
-      console.error("[v0] Fetch error:", error)
+      console.error("[Lawyer Appointments] Fetch error:", error)
       setError("Failed to load appointments")
       toast({
         title: "Error",
@@ -146,69 +152,39 @@ export default function LawyerAppointmentsPage() {
     void loadAppointments()
   }, [loadAppointments])
 
-  // Set up real-time subscription for appointment updates
   useEffect(() => {
-    if (!lawyerId) {
-      console.log("[Appointments] No lawyerId, skipping realtime subscription")
-      return
-    }
+    if (!lawyerId) return
 
-    console.log(`[Appointments] Setting up realtime subscription for lawyer ${lawyerId}`)
     const supabase = createClient()
     const channel = supabase
       .channel(`appointments-lawyer-${lawyerId}-${Date.now()}`)
       .on(
         "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "appointments",
-          filter: `lawyer_id=eq.${lawyerId}`,
-        },
-        () => {
-          void loadAppointments()
-        },
+        { event: "INSERT", schema: "public", table: "appointments", filter: `lawyer_id=eq.${lawyerId}` },
+        () => void loadAppointments(),
       )
       .on(
         "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "appointments",
-          filter: `lawyer_id=eq.${lawyerId}`,
-        },
+        { event: "UPDATE", schema: "public", table: "appointments", filter: `lawyer_id=eq.${lawyerId}` },
         (payload) => {
-          console.log("[Appointments] 🔔 Realtime update received:", payload)
-          const updatedAppointment = payload.new as any
-          console.log("[Appointments] Updated appointment:", {
-            id: updatedAppointment.id,
-            status: updatedAppointment.status,
-          })
+          const updated = payload.new as any
           setAppointments((prev) =>
-            prev.map((apt) => {
-              if (apt.id === updatedAppointment.id) {
-                console.log(`[Appointments] Updating appointment ${apt.id} status: ${apt.status} → ${updatedAppointment.status}`)
-                return { ...apt, status: updatedAppointment.status }
-              }
-              return apt
-            }),
+            prev.map((apt) =>
+              apt.id === updated.id
+                ? { ...apt, status: updated.status, scheduled_at: updated.scheduled_at || apt.scheduled_at, reschedule_count: updated.reschedule_count ?? apt.reschedule_count }
+                : apt,
+            ),
           )
         },
       )
-      .subscribe((status) => {
-        console.log(`[Appointments] Realtime subscription status: ${status} for lawyer ${lawyerId}`)
-        if (status === "SUBSCRIBED") {
-          console.log(`[Appointments] ✅ Successfully subscribed to appointment updates for lawyer ${lawyerId}`)
-        } else if (status === "CHANNEL_ERROR") {
-          console.error(`[Appointments] ❌ Channel error for lawyer ${lawyerId}`)
-        }
-      })
+      .subscribe()
 
     return () => {
-      console.log(`[Appointments] Cleaning up realtime subscription for lawyer ${lawyerId}`)
       supabase.removeChannel(channel)
     }
   }, [lawyerId, loadAppointments])
+
+  // --- Handlers ---
 
   const handleAcceptRequest = async (appointmentId: string) => {
     try {
@@ -216,15 +192,22 @@ export default function LawyerAppointmentsPage() {
       const supabase = createClient()
       const targetAppointment = appointments.find((apt) => apt.id === appointmentId)
 
-      if (!targetAppointment || !lawyerId) {
-        throw new Error("Appointment not found")
-      }
+      if (!targetAppointment || !lawyerId) throw new Error("Appointment not found")
 
-      const hasConflict = await hasLawyerSlotConflict(supabase, {
-        lawyerId,
-        appointmentId,
-        scheduledAtIso: targetAppointment.scheduled_at,
-        durationMinutes: targetAppointment.duration_minutes,
+      // Conflict check
+      const { data: blockedAppointments } = await supabase
+        .from("appointments")
+        .select("id, scheduled_at, duration_minutes")
+        .eq("lawyer_id", lawyerId)
+        .in("status", ["scheduled", "rescheduled", "awaiting_payment"])
+        .neq("id", appointmentId)
+
+      const slotStart = new Date(targetAppointment.scheduled_at).getTime()
+      const slotEnd = slotStart + targetAppointment.duration_minutes * 60000
+      const hasConflict = (blockedAppointments || []).some((apt) => {
+        const aptStart = new Date(apt.scheduled_at).getTime()
+        const aptEnd = aptStart + apt.duration_minutes * 60000
+        return !(slotEnd <= aptStart || slotStart >= aptEnd)
       })
 
       if (hasConflict) {
@@ -236,55 +219,32 @@ export default function LawyerAppointmentsPage() {
         return
       }
 
-      console.log(`[Appointments] Updating appointment ${appointmentId} to awaiting_payment`)
-      const { error, data: updatedData } = await supabase
+      const { error } = await supabase
         .from("appointments")
-        .update({
-          status: "awaiting_payment",
-          responded_at: new Date().toISOString(),
-        })
+        .update({ status: "awaiting_payment", responded_at: new Date().toISOString() })
         .eq("id", appointmentId)
         .select()
         .single()
 
-      if (error) {
-        console.error("[Appointments] Update error:", error)
-        throw error
-      }
-
-      console.log("[Appointments] Update successful:", updatedData)
+      if (error) throw error
 
       await supabase
         .from("cases")
-        .update({
-          status: "in_progress",
-          updated_at: new Date().toISOString(),
-        })
+        .update({ status: "in_progress", updated_at: new Date().toISOString() })
         .eq("id", targetAppointment.case.id)
 
-      // Update local state
       setAppointments(
-        appointments.map((apt) => {
-          if (apt.id === appointmentId) {
-            console.log(`[Appointments] Updating local state for appointment ${appointmentId}: pending → awaiting_payment`)
-            return { ...apt, status: "awaiting_payment" as const }
-          }
-          return apt
-        }),
+        appointments.map((apt) => (apt.id === appointmentId ? { ...apt, status: "awaiting_payment" as const } : apt)),
       )
 
-      await notifyAppointmentUpdate(
-        supabase,
-        "lawyer_accept",
-        {
-          recipientId: targetAppointment.client.id,
-          actorId: lawyerId,
-          caseTitle: targetAppointment.case.title,
-          scheduledAt: targetAppointment.scheduled_at,
-          appointmentId,
-          caseId: targetAppointment.case.id,
-        }
-      )
+      await notifyAppointmentUpdate(supabase, "lawyer_accept", {
+        recipientId: targetAppointment.client.id,
+        actorId: lawyerId,
+        caseTitle: targetAppointment.case.title,
+        scheduledAt: targetAppointment.scheduled_at,
+        appointmentId,
+        caseId: targetAppointment.case.id,
+      })
 
       await appendCaseTimelineEvent(supabase, {
         caseId: targetAppointment.case.id,
@@ -294,11 +254,9 @@ export default function LawyerAppointmentsPage() {
           appointment_id: appointmentId,
           previous_status: targetAppointment.status,
           status_after: "awaiting_payment",
-          action: "lawyer_accepted",
         },
       })
 
-      // Email notification sent to client — see /api/notify/email
       fetch("/api/notify/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -308,17 +266,10 @@ export default function LawyerAppointmentsPage() {
         }),
       }).catch(() => {})
 
-      toast({
-        title: "Success",
-        description: "Appointment request accepted. The client has been notified.",
-      })
+      toast({ title: "Success", description: "Appointment request accepted. The client has been notified." })
     } catch (error) {
-      console.error("[v0] Accept error:", error)
-      toast({
-        title: "Error",
-        description: "Failed to accept appointment request.",
-        variant: "destructive",
-      })
+      console.error("[Appointments] Accept error:", error)
+      toast({ title: "Error", description: "Failed to accept appointment request.", variant: "destructive" })
     } finally {
       setProcessingId(null)
     }
@@ -330,46 +281,31 @@ export default function LawyerAppointmentsPage() {
       const supabase = createClient()
       const targetAppointment = appointments.find((apt) => apt.id === appointmentId)
 
-      if (!targetAppointment || !lawyerId) {
-        throw new Error("Appointment not found")
-      }
+      if (!targetAppointment || !lawyerId) throw new Error("Appointment not found")
 
       const { error } = await supabase
         .from("appointments")
-        .update({
-          status: "rejected",
-          responded_at: new Date().toISOString(),
-        })
+        .update({ status: "rejected", responded_at: new Date().toISOString() })
         .eq("id", appointmentId)
 
       if (error) throw error
 
-      // Close the case — a new case is auto-created on re-booking
       await supabase
         .from("cases")
-        .update({
-          lawyer_id: null,
-          status: "closed",
-          updated_at: new Date().toISOString(),
-        })
+        .update({ lawyer_id: null, status: "closed", updated_at: new Date().toISOString() })
         .eq("id", targetAppointment.case.id)
 
-      // Update local state
       setAppointments(
         appointments.map((apt) => (apt.id === appointmentId ? { ...apt, status: "rejected" } : apt)),
       )
 
-      await notifyAppointmentUpdate(
-        supabase,
-        "lawyer_reject",
-        {
-          recipientId: targetAppointment.client.id,
-          actorId: lawyerId,
-          caseTitle: targetAppointment.case.title,
-          appointmentId,
-          caseId: targetAppointment.case.id,
-        }
-      )
+      await notifyAppointmentUpdate(supabase, "lawyer_reject", {
+        recipientId: targetAppointment.client.id,
+        actorId: lawyerId,
+        caseTitle: targetAppointment.case.title,
+        appointmentId,
+        caseId: targetAppointment.case.id,
+      })
 
       await appendCaseTimelineEvent(supabase, {
         caseId: targetAppointment.case.id,
@@ -379,21 +315,13 @@ export default function LawyerAppointmentsPage() {
           appointment_id: appointmentId,
           previous_status: targetAppointment.status,
           status_after: "rejected",
-          action: "lawyer_rejected",
         },
       })
 
-      toast({
-        title: "Request Rejected",
-        description: "The appointment request has been rejected.",
-      })
+      toast({ title: "Request Rejected", description: "The appointment request has been rejected." })
     } catch (error) {
-      console.error("[v0] Reject error:", error)
-      toast({
-        title: "Error",
-        description: "Failed to reject appointment request.",
-        variant: "destructive",
-      })
+      console.error("[Appointments] Reject error:", error)
+      toast({ title: "Error", description: "Failed to reject appointment request.", variant: "destructive" })
     } finally {
       setProcessingId(null)
     }
@@ -418,62 +346,27 @@ export default function LawyerAppointmentsPage() {
       })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Could not mark consultation as held"
-      toast({
-        title: "Error",
-        description: message,
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: message, variant: "destructive" })
     } finally {
       setProcessingId(null)
     }
   }
 
-  const handleLawyerCancel = async (appointmentId: string) => {
+  const handleCancelAppointment = async (appointmentId: string) => {
     try {
       setProcessingId(appointmentId)
-      const supabase = createClient()
-      const targetAppointment = appointments.find((apt) => apt.id === appointmentId)
-
-      if (!targetAppointment || !lawyerId) throw new Error("Appointment not found")
-      if (!["scheduled", "rescheduled", "awaiting_payment"].includes(targetAppointment.status)) {
-        throw new Error(`Cannot cancel appointment from status: ${targetAppointment.status}`)
-      }
-
-      const { error: updateError } = await supabase
-        .from("appointments")
-        .update({ status: "cancelled", responded_at: new Date().toISOString() })
-        .eq("id", appointmentId)
-        .in("status", ["scheduled", "rescheduled", "awaiting_payment"])
-
-      if (updateError) throw updateError
-
-      setAppointments((prev) => prev.map((apt) => (apt.id === appointmentId ? { ...apt, status: "cancelled" } : apt)))
-
-      await notifyAppointmentUpdate(supabase, "lawyer_cancel", {
-        recipientId: targetAppointment.client.id,
-        actorId: lawyerId,
-        caseTitle: targetAppointment.case.title,
-        scheduledAt: targetAppointment.scheduled_at,
-        appointmentId,
-        caseId: targetAppointment.case.id,
+      const res = await fetch("/api/appointments/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appointment_id: appointmentId }),
       })
-
-      await appendCaseTimelineEvent(supabase, {
-        caseId: targetAppointment.case.id,
-        actorId: lawyerId,
-        eventType: CaseTimelineEventType.LAWYER_CANCELLED_CONSULTATION,
-        metadata: {
-          appointment_id: appointmentId,
-          previous_status: targetAppointment.status,
-          status_after: "cancelled",
-          action: "lawyer_cancelled",
-        },
-      })
-
-      toast({
-        title: "Appointment cancelled",
-        description: "The client has been notified and timeline updated.",
-      })
+      const json = (await res.json().catch(() => ({}))) as { error?: string }
+      if (!res.ok) throw new Error(json.error || "Failed to cancel appointment")
+      setAppointments((prev) =>
+        prev.map((apt) => (apt.id === appointmentId ? { ...apt, status: "cancelled" as const } : apt)),
+      )
+      setCancelTarget(null)
+      toast({ title: "Appointment cancelled", description: "The client has been notified." })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Failed to cancel appointment"
       toast({ title: "Error", description: message, variant: "destructive" })
@@ -482,101 +375,130 @@ export default function LawyerAppointmentsPage() {
     }
   }
 
-  const openRescheduleFor = (appointment: Appointment) => {
-    setRescheduleDraftById((prev) => ({
-      ...prev,
-      [appointment.id]: prev[appointment.id] || toDatetimeLocalValue(appointment.scheduled_at),
-    }))
-    setRescheduleOpenId(appointment.id)
-  }
+  const handleReschedule = async () => {
+    if (!rescheduleTarget || !rescheduleDate || !rescheduleTime) {
+      setRescheduleError("Please select both a date and time.")
+      return
+    }
 
-  const handleConfirmReschedule = async (appointmentId: string) => {
+    const [hours, minutes] = rescheduleTime.split(":").map(Number)
+    const newDateTime = new Date(rescheduleDate)
+    newDateTime.setHours(hours, minutes, 0, 0)
+
+    setRescheduleError("")
+    setProcessingId(rescheduleTarget.id)
+
     try {
-      setProcessingId(appointmentId)
-      const supabase = createClient()
-      const targetAppointment = appointments.find((apt) => apt.id === appointmentId)
-      const draftValue = rescheduleDraftById[appointmentId]
-      if (!targetAppointment || !lawyerId) throw new Error("Appointment not found")
-      if (!draftValue) throw new Error("Select a new date and time first")
-      if (!["scheduled", "rescheduled"].includes(targetAppointment.status)) {
-        throw new Error(`Cannot reschedule appointment from status: ${targetAppointment.status}`)
-      }
-
-      const newStart = new Date(draftValue)
-      if (Number.isNaN(newStart.getTime())) throw new Error("Invalid date/time")
-      if (newStart.getTime() <= Date.now()) throw new Error("New appointment time must be in the future")
-
-      const newScheduledAtIso = newStart.toISOString()
-      const hasConflict = await hasLawyerSlotConflict(supabase, {
-        lawyerId,
-        appointmentId,
-        scheduledAtIso: newScheduledAtIso,
-        durationMinutes: targetAppointment.duration_minutes,
+      const res = await fetch("/api/appointments/reschedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appointment_id: rescheduleTarget.id,
+          new_scheduled_at: newDateTime.toISOString(),
+        }),
       })
-      if (hasConflict) {
-        throw new Error("Schedule conflict: you already have an overlapping booking")
-      }
-
-      const { error: updateError } = await supabase
-        .from("appointments")
-        .update({
-          status: "rescheduled",
-          scheduled_at: newScheduledAtIso,
-          responded_at: new Date().toISOString(),
-        })
-        .eq("id", appointmentId)
-        .in("status", ["scheduled", "rescheduled"])
-
-      if (updateError) throw updateError
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || "Failed to reschedule")
 
       setAppointments((prev) =>
         prev.map((apt) =>
-          apt.id === appointmentId ? { ...apt, status: "rescheduled", scheduled_at: newScheduledAtIso } : apt,
+          apt.id === rescheduleTarget.id
+            ? {
+                ...apt,
+                status: "rescheduled" as const,
+                scheduled_at: newDateTime.toISOString(),
+                reschedule_count: json.reschedule_count ?? apt.reschedule_count + 1,
+              }
+            : apt,
         ),
       )
-      setRescheduleOpenId(null)
-
-      await notifyAppointmentUpdate(supabase, "lawyer_reschedule", {
-        recipientId: targetAppointment.client.id,
-        actorId: lawyerId,
-        caseTitle: targetAppointment.case.title,
-        scheduledAt: newScheduledAtIso,
-        appointmentId,
-        caseId: targetAppointment.case.id,
-      })
-
-      await appendCaseTimelineEvent(supabase, {
-        caseId: targetAppointment.case.id,
-        actorId: lawyerId,
-        eventType: CaseTimelineEventType.CONSULTATION_RESCHEDULED,
-        metadata: {
-          appointment_id: appointmentId,
-          previous_status: targetAppointment.status,
-          previous_scheduled_at: targetAppointment.scheduled_at,
-          scheduled_at: newScheduledAtIso,
-          duration_minutes: targetAppointment.duration_minutes,
-          status_after: "rescheduled",
-          action: "lawyer_rescheduled",
-        },
-      })
-
-      toast({
-        title: "Appointment rescheduled",
-        description: "The client has been notified of the new time.",
-      })
+      setRescheduleTarget(null)
+      setRescheduleDate(undefined)
+      setRescheduleTime("")
+      toast({ title: "Appointment rescheduled", description: `New time: ${format(newDateTime, "PPP 'at' p")}. The client has been notified.` })
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Failed to reschedule appointment"
-      toast({ title: "Error", description: message, variant: "destructive" })
+      const message = error instanceof Error ? error.message : "Failed to reschedule"
+      setRescheduleError(message)
     } finally {
       setProcessingId(null)
     }
   }
 
+  const handleSupportTicket = async () => {
+    if (!supportTarget) return
+    setSupportSubmitting(true)
+    try {
+      const res = await fetch("/api/appointments/support-ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appointment_id: supportTarget.id,
+          message: supportMessage,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || "Failed to submit request")
+
+      setAppointments((prev) =>
+        prev.map((apt) =>
+          apt.id === supportTarget.id ? { ...apt, status: "cancellation_requested" as const } : apt,
+        ),
+      )
+      setSupportTarget(null)
+      setSupportMessage("")
+      toast({
+        title: "Request Submitted",
+        description: "Your request has been submitted. We'll review and contact you within 24 hours.",
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to submit"
+      toast({ title: "Error", description: message, variant: "destructive" })
+    } finally {
+      setSupportSubmitting(false)
+    }
+  }
+
+  const canReschedule = (apt: Appointment) =>
+    (apt.status === "scheduled" || apt.status === "rescheduled") &&
+    apt.reschedule_count < 3 &&
+    new Date(apt.scheduled_at).getTime() - Date.now() > 2 * 60 * 60 * 1000
+
+  const canCancelPrePayment = (apt: Appointment) =>
+    apt.status === "pending" || apt.status === "awaiting_payment"
+
+  const isPaidAppointment = (apt: Appointment) =>
+    apt.status === "scheduled" || apt.status === "rescheduled"
+
+  // --- Sections ---
   const pendingAppointments = appointments.filter((apt) => apt.status === "pending")
   const awaitingPaymentAppointments = appointments.filter((apt) => apt.status === "awaiting_payment")
   const otherAppointments = appointments.filter(
     (apt) => apt.status !== "pending" && apt.status !== "awaiting_payment",
   )
+
+  const statusBorderClass = (status: string) => {
+    switch (status) {
+      case "rejected": return "border-red-200 bg-red-50/50 dark:bg-red-950/20 dark:border-red-900/50"
+      case "scheduled": return "border-blue-200 bg-blue-50/30 dark:bg-blue-950/20 dark:border-blue-800/50 shadow-sm"
+      case "rescheduled": return "border-indigo-200 bg-indigo-50/30 dark:bg-indigo-950/20 dark:border-indigo-800/50 shadow-sm"
+      case "attended": case "completed": return "border-green-200 bg-green-50/30 dark:bg-green-950/20 dark:border-green-800/50"
+      case "cancelled": return "border-gray-200 bg-gray-50/30 dark:bg-gray-900/20 dark:border-gray-800/50 opacity-75"
+      case "cancellation_requested": return "border-amber-300 bg-amber-50/40 dark:bg-amber-950/20 dark:border-amber-700/50 shadow-sm"
+      default: return "border-border bg-card"
+    }
+  }
+
+  const statusBadgeClass = (status: string) => {
+    switch (status) {
+      case "scheduled": return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+      case "rescheduled": return "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+      case "attended": case "completed": return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 border border-green-200 dark:border-green-800"
+      case "rejected": return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border border-red-200 dark:border-red-800"
+      case "cancelled": return "bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400 border border-gray-200 dark:border-gray-700"
+      case "cancellation_requested": return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+      default: return "bg-gray-100 text-gray-700 dark:bg-gray-800/30 dark:text-gray-300"
+    }
+  }
 
   if (isLoading) {
     return (
@@ -614,382 +536,428 @@ export default function LawyerAppointmentsPage() {
 
       <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8">
         <main className="space-y-6">
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold">Appointment Requests</h1>
-              <p className="mt-2 text-muted-foreground">Review and manage client appointment requests</p>
-            </div>
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold">Appointment Requests</h1>
+            <p className="mt-2 text-muted-foreground">Review and manage client appointment requests</p>
+          </div>
 
-            {/* Pending Requests */}
-            {pendingAppointments.length > 0 && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold">Pending Requests</h2>
-                  <Badge className="bg-orange-500/20 text-orange-700 dark:text-orange-400">
-                    {pendingAppointments.length} New
-                  </Badge>
-                </div>
-
-                {pendingAppointments.map((appointment) => (
-                  <div
-                    key={appointment.id}
-                    className="rounded-lg border border-orange-200 bg-orange-50/50 dark:bg-orange-950/20 p-6"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-4 flex-1">
-                        <div className="flex items-center gap-3">
-                          {appointment.client.avatar_url ? (
-                            <img
-                              src={appointment.client.avatar_url}
-                              alt={`${appointment.client.first_name} ${appointment.client.last_name}`}
-                              className="h-12 w-12 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-                              <User className="h-6 w-6 text-muted-foreground" />
-                            </div>
-                          )}
-                          <div>
-                            <p className="font-semibold text-lg">
-                              {appointment.client.first_name} {appointment.client.last_name}
-                            </p>
-                            <p className="text-sm text-muted-foreground">{appointment.client.email}</p>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="text-xs text-muted-foreground">Date</p>
-                              <p className="text-sm font-medium">
-                                {new Date(appointment.scheduled_at).toLocaleDateString()}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="text-xs text-muted-foreground">Time</p>
-                              <p className="text-sm font-medium">
-                                {new Date(appointment.scheduled_at).toLocaleTimeString([], {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}{" "}
-                                ({appointment.duration_minutes}m)
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="text-xs text-muted-foreground">Case Type</p>
-                              <p className="text-sm font-medium">{appointment.case.case_type || "Consultation"}</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-1">Case Title</p>
-                          <p className="text-sm font-medium">{appointment.case.title || "N/A"}</p>
-                        </div>
-
-                        {appointment.request_message && (
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">Client Message</p>
-                            <p className="text-sm bg-background rounded p-3 border border-border">
-                              {appointment.request_message}
-                            </p>
-                          </div>
-                        )}
-
-                        {appointment.case.description && (
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">Case Description</p>
-                            <p className="text-sm text-muted-foreground line-clamp-2">{appointment.case.description}</p>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="bg-transparent text-destructive border-destructive hover:bg-destructive hover:text-white"
-                            onClick={() => handleRejectRequest(appointment.id)}
-                            disabled={processingId === appointment.id}
-                          >
-                            {processingId === appointment.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <>
-                                <X className="h-4 w-4 mr-1" />
-                                Reject
-                              </>
-                            )}
-                          </Button>
-                          <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700"
-                            onClick={() => handleAcceptRequest(appointment.id)}
-                            disabled={processingId === appointment.id}
-                          >
-                            {processingId === appointment.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <>
-                                <Check className="h-4 w-4 mr-1" />
-                                Accept
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+          {/* Pending Requests */}
+          {pendingAppointments.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold">Pending Requests</h2>
+                <Badge className="bg-orange-500/20 text-orange-700 dark:text-orange-400">
+                  {pendingAppointments.length} New
+                </Badge>
               </div>
-            )}
 
-            {/* Awaiting Payment */}
-            {awaitingPaymentAppointments.length > 0 && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold">Awaiting Payment</h2>
-                  <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
-                    {awaitingPaymentAppointments.length} Pending
-                  </Badge>
-                </div>
-
-                {awaitingPaymentAppointments.map((appointment) => (
-                  <div
-                    key={appointment.id}
-                    className="rounded-lg border border-yellow-200 bg-yellow-50/30 dark:bg-yellow-950/20 dark:border-yellow-800/50 shadow-sm p-6"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-4 flex-1">
-                        <div className="flex items-center gap-3">
-                          {appointment.client.avatar_url ? (
-                            <img
-                              src={appointment.client.avatar_url}
-                              alt={`${appointment.client.first_name} ${appointment.client.last_name}`}
-                              className="h-10 w-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
-                              <User className="h-5 w-5 text-muted-foreground" />
-                            </div>
-                          )}
+              {pendingAppointments.map((appointment) => (
+                <div key={appointment.id} className="rounded-lg border border-orange-200 bg-orange-50/50 dark:bg-orange-950/20 p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-4 flex-1">
+                      <div className="flex items-center gap-3">
+                        {appointment.client.avatar_url ? (
+                          <img src={appointment.client.avatar_url} alt={`${appointment.client.first_name} ${appointment.client.last_name}`} className="h-12 w-12 rounded-full object-cover" />
+                        ) : (
+                          <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                            <User className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-semibold text-lg">{appointment.client.first_name} {appointment.client.last_name}</p>
+                          <p className="text-sm text-muted-foreground">{appointment.client.email}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-muted-foreground" />
                           <div>
-                            <p className="font-semibold">
-                              {appointment.client.first_name} {appointment.client.last_name}
-                            </p>
-                            <p className="text-sm text-muted-foreground">{appointment.case.case_type || "Consultation"}</p>
+                            <p className="text-xs text-muted-foreground">Date</p>
+                            <p className="text-sm font-medium">{new Date(appointment.scheduled_at).toLocaleDateString()}</p>
                           </div>
                         </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="text-xs text-muted-foreground">Date</p>
-                              <p className="text-sm font-medium">
-                                {new Date(appointment.scheduled_at).toLocaleDateString()}
-                              </p>
-                            </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Time</p>
+                            <p className="text-sm font-medium">
+                              {new Date(appointment.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ({appointment.duration_minutes}m)
+                            </p>
                           </div>
-
-                          <div className="flex items-center gap-2">
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="text-xs text-muted-foreground">Time</p>
-                              <p className="text-sm font-medium">
-                                {new Date(appointment.scheduled_at).toLocaleTimeString([], {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}{" "}
-                                ({appointment.duration_minutes}m)
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="text-xs text-muted-foreground">Case</p>
-                              <p className="text-sm font-medium">{appointment.case.title || "N/A"}</p>
-                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Case Type</p>
+                            <p className="text-sm font-medium">{appointment.case.case_type || "Consultation"}</p>
                           </div>
                         </div>
                       </div>
-
-                      <div className="flex flex-col gap-2 items-end">
-                        <span className="inline-flex rounded-full px-3 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800">
-                          Awaiting Payment
-                        </span>
-                        <p className="text-xs text-muted-foreground text-right">Waiting for client payment</p>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Case Title</p>
+                        <p className="text-sm font-medium">{appointment.case.title || "N/A"}</p>
+                      </div>
+                      {appointment.request_message && (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Client Message</p>
+                          <p className="text-sm bg-background rounded p-3 border border-border">{appointment.request_message}</p>
+                        </div>
+                      )}
+                      {appointment.case.description && (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Case Description</p>
+                          <p className="text-sm text-muted-foreground line-clamp-2">{appointment.case.description}</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex gap-2">
                         <Button
                           size="sm"
-                          variant="destructive"
+                          variant="outline"
+                          className="bg-transparent text-destructive border-destructive hover:bg-destructive hover:text-white"
+                          onClick={() => handleRejectRequest(appointment.id)}
                           disabled={processingId === appointment.id}
-                          onClick={() => void handleLawyerCancel(appointment.id)}
                         >
-                          Cancel
+                          {processingId === appointment.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <><X className="h-4 w-4 mr-1" />Reject</>}
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="bg-green-600 hover:bg-green-700"
+                          onClick={() => handleAcceptRequest(appointment.id)}
+                          disabled={processingId === appointment.id}
+                        >
+                          {processingId === appointment.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Check className="h-4 w-4 mr-1" />Accept</>}
                         </Button>
                       </div>
                     </div>
                   </div>
-                ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Awaiting Payment */}
+          {awaitingPaymentAppointments.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold">Awaiting Payment</h2>
+                <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
+                  {awaitingPaymentAppointments.length} Pending
+                </Badge>
               </div>
-            )}
 
-            {/* Other Appointments */}
-            {otherAppointments.length > 0 && (
-              <div className="space-y-4">
-                <h2 className="text-xl font-bold">All Appointments</h2>
-
-                {otherAppointments.map((appointment) => (
-                  <div
-                    key={appointment.id}
-                    className={`rounded-lg border ${
-                      appointment.status === "rejected"
-                        ? "border-red-200 bg-red-50/50 dark:bg-red-950/20 dark:border-red-900/50"
-                        : appointment.status === "awaiting_payment"
-                          ? "border-yellow-200 bg-yellow-50/30 dark:bg-yellow-950/20 dark:border-yellow-800/50 shadow-sm"
-                          : appointment.status === "scheduled"
-                            ? "border-blue-200 bg-blue-50/30 dark:bg-blue-950/20 dark:border-blue-800/50 shadow-sm"
-                            : appointment.status === "attended" || appointment.status === "completed"
-                              ? "border-green-200 bg-green-50/30 dark:bg-green-950/20 dark:border-green-800/50"
-                              : appointment.status === "cancelled"
-                                ? "border-gray-200 bg-gray-50/30 dark:bg-gray-900/20 dark:border-gray-800/50 opacity-75"
-                                : "border-border bg-card"
-                    } p-6 transition-all hover:shadow-md`}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-4 flex-1">
-                        <div className="flex items-center gap-3">
-                          {appointment.client.avatar_url ? (
-                            <img
-                              src={appointment.client.avatar_url}
-                              alt={`${appointment.client.first_name} ${appointment.client.last_name}`}
-                              className="h-10 w-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
-                              <User className="h-5 w-5 text-muted-foreground" />
-                            </div>
-                          )}
-                          <div>
-                            <p className="font-medium">
-                              {appointment.client.first_name} {appointment.client.last_name}
-                            </p>
-                            <p className="text-sm text-muted-foreground">{appointment.case.case_type || "Consultation"}</p>
+              {awaitingPaymentAppointments.map((appointment) => (
+                <div key={appointment.id} className="rounded-lg border border-yellow-200 bg-yellow-50/30 dark:bg-yellow-950/20 dark:border-yellow-800/50 shadow-sm p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-4 flex-1">
+                      <div className="flex items-center gap-3">
+                        {appointment.client.avatar_url ? (
+                          <img src={appointment.client.avatar_url} alt={`${appointment.client.first_name} ${appointment.client.last_name}`} className="h-10 w-10 rounded-full object-cover" />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                            <User className="h-5 w-5 text-muted-foreground" />
                           </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="text-xs text-muted-foreground">Date</p>
-                              <p className="text-sm font-medium">
-                                {new Date(appointment.scheduled_at).toLocaleDateString()}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="text-xs text-muted-foreground">Time</p>
-                              <p className="text-sm font-medium">
-                                {new Date(appointment.scheduled_at).toLocaleTimeString([], {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}{" "}
-                                ({appointment.duration_minutes}m)
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="text-xs text-muted-foreground">Case</p>
-                              <p className="text-sm font-medium">{appointment.case.title || "N/A"}</p>
-                            </div>
-                          </div>
+                        )}
+                        <div>
+                          <p className="font-semibold">{appointment.client.first_name} {appointment.client.last_name}</p>
+                          <p className="text-sm text-muted-foreground">{appointment.case.case_type || "Consultation"}</p>
                         </div>
                       </div>
-
-                      <div className="flex flex-col gap-2 items-end">
-                        <span
-                          className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
-                            appointment.status === "awaiting_payment"
-                              ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800"
-                              : appointment.status === "scheduled"
-                                ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
-                                : appointment.status === "attended" || appointment.status === "completed"
-                                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 border border-green-200 dark:border-green-800"
-                                : appointment.status === "rejected"
-                                  ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border border-red-200 dark:border-red-800"
-                                  : appointment.status === "cancelled"
-                                    ? "bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400 border border-gray-200 dark:border-gray-700"
-                                    : "bg-gray-100 text-gray-700 dark:bg-gray-800/30 dark:text-gray-300"
-                          }`}
-                        >
-                          {appointment.status === "awaiting_payment"
-                            ? "Awaiting Payment"
-                            : appointmentStatusLabel(appointment.status)}
-                        </span>
-                        <p className="text-[11px] text-muted-foreground">Workflow: {appointmentWorkflowPhase(appointment.status)}</p>
-                        {appointment.status === "attended" && (
-                          <div className="mt-1 text-right">
-                            <p className="text-xs text-green-700 dark:text-green-400 font-medium">Consultation held</p>
-                            <a
-                              href={`/lawyer/cases/${appointment.case.id}`}
-                              className="text-xs text-primary hover:underline"
-                            >
-                              Go to Case → Request Case Completion
-                            </a>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Date</p>
+                            <p className="text-sm font-medium">{new Date(appointment.scheduled_at).toLocaleDateString()}</p>
                           </div>
-                        )}
-                        {(appointment.status === "scheduled" || appointment.status === "rescheduled") && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="mt-2"
-                              disabled={processingId === appointment.id}
-                              onClick={() => void handleMarkAttended(appointment.id)}
-                            >
-                              {processingId === appointment.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                "Mark Consultation Held"
-                              )}
-                            </Button>
-                          </>
-                        )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Time</p>
+                            <p className="text-sm font-medium">
+                              {new Date(appointment.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ({appointment.duration_minutes}m)
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Case</p>
+                            <p className="text-sm font-medium">{appointment.case.title || "N/A"}</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
+                    <div className="flex flex-col gap-2 items-end">
+                      <span className="inline-flex rounded-full px-3 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800">
+                        Awaiting Payment
+                      </span>
+                      <p className="text-xs text-muted-foreground text-right">Waiting for client payment</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive border-destructive hover:bg-destructive hover:text-white"
+                        disabled={processingId === appointment.id}
+                        onClick={() => setCancelTarget(appointment)}
+                      >
+                        {processingId === appointment.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <><XCircle className="h-4 w-4 mr-1" />Cancel</>}
+                      </Button>
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
+                </div>
+              ))}
+            </div>
+          )}
 
-            {appointments.length === 0 && (
-              <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
-                <Calendar className="mx-auto h-12 w-12 text-muted-foreground/40" />
-                <h3 className="mt-4 font-semibold">No appointments yet</h3>
-                <p className="mt-1 text-sm text-muted-foreground">Appointment requests from clients will appear here</p>
-              </div>
-            )}
+          {/* All Appointments */}
+          {otherAppointments.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold">All Appointments</h2>
+
+              {otherAppointments.map((appointment) => (
+                <div key={appointment.id} className={`rounded-lg border ${statusBorderClass(appointment.status)} p-6 transition-all hover:shadow-md`}>
+                  {/* Cancellation requested banner */}
+                  {appointment.status === "cancellation_requested" && (
+                    <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-4 py-3">
+                      <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                        Cancellation requested &mdash; under admin review. Please wait for admin to resolve this.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-4 flex-1">
+                      <div className="flex items-center gap-3">
+                        {appointment.client.avatar_url ? (
+                          <img src={appointment.client.avatar_url} alt={`${appointment.client.first_name} ${appointment.client.last_name}`} className="h-10 w-10 rounded-full object-cover" />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                            <User className="h-5 w-5 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium">{appointment.client.first_name} {appointment.client.last_name}</p>
+                          <p className="text-sm text-muted-foreground">{appointment.case.case_type || "Consultation"}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Date</p>
+                            <p className="text-sm font-medium">{new Date(appointment.scheduled_at).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Time</p>
+                            <p className="text-sm font-medium">
+                              {new Date(appointment.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ({appointment.duration_minutes}m)
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Case</p>
+                            <p className="text-sm font-medium">{appointment.case.title || "N/A"}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 items-end">
+                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${statusBadgeClass(appointment.status)}`}>
+                        {appointmentStatusLabel(appointment.status)}
+                      </span>
+                      {appointment.status === "rescheduled" && (
+                        <Badge variant="outline" className="text-indigo-600 border-indigo-300">
+                          <CalendarClock className="h-3 w-3 mr-1" />
+                          Rescheduled
+                        </Badge>
+                      )}
+                      <p className="text-[11px] text-muted-foreground">Workflow: {appointmentWorkflowPhase(appointment.status)}</p>
+
+                      {/* Attended */}
+                      {appointment.status === "attended" && (
+                        <div className="mt-1 text-right">
+                          <p className="text-xs text-green-700 dark:text-green-400 font-medium">Consultation held</p>
+                          <a href={`/lawyer/cases/${appointment.case.id}`} className="text-xs text-primary hover:underline">
+                            Go to Case &rarr; Request Case Completion
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Scheduled / Rescheduled -- actions */}
+                      {(appointment.status === "scheduled" || appointment.status === "rescheduled") && (
+                        <div className="flex flex-col items-end gap-2 mt-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={processingId === appointment.id}
+                            onClick={() => void handleMarkAttended(appointment.id)}
+                          >
+                            {processingId === appointment.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark Consultation Held"}
+                          </Button>
+                          {canReschedule(appointment) ? (
+                            <Button size="sm" variant="outline" onClick={() => { setRescheduleTarget(appointment); setRescheduleError("") }}>
+                              <CalendarClock className="h-4 w-4 mr-1" />
+                              Reschedule ({3 - appointment.reschedule_count} left)
+                            </Button>
+                          ) : appointment.reschedule_count >= 3 ? (
+                            <p className="text-xs text-muted-foreground text-right max-w-[200px]">
+                              Maximum reschedules reached.{" "}
+                              <button className="text-primary underline" onClick={() => { setSupportTarget(appointment); setSupportMessage("") }}>Contact Support</button>
+                            </p>
+                          ) : null}
+                          <button className="text-xs text-muted-foreground hover:text-primary underline" onClick={() => { setSupportTarget(appointment); setSupportMessage("") }}>
+                            Need to cancel? Contact Support
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Cancellation Requested */}
+                      {appointment.status === "cancellation_requested" && (
+                        <p className="text-xs text-amber-700 dark:text-amber-400 font-medium text-right">Under admin review</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {appointments.length === 0 && (
+            <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+              <Calendar className="mx-auto h-12 w-12 text-muted-foreground/40" />
+              <h3 className="mt-4 font-semibold">No appointments yet</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Appointment requests from clients will appear here</p>
+            </div>
+          )}
         </main>
       </div>
+
+      {/* Reschedule Modal */}
+      <Dialog open={!!rescheduleTarget} onOpenChange={(open) => { if (!open) { setRescheduleTarget(null); setRescheduleError("") } }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Reschedule Appointment</DialogTitle>
+            <DialogDescription>
+              Select a new date and time for the consultation
+              {rescheduleTarget ? ` with ${rescheduleTarget.client.first_name} ${rescheduleTarget.client.last_name}` : ""}.
+              {rescheduleTarget && ` (${3 - rescheduleTarget.reschedule_count} reschedule${3 - rescheduleTarget.reschedule_count === 1 ? "" : "s"} remaining)`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex justify-center">
+              <DayPicker
+                mode="single"
+                selected={rescheduleDate}
+                onSelect={(d) => { setRescheduleDate(d ?? undefined); setRescheduleError("") }}
+                disabled={(date) => isPast(startOfDay(date)) || date < addDays(new Date(), 1) || date > addDays(new Date(), 60)}
+                className="rounded-md border"
+              />
+            </div>
+            {rescheduleDate && (
+              <div>
+                <label className="text-sm font-medium mb-1 block">Select Time</label>
+                <Select value={rescheduleTime} onValueChange={(v) => { setRescheduleTime(v); setRescheduleError("") }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a time slot" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIME_SLOTS.map((slot) => (
+                      <SelectItem key={slot} value={slot}>{slot}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {rescheduleError && (
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                {rescheduleError}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRescheduleTarget(null)}>Cancel</Button>
+            <Button onClick={handleReschedule} disabled={!rescheduleDate || !rescheduleTime || processingId === rescheduleTarget?.id}>
+              {processingId === rescheduleTarget?.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Confirm Reschedule
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Confirm Dialog */}
+      <Dialog open={!!cancelTarget} onOpenChange={(open) => { if (!open) setCancelTarget(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel Appointment</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to cancel this appointment? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelTarget(null)}>Keep Appointment</Button>
+            <Button variant="destructive" disabled={processingId === cancelTarget?.id} onClick={() => cancelTarget && handleCancelAppointment(cancelTarget.id)}>
+              {processingId === cancelTarget?.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Yes, Cancel Appointment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Support Ticket Dialog */}
+      <Dialog open={!!supportTarget} onOpenChange={(open) => { if (!open) { setSupportTarget(null); setSupportMessage("") } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              Contact Support
+            </DialogTitle>
+            <DialogDescription>
+              Submit a cancellation request for this paid appointment. An admin will review your request.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-muted/50 p-3 space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Appointment:</span>
+                <span className="font-medium">{supportTarget?.id.slice(0, 8)}...</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Case:</span>
+                <span className="font-medium">{supportTarget?.case.title || "N/A"}</span>
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Describe your issue <span className="text-destructive">*</span></label>
+              <Textarea
+                value={supportMessage}
+                onChange={(e) => setSupportMessage(e.target.value)}
+                placeholder="Please explain why you need to cancel this appointment (min 20 characters)..."
+                rows={4}
+              />
+              {supportMessage.length > 0 && supportMessage.length < 20 && (
+                <p className="text-xs text-destructive mt-1">{20 - supportMessage.length} more characters needed</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSupportTarget(null)}>Cancel</Button>
+            <Button onClick={handleSupportTicket} disabled={supportMessage.trim().length < 20 || supportSubmitting}>
+              {supportSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Submit Request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
-

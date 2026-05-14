@@ -11,6 +11,7 @@ export const APPOINTMENT_ACTIVE_SLOT_STATUSES = [
   "awaiting_payment",
   "scheduled",
   "rescheduled",
+  "cancellation_requested",
 ] as const
 
 /** Statuses that block the same calendar slot as a booked consultation. */
@@ -43,6 +44,8 @@ export function appointmentStatusLabel(status: string | null | undefined): strin
       return "Cancelled"
     case "rejected":
       return "Rejected"
+    case "cancellation_requested":
+      return "Cancellation Requested"
     default:
       return status ? status.replace(/_/g, " ") : "—"
   }
@@ -70,6 +73,8 @@ export function appointmentWorkflowPhase(status: string | null | undefined): str
       return "Rejected"
     case "rescheduled":
       return "Rescheduled"
+    case "cancellation_requested":
+      return "Cancellation under review"
     default:
       return "Unknown"
   }

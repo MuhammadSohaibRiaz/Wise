@@ -59,6 +59,7 @@ type AppointmentUpdateTemplate =
   | "client_cancel"
   | "lawyer_cancel"
   | "lawyer_reschedule"
+  | "client_reschedule"
 
 const appointmentCopy: Record<
   AppointmentUpdateTemplate,
@@ -82,6 +83,10 @@ const appointmentCopy: Record<
   }),
   lawyer_reschedule: ({ caseTitle, scheduledAt }) => ({
     title: "Lawyer rescheduled your appointment",
+    description: `${caseTitle || "Consultation"} • New time: ${scheduledAt ? new Date(scheduledAt).toLocaleString() : ""}`,
+  }),
+  client_reschedule: ({ caseTitle, scheduledAt }) => ({
+    title: "Client rescheduled your appointment",
     description: `${caseTitle || "Consultation"} • New time: ${scheduledAt ? new Date(scheduledAt).toLocaleString() : ""}`,
   }),
 }
@@ -138,7 +143,7 @@ export async function notifyAppointmentUpdate(
           ? "awaiting_payment"
           : template === "client_cancel" || template === "lawyer_cancel"
             ? "cancelled"
-            : template === "lawyer_reschedule"
+            : template === "lawyer_reschedule" || template === "client_reschedule"
               ? "rescheduled"
               : "rejected",
     },

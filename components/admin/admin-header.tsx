@@ -13,6 +13,7 @@ import {
   Briefcase, 
   LayoutDashboard,
   ShieldAlert,
+  AlertCircle,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -53,6 +54,10 @@ export function AdminHeader() {
             <Link href="/admin/users" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5">
               <Users className="h-4 w-4" />
               Users
+            </Link>
+            <Link href="/admin/cancellation-requests" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5">
+              <AlertCircle className="h-4 w-4" />
+              Cancellations
             </Link>
             {/* Disputes nav hidden — module disabled for now */}
             <Link href="/admin/security-logs" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5">
@@ -95,6 +100,9 @@ export function AdminHeader() {
           </Link>
           <Link href="/admin/users" className="block text-sm font-medium px-4 py-2 hover:bg-muted rounded-md">
             Users
+          </Link>
+          <Link href="/admin/cancellation-requests" className="block text-sm font-medium px-4 py-2 hover:bg-muted rounded-md">
+            Cancellations
           </Link>
           {/* Disputes nav hidden — module disabled for now */}
           <Link href="/admin/security-logs" className="block text-sm font-medium px-4 py-2 hover:bg-muted rounded-md">

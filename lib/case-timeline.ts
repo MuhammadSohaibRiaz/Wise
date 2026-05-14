@@ -17,6 +17,7 @@ export const CaseTimelineEventType = {
   LAWYER_REJECTED_CONSULTATION: "LAWYER_REJECTED_CONSULTATION",
   LAWYER_CANCELLED_CONSULTATION: "LAWYER_CANCELLED_CONSULTATION",
   CONSULTATION_RESCHEDULED: "CONSULTATION_RESCHEDULED",
+  CANCELLATION_REQUESTED: "CANCELLATION_REQUESTED",
 } as const
 
 export type CaseTimelineEventTypeKey = (typeof CaseTimelineEventType)[keyof typeof CaseTimelineEventType]
@@ -37,6 +38,7 @@ const TIMELINE_LABELS: Record<string, string> = {
   [CaseTimelineEventType.LAWYER_REJECTED_CONSULTATION]: "Consultation rejected by lawyer",
   [CaseTimelineEventType.LAWYER_CANCELLED_CONSULTATION]: "Consultation cancelled by lawyer",
   [CaseTimelineEventType.CONSULTATION_RESCHEDULED]: "Consultation rescheduled",
+  [CaseTimelineEventType.CANCELLATION_REQUESTED]: "Cancellation requested",
 }
 
 /** Human-readable title for a timeline row (stable across GPT-style lifecycle wording). */
@@ -73,6 +75,9 @@ export function caseTimelineEventDetail(
   }
   if (eventType === CaseTimelineEventType.CONSULTATION_RESCHEDULED && typeof m.appointment_id === "string") {
     return "Consultation timing was updated"
+  }
+  if (eventType === CaseTimelineEventType.CANCELLATION_REQUESTED && typeof m.appointment_id === "string") {
+    return "A cancellation request was submitted for admin review"
   }
   return null
 }

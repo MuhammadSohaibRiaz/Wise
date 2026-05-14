@@ -9,6 +9,9 @@ type EmailTemplate =
   | "payment_confirmed"
   | "verification_approved"
   | "verification_rejected"
+  | "appointment_rescheduled"
+  | "appointment_cancelled"
+  | "appointment_cancellation_resolved"
 
 interface RequestBody {
   template: EmailTemplate
@@ -193,6 +196,97 @@ export async function POST(req: NextRequest) {
             body: `Your bar license document could not be verified. Please re-upload a valid document from your dashboard to continue the verification process.`,
             ctaText: "Re-upload Document",
             ctaUrl: `${siteUrl}/lawyer/dashboard`,
+          }),
+        })
+        break
+      }
+
+      case "appointment_rescheduled": {
+        const { recipient_id, actor_name, case_title, new_time, recipient_role } = data
+        if (!recipient_id) return NextResponse.json({ error: "Missing recipient_id" }, { status: 400 })
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("email, first_name")
+          .eq("id", recipient_id)
+          .single()
+
+        if (!profile?.email) {
+          return NextResponse.json({ error: "Recipient email not found" }, { status: 404 })
+        }
+
+        const formattedTime = new_time ? new Date(new_time).toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" }) : "a new time"
+        const appointmentsUrl = recipient_role === "lawyer" ? `${siteUrl}/lawyer/appointments` : `${siteUrl}/client/appointments`
+
+        await sendEmail({
+          to: profile.email,
+          subject: "Your appointment has been rescheduled",
+          html: buildEmailHtml({
+            title: "Appointment Rescheduled",
+            body: `${actor_name || "The other party"} has rescheduled your consultation${case_title ? ` for <strong>"${case_title}"</strong>` : ""} to <strong>${formattedTime}</strong>. If this time doesn't work, you can reschedule from your appointments page.`,
+            ctaText: "View Appointments",
+            ctaUrl: appointmentsUrl,
+          }),
+        })
+        break
+      }
+
+      case "appointment_cancelled": {
+        const { recipient_id, actor_name, case_title, recipient_role } = data
+        if (!recipient_id) return NextResponse.json({ error: "Missing recipient_id" }, { status: 400 })
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("email, first_name")
+          .eq("id", recipient_id)
+          .single()
+
+        if (!profile?.email) {
+          return NextResponse.json({ error: "Recipient email not found" }, { status: 404 })
+        }
+
+        const appointmentsUrl = recipient_role === "lawyer" ? `${siteUrl}/lawyer/appointments` : `${siteUrl}/client/appointments`
+
+        await sendEmail({
+          to: profile.email,
+          subject: "Appointment Cancelled",
+          html: buildEmailHtml({
+            title: "Appointment Cancelled",
+            body: `${actor_name || "The other party"} has cancelled the consultation appointment${case_title ? ` for <strong>"${case_title}"</strong>` : ""}. You can book a new appointment if needed.`,
+            ctaText: "View Appointments",
+            ctaUrl: appointmentsUrl,
+          }),
+        })
+        break
+      }
+
+      case "appointment_cancellation_resolved": {
+        const { recipient_id, case_title, resolution, reason, recipient_role } = data
+        if (!recipient_id) return NextResponse.json({ error: "Missing recipient_id" }, { status: 400 })
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("email, first_name")
+          .eq("id", recipient_id)
+          .single()
+
+        if (!profile?.email) {
+          return NextResponse.json({ error: "Recipient email not found" }, { status: 404 })
+        }
+
+        const isApproved = resolution === "approved"
+        const appointmentsUrl = recipient_role === "lawyer" ? `${siteUrl}/lawyer/appointments` : `${siteUrl}/client/appointments`
+
+        await sendEmail({
+          to: profile.email,
+          subject: isApproved ? "Appointment Cancellation Approved" : "Appointment Cancellation Rejected",
+          html: buildEmailHtml({
+            title: isApproved ? "Cancellation Approved" : "Cancellation Request Rejected",
+            body: isApproved
+              ? `Your cancellation request${case_title ? ` for <strong>"${case_title}"</strong>` : ""} has been approved by the admin. The appointment has been cancelled.${reason ? `<br><br><strong>Reason:</strong> ${reason}` : ""}`
+              : `Your cancellation request${case_title ? ` for <strong>"${case_title}"</strong>` : ""} has been rejected by the admin. The appointment remains scheduled.${reason ? `<br><br><strong>Reason:</strong> ${reason}` : ""} Please attend your appointment as planned.`,
+            ctaText: "View Appointments",
+            ctaUrl: appointmentsUrl,
           }),
         })
         break
