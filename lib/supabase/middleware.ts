@@ -5,7 +5,7 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   let response = NextResponse.next({ request })
 
-  const publicRoutes = ["/", "/auth", "/match", "/terms", "/privacy", "/client/lawyer", "/api/chat"]
+  const publicRoutes = ["/", "/auth", "/match", "/terms", "/privacy", "/client/lawyer", "/api/chat", "/api/legal-rag-chat"]
   const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route + "/"))
 
   const supabase = createServerClient(
