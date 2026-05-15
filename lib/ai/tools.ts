@@ -114,7 +114,7 @@ export const tools = {
       if (!user) return { error: "Not logged in." };
 
       const [cases, appointments] = await Promise.all([
-        supabase.from('cases').select('id, title, status, created_at').eq('client_id', user.id).or(`lawyer_id.eq.${user.id}`).order('created_at', { ascending: false }).limit(3),
+        supabase.from('cases').select('id, title, status, created_at').or(`client_id.eq.${user.id},lawyer_id.eq.${user.id}`).order('created_at', { ascending: false }).limit(3),
         supabase.from('appointments').select('id, scheduled_at, status').or(`client_id.eq.${user.id},lawyer_id.eq.${user.id}`).gte('scheduled_at', new Date().toISOString()).order('scheduled_at', { ascending: true }).limit(3)
       ]);
 
@@ -206,6 +206,19 @@ export const tools = {
     }),
     execute: async ({ caseId }) => {
       const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return { error: "Not logged in." };
+
+      const { data: caseRow, error: caseError } = await supabase
+        .from("cases")
+        .select("id, client_id, lawyer_id")
+        .eq("id", caseId)
+        .maybeSingle();
+
+      if (caseError) return { error: caseError.message };
+      if (!caseRow || (caseRow.client_id !== user.id && caseRow.lawyer_id !== user.id)) {
+        return { error: "You do not have access to that case." };
+      }
 
       const { data: docRows, error: docErr } = await supabase.from("documents").select("id, file_name").eq("case_id", caseId);
       if (docErr) return { error: docErr.message };
