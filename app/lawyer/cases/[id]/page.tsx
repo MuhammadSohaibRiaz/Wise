@@ -24,6 +24,7 @@ import {
   Brain,
   LayoutDashboard,
   History,
+  Sparkles,
 } from "lucide-react"
 import { LawyerDashboardHeader } from "@/components/lawyer/dashboard-header"
 import { createNotification } from "@/lib/notifications"
@@ -32,6 +33,7 @@ import { isAppointmentBillable } from "@/lib/appointments-status"
 import { deriveCaseLifecycleStages } from "@/lib/case-lifecycle-stages"
 import { CaseProgressStepper } from "@/components/cases/case-progress-stepper"
 import { CaseActivityFeed } from "@/components/cases/case-activity-feed"
+import { AiCaseSummary } from "@/components/cases/ai-case-summary"
 
 interface CaseDetail {
   id: string
@@ -380,6 +382,16 @@ export default function LawyerCaseDetailPage() {
       return
     }
 
+    if (statusToApply === "in_progress" && !hasAttendedAppointment) {
+      toast({
+        title: "Consultation required",
+        description:
+          "At least one consultation must be marked as held before moving the case to in progress.",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       setIsSaving(true)
       const supabase = createClient()
@@ -551,6 +563,7 @@ export default function LawyerCaseDetailPage() {
   const clientName = caseDetail.client
     ? `${caseDetail.client.first_name || ""} ${caseDetail.client.last_name || ""}`.trim() || "Unknown Client"
     : "No client assigned"
+  const showAiSummaryTab = caseDetail.status !== "open" && Boolean(caseDetail.client)
 
   return (
     <div className="min-h-screen bg-background">
@@ -646,6 +659,12 @@ export default function LawyerCaseDetailPage() {
                   <MessageSquare className="h-4 w-4 shrink-0" />
                   Messages
                 </TabsTrigger>
+                {showAiSummaryTab && (
+                  <TabsTrigger value="ai-summary" className="gap-1.5">
+                    <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+                    AI Summary
+                  </TabsTrigger>
+                )}
               </TabsList>
 
               <TabsContent value="overview" className="space-y-6 mt-0">
@@ -748,7 +767,9 @@ export default function LawyerCaseDetailPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="open">Open</SelectItem>
-                                  <SelectItem value="in_progress">In Progress</SelectItem>
+                                  <SelectItem value="in_progress" disabled={!hasAttendedAppointment}>
+                                    In Progress {!hasAttendedAppointment ? "(needs held consult)" : ""}
+                                  </SelectItem>
                                   <SelectItem value="pending_completion" disabled={!hasAttendedAppointment}>
                                     Request Case Completion {!hasAttendedAppointment ? "(needs attended consult)" : ""}
                                   </SelectItem>
@@ -1028,10 +1049,15 @@ export default function LawyerCaseDetailPage() {
                   </CardContent>
                 </Card>
               </TabsContent>
+
+              {showAiSummaryTab && (
+                <TabsContent value="ai-summary" className="mt-0">
+                  <AiCaseSummary caseId={caseDetail.id} />
+                </TabsContent>
+              )}
             </Tabs>
           </main>
       </div>
     </div>
   )
 }
-

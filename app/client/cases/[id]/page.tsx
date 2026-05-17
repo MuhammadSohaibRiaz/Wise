@@ -24,6 +24,7 @@ import {
   XCircle,
   LayoutDashboard,
   History,
+  Sparkles,
 } from "lucide-react"
 import { ReviewModal } from "@/components/client/review-modal"
 // import { DisputeModal } from "@/components/cases/dispute-modal"
@@ -32,6 +33,7 @@ import { appointmentDisplayLabel } from "@/lib/appointment-display"
 import { deriveCaseLifecycleStages } from "@/lib/case-lifecycle-stages"
 import { CaseProgressStepper } from "@/components/cases/case-progress-stepper"
 import { CaseActivityFeed } from "@/components/cases/case-activity-feed"
+import { AiCaseSummary } from "@/components/cases/ai-case-summary"
 
 interface CaseDetail {
   id: string
@@ -419,6 +421,7 @@ export default function ClientCaseDetailPage() {
   const lawyerName = caseDetail.lawyer
     ? `${caseDetail.lawyer.first_name || ""} ${caseDetail.lawyer.last_name || ""}`.trim() || "Unknown Lawyer"
     : "No lawyer assigned"
+  const showAiSummaryTab = caseDetail.status !== "open" && Boolean(caseDetail.lawyer)
 
   return (
     <main className="space-y-8">
@@ -546,6 +549,12 @@ export default function ClientCaseDetailPage() {
             <MessageSquare className="h-4 w-4 shrink-0" />
             Messages
           </TabsTrigger>
+          {showAiSummaryTab && (
+            <TabsTrigger value="ai-summary" className="gap-1.5">
+              <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+              AI Summary
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6 mt-0">
@@ -727,6 +736,12 @@ export default function ClientCaseDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {showAiSummaryTab && (
+          <TabsContent value="ai-summary" className="mt-0">
+            <AiCaseSummary caseId={caseDetail.id} />
+          </TabsContent>
+        )}
       </Tabs>
 
       {caseDetail.lawyer && clientId && (
@@ -753,4 +768,3 @@ export default function ClientCaseDetailPage() {
     </main>
   )
 }
-
