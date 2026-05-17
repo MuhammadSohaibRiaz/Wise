@@ -79,6 +79,17 @@ export function PendingCaseReviewDialog({
     }
   }
 
+  const handleSkip = () => {
+    if (pending && typeof window !== "undefined") {
+      window.localStorage.setItem(`wisecase-review-skipped:${pending.id}`, "true")
+    }
+    setRating(0)
+    setComment("")
+    setError(null)
+    onSubmitted()
+    onOpenChange(false)
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -132,7 +143,7 @@ export function PendingCaseReviewDialog({
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+          <Button type="button" variant="outline" onClick={handleSkip} disabled={saving}>
             Later
           </Button>
           <Button type="button" onClick={() => void handleSubmit()} disabled={saving || rating < 1}>

@@ -308,6 +308,8 @@ export function MessagesShell({ userType }: MessagesShellProps) {
         if (!res.ok) {
           const json = await res.json().catch(() => ({}))
           console.error("[v0] Mark read API error:", json.error)
+        } else if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("wisecase:messages-read"))
         }
       } catch (err) {
         console.error("[v0] Mark read error:", err)

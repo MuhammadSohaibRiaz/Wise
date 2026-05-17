@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { sendEmail, buildEmailHtml, escapeHtml } from "@/lib/email"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 
@@ -101,6 +102,30 @@ export async function POST(req: NextRequest) {
           message,
         },
       })
+    }
+
+    const admin = createAdminClient()
+    const { data: adminProfiles } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("user_type", "admin")
+
+    if (adminProfiles?.length) {
+      await admin.from("notifications").insert(
+        adminProfiles.map((profile) => ({
+          user_id: profile.id,
+          created_by: user.id,
+          type: "appointment_update",
+          title: "Cancellation request needs review",
+          description: `${caseTitle || "Appointment"} cancellation request is waiting for admin review.`,
+          data: {
+            appointment_id: appointmentId,
+            case_id: row.case_id,
+            status: "cancellation_requested",
+            action: "review_cancellation_request",
+          },
+        })),
+      )
     }
 
     // Send email to support

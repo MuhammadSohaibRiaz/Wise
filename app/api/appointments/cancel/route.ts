@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { notifyAppointmentUpdate } from "@/lib/notifications"
 
@@ -42,7 +43,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { error: updErr } = await supabase
+    const admin = createAdminClient()
+
+    const { error: updErr } = await admin
       .from("appointments")
       .update({
         status: "cancelled",
@@ -53,6 +56,17 @@ export async function POST(req: NextRequest) {
 
     if (updErr) {
       return NextResponse.json({ error: updErr.message }, { status: 400 })
+    }
+
+    if (row.case_id) {
+      await admin
+        .from("cases")
+        .update({
+          lawyer_id: null,
+          status: "closed",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.case_id)
     }
 
     // --- Side effects ---
@@ -80,7 +94,7 @@ export async function POST(req: NextRequest) {
       caseTitle = caseData?.title || ""
     }
 
-    await notifyAppointmentUpdate(supabase, template, {
+    await notifyAppointmentUpdate(admin, template, {
       recipientId,
       actorId: user.id,
       caseTitle,
@@ -90,7 +104,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (row.case_id) {
-      await appendCaseTimelineEvent(supabase, {
+      await appendCaseTimelineEvent(admin, {
         caseId: row.case_id,
         actorId: user.id,
         eventType: CaseTimelineEventType.APPOINTMENT_CANCELLED,

@@ -49,7 +49,7 @@ export function ActiveCases({ hideTitle = false }: ActiveCasesProps) {
         return
       }
 
-      // Fetch active cases (open or in_progress) where lawyer is assigned
+      // Fetch active cases where work is actually underway. Open cases are unpaid/request-stage matters.
       const { data, error } = await supabase
         .from("cases")
         .select(
@@ -69,7 +69,7 @@ export function ActiveCases({ hideTitle = false }: ActiveCasesProps) {
         )
         .eq("lawyer_id", sessionData.session.user.id)
         .not("lawyer_id", "is", null)
-        .in("status", ["open", "in_progress", "pending_completion"])
+        .in("status", ["in_progress", "pending_completion"])
         .neq("title", "AI Analysis Documents")
         .order("updated_at", { ascending: false })
         .limit(3)

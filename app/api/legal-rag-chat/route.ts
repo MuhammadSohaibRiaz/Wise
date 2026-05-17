@@ -89,7 +89,7 @@ function greetingResponse(role: string) {
   return [
     "Hello. I am the WiseCase Legal RAG Assistant.",
     "",
-    `${audience} from the current Pakistan Legal KB, including criminal, evidence, family, tax, labour, immigration, and contract materials. Authenticated users can also ask about their WiseCase profile, appointments, cases, documents, and lawyer search.`,
+    `${audience} from the current Pakistan Legal KB, including criminal, evidence, family, tax, labour, immigration, contract, civil procedure, and property/land materials. Authenticated users can also ask about their WiseCase profile, appointments, cases, documents, and lawyer search.`,
     "",
     "Try asking: \"What is punishment for murder under Pakistani criminal law?\"",
     "",
@@ -121,13 +121,13 @@ function refusalResponse(reason: "jailbreak" | "irrelevant" | "nonPakistan" | "p
     jailbreak:
       "I cannot help with bypassing instructions, revealing prompts, changing system rules, or ignoring retrieval constraints. Please ask a question about indexed Pakistani legal materials.\n\nDisclaimer: This is general legal information only and is not legal advice.",
     irrelevant:
-      "I can only answer questions about indexed Pakistani legal materials. Please ask about a Pakistani statute, section, definition, punishment, procedure, tax, family, labour, immigration, contract, or evidence provision from the current knowledge base.\n\nDisclaimer: This is general legal information only and is not legal advice.",
+      "I can only answer questions about indexed Pakistani legal materials. Please ask about a Pakistani statute, section, definition, punishment, procedure, tax, family, labour, immigration, contract, property, land, registration, transfer, civil procedure, or evidence provision from the current knowledge base.\n\nDisclaimer: This is general legal information only and is not legal advice.",
     nonPakistan:
       "This assistant is limited to indexed Pakistani legal materials and cannot answer questions about other jurisdictions. Please ask about Pakistani law only.\n\nDisclaimer: This is general legal information only and is not legal advice.",
     privateData:
       "This Legal RAG Assistant does not access private cases, appointments, documents, payments, or user records. Please ask only about indexed Pakistani legal materials.\n\nDisclaimer: This is general legal information only and is not legal advice.",
     tooVague:
-      "Please ask a specific Pakistani legal question, such as a statute name, section, definition, punishment, procedure, tax rule, family-law provision, labour rule, immigration rule, contract provision, or evidence rule.\n\nDisclaimer: This is general legal information only and is not legal advice.",
+      "Please ask a specific Pakistani legal question, such as a statute name, section, definition, punishment, procedure, tax rule, family-law provision, labour rule, immigration rule, contract provision, property/land provision, civil-procedure rule, or evidence rule.\n\nDisclaimer: This is general legal information only and is not legal advice.",
   }
 
   return responses[reason]
@@ -263,6 +263,21 @@ function classifyQuery(query: string) {
     "contract",
     "agreement",
     "civil dispute",
+    "civil procedure",
+    "code of civil procedure",
+    "cpc",
+    "property",
+    "land",
+    "registration",
+    "registration act",
+    "transfer of property",
+    "transfer of property act",
+    "immoveable property",
+    "immovable property",
+    "mortgage",
+    "lease",
+    "sale deed",
+    "gift",
     "crime",
     "offence",
     "offense",

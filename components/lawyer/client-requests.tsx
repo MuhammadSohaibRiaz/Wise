@@ -8,9 +8,6 @@ import { Clock, MapPin, User, Check, X, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
-import { notifyAppointmentUpdate } from "@/lib/notifications"
-import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
-import { APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 
 interface AppointmentRequest {
   id: string
@@ -162,77 +159,15 @@ export function ClientRequests({ hideTitle = false }: ClientRequestsProps) {
         throw new Error("Request data missing")
       }
 
-      const { data: scheduledAppointments, error: scheduleError } = await supabase
-        .from("appointments")
-        .select("id, scheduled_at, duration_minutes")
-        .eq("lawyer_id", lawyerId)
-        .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
-        .neq("id", requestId)
-
-      if (scheduleError) throw scheduleError
-
-      const slotStart = new Date(target.scheduled_at)
-      const slotEnd = new Date(slotStart.getTime() + target.duration_minutes * 60000)
-      const hasConflict = (scheduledAppointments || []).some((apt) => {
-        const aptStart = new Date(apt.scheduled_at)
-        const aptEnd = new Date(aptStart.getTime() + apt.duration_minutes * 60000)
-        return !(slotEnd <= aptStart || slotStart >= aptEnd)
+      const res = await fetch("/api/appointments/respond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appointment_id: requestId, action: "accept" }),
       })
-
-      if (hasConflict) {
-        toast({
-          title: "Schedule conflict",
-          description: "You already have an appointment during this slot. Please propose a different time.",
-          variant: "destructive",
-        })
-        return
-      }
-
-      const { error } = await supabase
-        .from("appointments")
-        .update({
-          status: "awaiting_payment",
-          responded_at: new Date().toISOString(),
-        })
-        .eq("id", requestId)
-
-      if (error) throw error
-
-      await supabase
-        .from("cases")
-        .update({
-          status: "in_progress",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", target.case_id)
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || "Failed to accept request")
 
       setRequests(requests.filter((r) => r.id !== requestId))
-
-      await notifyAppointmentUpdate(
-        supabase,
-        "lawyer_accept",
-        {
-          recipientId: target.client_id,
-          actorId: lawyerId,
-          caseTitle: target.case.title,
-          scheduledAt: target.scheduled_at,
-          appointmentId: requestId,
-          caseId: target.case_id,
-        },
-      )
-
-      await appendCaseTimelineEvent(supabase, {
-        caseId: target.case_id,
-        actorId: lawyerId,
-        eventType: CaseTimelineEventType.CONSULTATION_ACCEPTED,
-        metadata: {
-          appointment_id: requestId,
-          previous_status: "pending",
-          status_after: "awaiting_payment",
-          action: "lawyer_accepted",
-          source: "client_requests_widget",
-        },
-      })
 
       toast({
         title: "Request Accepted",
@@ -260,51 +195,15 @@ export function ClientRequests({ hideTitle = false }: ClientRequestsProps) {
         throw new Error("Request data missing")
       }
 
-      const { error } = await supabase
-        .from("appointments")
-        .update({
-          status: "rejected",
-          responded_at: new Date().toISOString(),
-        })
-        .eq("id", requestId)
-
-      if (error) throw error
-
-      await supabase
-        .from("cases")
-        .update({
-          lawyer_id: null,
-          status: "closed",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", target.case_id)
+      const res = await fetch("/api/appointments/respond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appointment_id: requestId, action: "reject" }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || "Failed to reject request")
 
       setRequests(requests.filter((r) => r.id !== requestId))
-
-      await notifyAppointmentUpdate(
-        supabase,
-        "lawyer_reject",
-        {
-          recipientId: target.client_id,
-          actorId: lawyerId,
-          caseTitle: target.case.title,
-          appointmentId: requestId,
-          caseId: target.case_id,
-        },
-      )
-
-      await appendCaseTimelineEvent(supabase, {
-        caseId: target.case_id,
-        actorId: lawyerId,
-        eventType: CaseTimelineEventType.LAWYER_REJECTED_CONSULTATION,
-        metadata: {
-          appointment_id: requestId,
-          previous_status: "pending",
-          status_after: "rejected",
-          action: "lawyer_rejected",
-          source: "client_requests_widget",
-        },
-      })
 
       toast({
         title: "Request Rejected",

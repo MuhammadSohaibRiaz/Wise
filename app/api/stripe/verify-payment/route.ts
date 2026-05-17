@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { stripe } from "@/lib/stripe/config"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 
 export async function POST(request: NextRequest) {
@@ -37,8 +38,19 @@ export async function POST(request: NextRequest) {
 
             console.log(`[Payment Verify] Payment confirmed for appointment ${appointment_id}`)
 
+            const admin = createAdminClient()
+            const { data: appointmentForAuth, error: appointmentAuthError } = await admin
+                .from("appointments")
+                .select("id, client_id, status")
+                .eq("id", appointment_id)
+                .maybeSingle()
+
+            if (appointmentAuthError || !appointmentForAuth || appointmentForAuth.client_id !== user.id) {
+                return NextResponse.json({ error: "Appointment is not available for this user" }, { status: 403 })
+            }
+
             // Update payment status
-            const { error: paymentError } = await supabase
+            const { error: paymentError } = await admin
                 .from("payments")
                 .update({
                     status: "completed",
@@ -54,7 +66,7 @@ export async function POST(request: NextRequest) {
                 console.log(`[Payment Verify] ✅ Payment ${payment_id} marked as completed`)
             }
 
-            const { data: updatedAppointment, error: appointmentError } = await supabase
+            const { data: updatedAppointment, error: appointmentError } = await admin
                 .from("appointments")
                 .update({
                     status: "scheduled",
@@ -78,7 +90,7 @@ export async function POST(request: NextRequest) {
 
             // Update case status to in_progress
             if (updatedAppointment?.case_id) {
-                const { error: caseError } = await supabase
+                const { error: caseError } = await admin
                     .from("cases")
                     .update({
                         status: "in_progress",
@@ -90,13 +102,13 @@ export async function POST(request: NextRequest) {
                     console.error("[Payment Verify] Error updating case:", caseError)
                 } else {
                     console.log(`[Payment Verify] ✅ Case ${updatedAppointment.case_id} marked as in_progress`)
-                    await appendCaseTimelineEvent(supabase, {
+                    await appendCaseTimelineEvent(admin, {
                         caseId: updatedAppointment.case_id,
                         actorId: user.id,
                         eventType: CaseTimelineEventType.PAYMENT_COMPLETED,
                         metadata: { appointment_id, payment_id, source: "verify_payment" },
                     })
-                    await appendCaseTimelineEvent(supabase, {
+                    await appendCaseTimelineEvent(admin, {
                         caseId: updatedAppointment.case_id,
                         actorId: user.id,
                         eventType: CaseTimelineEventType.CASE_ACTIVATED,
@@ -106,7 +118,7 @@ export async function POST(request: NextRequest) {
             }
 
             // Create notifications
-            const { data: appointment } = await supabase
+            const { data: appointment } = await admin
                 .from("appointments")
                 .select("client_id, lawyer_id, cases(title)")
                 .eq("id", appointment_id)
@@ -115,7 +127,7 @@ export async function POST(request: NextRequest) {
             if (appointment) {
                 const caseTitle = (appointment.cases as any)?.title || (Array.isArray(appointment.cases) ? (appointment.cases[0] as any)?.title : "consultation")
 
-                await supabase.from("notifications").insert({
+                await admin.from("notifications").insert({
                     user_id: appointment.client_id,
                     created_by: user.id,
                     type: "payment_update",
@@ -125,7 +137,7 @@ export async function POST(request: NextRequest) {
                 })
 
                 if (appointment.lawyer_id) {
-                    await supabase.from("notifications").insert({
+                    await admin.from("notifications").insert({
                         user_id: appointment.lawyer_id,
                         created_by: user.id,
                         type: "payment_update",

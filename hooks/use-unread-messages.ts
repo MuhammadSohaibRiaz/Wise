@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { createClient } from "@/lib/supabase/client"
 
 export function useUnreadMessages() {
   const [unreadCount, setUnreadCount] = useState(0)
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const fetchUnreadCount = useCallback(async (userId: string) => {
     try {
@@ -30,7 +30,7 @@ export function useUnreadMessages() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const userId = user.id
-      fetchUnreadCount(userId)
+      void fetchUnreadCount(userId)
 
       const channelName = `global-unread-${userId}`
       const existing = supabase.getChannels().filter((ch) => ch.topic === `realtime:${channelName}`)
@@ -82,6 +82,20 @@ export function useUnreadMessages() {
       if (activeChannel) {
         supabase.removeChannel(activeChannel)
       }
+    }
+  }, [supabase, fetchUnreadCount])
+
+  useEffect(() => {
+    const refresh = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) void fetchUnreadCount(user.id)
+    }
+
+    window.addEventListener("wisecase:messages-read", refresh)
+    window.addEventListener("focus", refresh)
+    return () => {
+      window.removeEventListener("wisecase:messages-read", refresh)
+      window.removeEventListener("focus", refresh)
     }
   }, [supabase, fetchUnreadCount])
 

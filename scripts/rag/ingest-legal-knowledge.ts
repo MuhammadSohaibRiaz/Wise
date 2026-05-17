@@ -27,6 +27,7 @@ const CORPORA: Record<string, { category: string; practiceArea: string; sourceTi
   labour: { category: "labour", practiceArea: "Labour and employment law", sourceTier: "primary_code" },
   immigration: { category: "immigration", practiceArea: "Immigration and overseas employment", sourceTier: "primary_code" },
   civil: { category: "civil", practiceArea: "Contract and civil disputes", sourceTier: "primary_code" },
+  property: { category: "property", practiceArea: "Property, land, registration, and transfer law", sourceTier: "primary_code" },
 }
 
 function sleep(ms: number) {
@@ -75,8 +76,16 @@ type SourceFile = {
 async function listSourceFiles() {
   await fs.mkdir(SOURCE_ROOT, { recursive: true })
   const files: SourceFile[] = []
+  const corpusArg = process.argv.find((arg) => arg.startsWith("--corpus="))
+  const selectedCorpora = new Set(
+    (process.env.RAG_CORPORA || corpusArg?.slice("--corpus=".length) || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
+  )
 
   for (const [folder, corpus] of Object.entries(CORPORA)) {
+    if (selectedCorpora.size > 0 && !selectedCorpora.has(folder)) continue
     const folderPath = path.join(SOURCE_ROOT, folder)
     await fs.mkdir(folderPath, { recursive: true })
     await collectFiles(folderPath, folderPath, corpus, files)

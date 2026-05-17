@@ -66,12 +66,12 @@ export function LawyerSidebar({ onNavigate }: LawyerSidebarProps) {
                     .eq("id", session.user.id)
                     .single()
 
-                // Fetch active clients (unique clients from open/in_progress cases)
+                // Fetch active clients from cases where paid work is underway.
                 const { data: activeCases } = await supabase
                     .from("cases")
                     .select("client_id")
                     .eq("lawyer_id", session.user.id)
-                    .in("status", ["open", "in_progress"])
+                    .in("status", ["in_progress", "pending_completion"])
 
                 const uniqueClients = new Set((activeCases || []).map(c => c.client_id))
 
