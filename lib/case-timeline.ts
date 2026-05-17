@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 export const CaseTimelineEventType = {
   CASE_CREATED: "CASE_CREATED",
   DOCUMENT_UPLOADED: "DOCUMENT_UPLOADED",
+  DOCUMENT_COMMENTED: "DOCUMENT_COMMENTED",
   AI_ANALYSIS_COMPLETED: "AI_ANALYSIS_COMPLETED",
   LAWYER_SELECTED: "LAWYER_SELECTED",
   CONSULTATION_REQUESTED: "CONSULTATION_REQUESTED",
@@ -26,6 +27,7 @@ export type CaseTimelineEventTypeKey = (typeof CaseTimelineEventType)[keyof type
 const TIMELINE_LABELS: Record<string, string> = {
   [CaseTimelineEventType.CASE_CREATED]: "Case created",
   [CaseTimelineEventType.DOCUMENT_UPLOADED]: "Document uploaded",
+  [CaseTimelineEventType.DOCUMENT_COMMENTED]: "Document commented",
   [CaseTimelineEventType.AI_ANALYSIS_COMPLETED]: "AI analysis completed",
   [CaseTimelineEventType.LAWYER_SELECTED]: "Lawyer selected",
   [CaseTimelineEventType.CONSULTATION_REQUESTED]: "Consultation requested",
@@ -59,6 +61,9 @@ export function caseTimelineEventDetail(
     } catch {
       return null
     }
+  }
+  if (eventType === CaseTimelineEventType.DOCUMENT_COMMENTED && typeof m.file_name === "string") {
+    return `Comment added on ${m.file_name}`
   }
   if (eventType === CaseTimelineEventType.APPOINTMENT_CANCELLED && typeof m.appointment_id === "string") {
     return "Client cancelled the booking"

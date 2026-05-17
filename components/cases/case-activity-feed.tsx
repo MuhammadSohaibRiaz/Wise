@@ -19,6 +19,7 @@ import {
   Upload,
   Trophy,
   RefreshCw,
+  MessageSquare,
 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 
@@ -37,6 +38,10 @@ const EVENT_CONFIG: Record<string, { icon: React.ElementType; color: string }> =
   [CaseTimelineEventType.DOCUMENT_UPLOADED]: {
     icon: Upload,
     color: "bg-slate-500 text-white",
+  },
+  [CaseTimelineEventType.DOCUMENT_COMMENTED]: {
+    icon: MessageSquare,
+    color: "bg-cyan-600 text-white",
   },
   [CaseTimelineEventType.AI_ANALYSIS_COMPLETED]: {
     icon: Brain,

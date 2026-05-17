@@ -1046,7 +1046,7 @@ export default function LawyerCaseDetailPage() {
                                 </Badge>
                                 {doc.file_url && (
                                   <Button variant="ghost" size="sm" asChild>
-                                    <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
+                                    <a href={`/api/documents/view/${encodeURIComponent(doc.id)}`} target="_blank" rel="noopener noreferrer">
                                       View
                                     </a>
                                   </Button>

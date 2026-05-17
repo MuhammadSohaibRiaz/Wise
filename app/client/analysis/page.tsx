@@ -10,6 +10,7 @@ import { AnalysisResultsView } from "@/components/documents/analysis-results-vie
 import { LawyerCard } from "@/components/lawyer/lawyer-card"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
+import { documentViewUrl } from "@/lib/documents/view-url"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 import { normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
@@ -79,22 +80,13 @@ function AICaseAnalysisContent() {
       setIsAnalyzing(true)
       const supabase = createClient()
       
-      // Fetch both the analysis and the document metadata
-      const [analysisRes, documentRes] = await Promise.all([
-        supabase
-          .from("document_analysis")
-          .select("*")
-          .eq("document_id", docId)
-          .single(),
-        supabase
-          .from("documents")
-          .select("file_url")
-          .eq("id", docId)
-          .single()
-      ])
+      const analysisRes = await supabase
+        .from("document_analysis")
+        .select("*")
+        .eq("document_id", docId)
+        .single()
       
       const analysis = analysisRes.data
-      const document = documentRes.data
 
       if (analysisRes.error || !analysis) throw new Error("Analysis not found")
 
@@ -126,7 +118,7 @@ function AICaseAnalysisContent() {
         is_legal_document: (analysis as any).is_legal_document,
         legal_citations: (analysis as any).legal_citations ?? [],
         disclaimer: (analysis as any).disclaimer ?? "",
-        document_url: document?.file_url ?? "",
+        document_url: documentViewUrl(docId),
       })
       
       // Fetch matching lawyers based on the category stored in analysis (if any)
@@ -238,17 +230,9 @@ function AICaseAnalysisContent() {
         })
       }
 
-      // Fetch document metadata to get the URL
-      const supabase = createClient()
-      const { data: document } = await supabase
-        .from("documents")
-        .select("file_url")
-        .eq("id", documentId)
-        .single()
-
       setAnalysisResult({
         ...analysisPayload,
-        document_url: document?.file_url,
+        document_url: documentViewUrl(documentId),
       })
       setRecommendedLawyers(recommended)
       

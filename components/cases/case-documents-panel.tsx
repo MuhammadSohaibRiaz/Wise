@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
+import { documentViewUrl } from "@/lib/documents/view-url"
 import { createClient } from "@/lib/supabase/client"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 
@@ -61,6 +62,17 @@ function safeFileName(name: string) {
 function profileName(profile: CaseDocumentItem["uploader"], fallback = "Unknown") {
   if (!profile) return fallback
   return `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || fallback
+}
+
+function formatCommentTimestamp(value: string) {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(value))
+  } catch {
+    return value
+  }
 }
 
 export function CaseDocumentsPanel({
@@ -280,6 +292,18 @@ export function CaseDocumentsPanel({
         comment,
       })
       if (error) throw error
+
+      const document = documents.find((item) => item.id === documentId)
+      await appendCaseTimelineEvent(supabase, {
+        caseId,
+        actorId: currentUserId,
+        eventType: CaseTimelineEventType.DOCUMENT_COMMENTED,
+        metadata: {
+          document_id: documentId,
+          file_name: fileNameOverrides[documentId] || document?.file_name || "document",
+        },
+      })
+
       setCommentDrafts((prev) => ({ ...prev, [documentId]: "" }))
       const { data } = await supabase
         .from("case_document_comments")
@@ -468,7 +492,7 @@ export function CaseDocumentsPanel({
                     <div className="flex shrink-0 items-center gap-2">
                       {doc.file_url && (
                         <Button variant="ghost" size="sm" asChild>
-                          <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
+                          <a href={documentViewUrl(doc.id)} target="_blank" rel="noopener noreferrer">
                             View
                           </a>
                         </Button>
@@ -520,9 +544,18 @@ export function CaseDocumentsPanel({
                             const commenterRole = item.commenter?.user_type === "lawyer" ? "Lawyer" : "Client"
                             return (
                               <div key={item.id} className="rounded-md bg-muted/40 px-3 py-2">
-                                <p className="text-xs font-medium">
-                                  {item.user_id === currentUserId ? "You" : `${commenterName} (${commenterRole})`}
-                                </p>
+                                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                                  <p className="text-xs font-medium">
+                                    {item.user_id === currentUserId ? "You" : `${commenterName} (${commenterRole})`}
+                                  </p>
+                                  <time
+                                    className="text-[11px] text-muted-foreground"
+                                    dateTime={item.created_at}
+                                    title={new Date(item.created_at).toLocaleString()}
+                                  >
+                                    {formatCommentTimestamp(item.created_at)}
+                                  </time>
+                                </div>
                                 <p className="mt-1 text-sm text-muted-foreground">{item.comment}</p>
                               </div>
                             )
