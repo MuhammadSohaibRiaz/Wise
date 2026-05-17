@@ -132,9 +132,10 @@ export default function LawyerCaseDetailPage() {
   const [selectedAnalysis, setSelectedAnalysis] = useState<Record<string, unknown> | null>(null)
   const [caseTab, setCaseTab] = useState("overview")
 
-  const fetchCaseDetail = useCallback(async () => {
+  const fetchCaseDetail = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true
     try {
-      setIsLoading(true)
+      if (!silent) setIsLoading(true)
       const supabase = createClient()
 
       const { data: sessionData } = await supabase.auth.getSession()
@@ -302,7 +303,7 @@ export default function LawyerCaseDetailPage() {
         variant: "destructive",
       })
     } finally {
-      setIsLoading(false)
+      if (!silent) setIsLoading(false)
     }
   }, [caseId, toast])
 
@@ -321,22 +322,22 @@ export default function LawyerCaseDetailPage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "cases", filter: `id=eq.${caseId}` },
-        () => { void fetchCaseDetail() },
+        () => { void fetchCaseDetail({ silent: true }) },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "appointments", filter: `case_id=eq.${caseId}` },
-        () => { void fetchCaseDetail() },
+        () => { void fetchCaseDetail({ silent: true }) },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "documents", filter: `case_id=eq.${caseId}` },
-        () => { void fetchCaseDetail() },
+        () => { void fetchCaseDetail({ silent: true }) },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "case_timeline_events", filter: `case_id=eq.${caseId}` },
-        () => { void fetchCaseDetail() },
+        () => { void fetchCaseDetail({ silent: true }) },
       )
       .subscribe()
 
@@ -864,7 +865,7 @@ export default function LawyerCaseDetailPage() {
                     caseStatus={caseDetail.status}
                     documents={documents}
                     currentUserId={lawyerId}
-                    onUploaded={fetchCaseDetail}
+                    onUploaded={() => fetchCaseDetail({ silent: true })}
                     onFetchAnalysis={fetchAnalysis}
                     isAnalysisLoading={isAnalysisLoading}
                   />
@@ -974,7 +975,7 @@ export default function LawyerCaseDetailPage() {
                   caseStatus={caseDetail.status}
                   documents={documents}
                   currentUserId={lawyerId}
-                  onUploaded={fetchCaseDetail}
+                  onUploaded={() => fetchCaseDetail({ silent: true })}
                   onFetchAnalysis={fetchAnalysis}
                   isAnalysisLoading={isAnalysisLoading}
                 />

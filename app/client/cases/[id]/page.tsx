@@ -130,9 +130,10 @@ export default function ClientCaseDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [caseTab, setCaseTab] = useState("overview")
 
-  const fetchCaseDetail = useCallback(async () => {
+  const fetchCaseDetail = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true
     try {
-      setIsLoading(true)
+      if (!silent) setIsLoading(true)
       const supabase = createClient()
 
       const { data: sessionData } = await supabase.auth.getSession()
@@ -253,7 +254,7 @@ export default function ClientCaseDetailPage() {
         variant: "destructive",
       })
     } finally {
-      setIsLoading(false)
+      if (!silent) setIsLoading(false)
     }
   }, [caseId, toast])
 
@@ -272,22 +273,22 @@ export default function ClientCaseDetailPage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "cases", filter: `id=eq.${caseId}` },
-        () => { void fetchCaseDetail() },
+        () => { void fetchCaseDetail({ silent: true }) },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "appointments", filter: `case_id=eq.${caseId}` },
-        () => { void fetchCaseDetail() },
+        () => { void fetchCaseDetail({ silent: true }) },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "documents", filter: `case_id=eq.${caseId}` },
-        () => { void fetchCaseDetail() },
+        () => { void fetchCaseDetail({ silent: true }) },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "case_timeline_events", filter: `case_id=eq.${caseId}` },
-        () => { void fetchCaseDetail() },
+        () => { void fetchCaseDetail({ silent: true }) },
       )
       .subscribe()
 
@@ -649,7 +650,7 @@ export default function ClientCaseDetailPage() {
             caseStatus={caseDetail.status}
             documents={documents}
             currentUserId={clientId}
-            onUploaded={fetchCaseDetail}
+            onUploaded={() => fetchCaseDetail({ silent: true })}
           />
           {false && (
           <Card>

@@ -1,10 +1,10 @@
 "use client"
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
-import { Brain, FileText, Loader2, MessageSquare, Upload } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Brain, Check, FileText, Loader2, MessageSquare, Pencil, Upload, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
@@ -79,71 +79,96 @@ export function CaseDocumentsPanel({
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({})
   const [comments, setComments] = useState<Record<string, DocumentComment[]>>({})
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({})
+  const [fileNameDrafts, setFileNameDrafts] = useState<Record<string, string>>({})
+  const [fileNameOverrides, setFileNameOverrides] = useState<Record<string, string>>({})
+  const [editingFileNameId, setEditingFileNameId] = useState<string | null>(null)
   const [isSavingDocMeta, setIsSavingDocMeta] = useState<string | null>(null)
   const [docMetaAvailable, setDocMetaAvailable] = useState(true)
 
   const canUpload = caseStatus !== "completed" && caseStatus !== "closed"
   const documentIds = useMemo(() => documents.map((doc) => doc.id), [documents])
 
-  useEffect(() => {
-    const fetchDocumentMeta = async () => {
-      if (!currentUserId || documentIds.length === 0) {
-        setNotes({})
-        setNoteDrafts({})
-        setComments({})
-        return
-      }
-
-      const supabase = createClient()
-      const [notesResult, commentsResult] = await Promise.all([
-        supabase
-          .from("case_document_notes")
-          .select("document_id, note")
-          .in("document_id", documentIds),
-        supabase
-          .from("case_document_comments")
-          .select(`
-            id,
-            document_id,
-            user_id,
-            comment,
-            created_at,
-            commenter:profiles!case_document_comments_user_id_fkey (
-              first_name,
-              last_name,
-              user_type
-            )
-          `)
-          .in("document_id", documentIds)
-          .order("created_at", { ascending: true }),
-      ])
-
-      if (notesResult.error || commentsResult.error) {
-        const message = notesResult.error?.message || commentsResult.error?.message || ""
-        if (message.includes("case_document_") || message.includes("does not exist")) {
-          setDocMetaAvailable(false)
-        }
-        return
-      }
-
-      setDocMetaAvailable(true)
-
-      const nextNotes: Record<string, string> = {}
-      for (const row of notesResult.data || []) {
-        nextNotes[row.document_id] = row.note || ""
-      }
-      setNotes(nextNotes)
-      setNoteDrafts(nextNotes)
-
-      const nextComments: Record<string, DocumentComment[]> = {}
-      for (const row of (commentsResult.data || []) as DocumentComment[]) {
-        nextComments[row.document_id] = [...(nextComments[row.document_id] || []), row]
-      }
-      setComments(nextComments)
+  const fetchDocumentMeta = useCallback(async () => {
+    if (!currentUserId || documentIds.length === 0) {
+      setNotes({})
+      setNoteDrafts({})
+      setComments({})
+      return
     }
 
-    void fetchDocumentMeta()
+    const supabase = createClient()
+    const [notesResult, commentsResult] = await Promise.all([
+      supabase
+        .from("case_document_notes")
+        .select("document_id, note")
+        .in("document_id", documentIds),
+      supabase
+        .from("case_document_comments")
+        .select(`
+          id,
+          document_id,
+          user_id,
+          comment,
+          created_at,
+          commenter:profiles!case_document_comments_user_id_fkey (
+            first_name,
+            last_name,
+            user_type
+          )
+        `)
+        .in("document_id", documentIds)
+        .order("created_at", { ascending: true }),
+    ])
+
+    if (notesResult.error || commentsResult.error) {
+      const message = notesResult.error?.message || commentsResult.error?.message || ""
+      if (message.includes("case_document_") || message.includes("does not exist")) {
+        setDocMetaAvailable(false)
+      }
+      return
+    }
+
+    setDocMetaAvailable(true)
+
+    const nextNotes: Record<string, string> = {}
+    for (const row of notesResult.data || []) {
+      nextNotes[row.document_id] = row.note || ""
+    }
+    setNotes(nextNotes)
+    setNoteDrafts(nextNotes)
+
+    const nextComments: Record<string, DocumentComment[]> = {}
+    for (const row of (commentsResult.data || []) as DocumentComment[]) {
+      nextComments[row.document_id] = [...(nextComments[row.document_id] || []), row]
+    }
+    setComments(nextComments)
   }, [currentUserId, documentIds])
+
+  useEffect(() => {
+    void fetchDocumentMeta()
+  }, [fetchDocumentMeta])
+
+  useEffect(() => {
+    if (!currentUserId || !docMetaAvailable || documentIds.length === 0) return
+
+    const supabase = createClient()
+    const documentIdSet = new Set(documentIds)
+    const channel = supabase
+      .channel(`case-document-comments-${caseId}-${Date.now()}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "case_document_comments" },
+        (payload) => {
+          const row = (payload.new && Object.keys(payload.new).length > 0 ? payload.new : payload.old) as { document_id?: string } | null
+          if (row?.document_id && documentIdSet.has(row.document_id)) {
+            void fetchDocumentMeta()
+          }
+        },
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [caseId, currentUserId, docMetaAvailable, documentIds, fetchDocumentMeta])
 
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -282,6 +307,55 @@ export function CaseDocumentsPanel({
     }
   }
 
+  const startRename = (doc: CaseDocumentItem) => {
+    setEditingFileNameId(doc.id)
+    setFileNameDrafts((prev) => ({ ...prev, [doc.id]: fileNameOverrides[doc.id] || doc.file_name }))
+  }
+
+  const cancelRename = (documentId: string) => {
+    setEditingFileNameId(null)
+    setFileNameDrafts((prev) => {
+      const next = { ...prev }
+      delete next[documentId]
+      return next
+    })
+  }
+
+  const renameDocument = async (documentId: string) => {
+    const fileName = (fileNameDrafts[documentId] || "").trim()
+    if (!fileName || fileName.length > 120) {
+      toast({
+        title: "Invalid file name",
+        description: "Please enter a file name between 1 and 120 characters.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      setIsSavingDocMeta(documentId)
+      const response = await fetch("/api/documents/rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId, fileName }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not rename document.")
+      }
+
+      setFileNameOverrides((prev) => ({ ...prev, [documentId]: payload.fileName || fileName }))
+      setEditingFileNameId(null)
+      toast({ title: "File name updated" })
+      await onUploaded()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not rename document."
+      toast({ title: "Rename failed", description: message, variant: "destructive" })
+    } finally {
+      setIsSavingDocMeta(null)
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -323,6 +397,8 @@ export function CaseDocumentsPanel({
               const uploaderRole = doc.uploader?.user_type === "lawyer" ? "Lawyer" : "Client"
               const isOwnUpload = doc.uploaded_by === currentUserId
               const analysisId = doc.document_analysis?.[0]?.id
+              const displayFileName = fileNameOverrides[doc.id] || doc.file_name
+              const canRename = isOwnUpload && canUpload
 
               return (
                 <div key={doc.id} className="space-y-4 rounded-lg border p-3">
@@ -330,16 +406,66 @@ export function CaseDocumentsPanel({
                     <div className="flex min-w-0 items-center gap-3">
                       <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{doc.file_name}</p>
+                        {editingFileNameId === doc.id ? (
+                          <form
+                            className="flex min-w-0 items-center gap-1"
+                            onSubmit={(event) => {
+                              event.preventDefault()
+                              void renameDocument(doc.id)
+                            }}
+                          >
+                            <Input
+                              value={fileNameDrafts[doc.id] || ""}
+                              onChange={(event) => setFileNameDrafts((prev) => ({ ...prev, [doc.id]: event.target.value }))}
+                              className="h-8 max-w-[320px] text-sm"
+                              autoFocus
+                              disabled={isSavingDocMeta === doc.id}
+                            />
+                            <Button
+                              type="submit"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              disabled={isSavingDocMeta === doc.id}
+                              aria-label="Save file name"
+                            >
+                              {isSavingDocMeta === doc.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => cancelRename(doc.id)}
+                              disabled={isSavingDocMeta === doc.id}
+                              aria-label="Cancel file name edit"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </form>
+                        ) : (
+                          <div className="flex min-w-0 items-center gap-1">
+                            <p className="truncate text-sm font-medium">{displayFileName}</p>
+                            {canRename && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 shrink-0 text-muted-foreground"
+                                onClick={() => startRename(doc)}
+                                aria-label="Edit file name"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        )}
                         <p className="text-xs text-muted-foreground">
                           Uploaded by {isOwnUpload ? "You" : `${uploaderName} (${uploaderRole})`} &bull; {new Date(doc.created_at).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <Badge variant="outline" className="text-xs">
-                        {doc.status}
-                      </Badge>
                       {doc.file_url && (
                         <Button variant="ghost" size="sm" asChild>
                           <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
@@ -381,13 +507,13 @@ export function CaseDocumentsPanel({
                     </div>
                   )}
 
-                  {docMetaAvailable && !isOwnUpload && (
+                  {docMetaAvailable && (
                     <div className="space-y-2 border-t pt-3">
                       <p className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
                         <MessageSquare className="h-3 w-3" />
                         Comments
                       </p>
-                      {(comments[doc.id] || []).length > 0 && (
+                      {(comments[doc.id] || []).length > 0 ? (
                         <div className="space-y-2">
                           {(comments[doc.id] || []).map((item) => {
                             const commenterName = profileName(item.commenter, "Participant")
@@ -402,22 +528,28 @@ export function CaseDocumentsPanel({
                             )
                           })}
                         </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No comments yet.</p>
                       )}
-                      <Textarea
-                        value={commentDrafts[doc.id] || ""}
-                        onChange={(event) => setCommentDrafts((prev) => ({ ...prev, [doc.id]: event.target.value }))}
-                        placeholder="Comment on this document..."
-                        className="min-h-[70px]"
-                      />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => addComment(doc.id)}
-                        disabled={isSavingDocMeta === doc.id || !(commentDrafts[doc.id] || "").trim()}
-                      >
-                        {isSavingDocMeta === doc.id ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : null}
-                        Add Comment
-                      </Button>
+                      {!isOwnUpload && (
+                        <>
+                          <Textarea
+                            value={commentDrafts[doc.id] || ""}
+                            onChange={(event) => setCommentDrafts((prev) => ({ ...prev, [doc.id]: event.target.value }))}
+                            placeholder="Comment on this document..."
+                            className="min-h-[70px]"
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => addComment(doc.id)}
+                            disabled={isSavingDocMeta === doc.id || !(commentDrafts[doc.id] || "").trim()}
+                          >
+                            {isSavingDocMeta === doc.id ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : null}
+                            Add Comment
+                          </Button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
