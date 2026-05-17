@@ -360,15 +360,15 @@ export function BookAppointmentModal({
         }
       }
 
-      // Create appointment request (pending status)
-      // Note: If script 016 hasn't been run, we'll fallback to "scheduled"
+      // Create appointment request. New bookings must always start as `pending`
+      // so the lawyer accept/payment flow cannot be bypassed.
       const appointmentDataToInsert: any = {
         client_id: clientId,
         lawyer_id: lawyerId,
         case_id: caseData.id,
         scheduled_at: appointmentDateTime.toISOString(),
         duration_minutes: duration,
-        status: "pending", // Will try pending first, fallback to scheduled if constraint fails
+        status: "pending",
         notes: `Initial consultation request for ${caseType}`,
       }
 
@@ -389,30 +389,17 @@ export function BookAppointmentModal({
         console.error("[v0] Appointment insert error:", appointmentError)
         console.error("[v0] Appointment error details:", JSON.stringify(appointmentError, null, 2))
         
-        // Check if error is due to status constraint (pending not allowed)
-        const isStatusConstraintError = 
-          appointmentError.message?.includes("appointments_status_check") ||
-          appointmentError.message?.includes("check constraint") ||
-          appointmentError.code === "23514"
-
         // Check if error is due to missing request_message column
         const isRequestMessageError = 
           appointmentError.message?.includes("request_message") || 
           appointmentError.code === "42703"
 
-        // Try fixes in order: 1) Remove request_message, 2) Change status to scheduled
-        if (isRequestMessageError || isStatusConstraintError) {
-          console.log("[v0] Retrying with fixes...")
-          
-          // Remove request_message if that's the issue
+        // Retry only for old databases missing request_message. Do not fall back
+        // to `scheduled`; that would skip lawyer approval and payment.
+        if (isRequestMessageError) {
+          console.log("[v0] Retrying without request_message...")
           if (isRequestMessageError) {
             delete appointmentDataToInsert.request_message
-          }
-          
-          // Change status to scheduled if pending is not allowed
-          if (isStatusConstraintError) {
-            appointmentDataToInsert.status = "scheduled"
-            console.log("[v0] Changed status from 'pending' to 'scheduled' (script 016 may not be run)")
           }
 
           const { data: retryData, error: retryError } = await supabase

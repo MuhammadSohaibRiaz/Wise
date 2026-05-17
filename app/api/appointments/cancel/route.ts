@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", row.case_id)
+        .eq("status", "open")
     }
 
     // --- Side effects ---

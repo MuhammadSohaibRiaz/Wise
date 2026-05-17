@@ -402,6 +402,15 @@ export default function LawyerCaseDetailPage() {
       return
     }
 
+    if (caseDetail.status === "completed" && statusToApply !== "closed") {
+      toast({
+        title: "Case already completed",
+        description: "Completed cases can only be archived to closed.",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       setIsSaving(true)
       const supabase = createClient()
@@ -413,6 +422,7 @@ export default function LawyerCaseDetailPage() {
           updated_at: new Date().toISOString(),
         })
         .eq("id", caseId)
+        .eq("lawyer_id", lawyerId)
 
       if (updateError) throw updateError
 
@@ -847,6 +857,7 @@ export default function LawyerCaseDetailPage() {
                   </div>
                 </div>
 
+                {false && (
                 <>
                   <CaseDocumentsPanel
                     caseId={caseDetail.id}
@@ -943,6 +954,7 @@ export default function LawyerCaseDetailPage() {
                     </Card>
                   )}
                 </>
+                )}
               </TabsContent>
 
               <TabsContent value="timeline" className="mt-0">
@@ -957,6 +969,49 @@ export default function LawyerCaseDetailPage() {
               </TabsContent>
 
               <TabsContent value="documents" className="mt-0">
+                <CaseDocumentsPanel
+                  caseId={caseDetail.id}
+                  caseStatus={caseDetail.status}
+                  documents={documents}
+                  currentUserId={lawyerId}
+                  onUploaded={fetchCaseDetail}
+                  onFetchAnalysis={fetchAnalysis}
+                  isAnalysisLoading={isAnalysisLoading}
+                />
+                {selectedAnalysis && (
+                  <Card className="mt-4 animate-in fade-in slide-in-from-top-2">
+                    <CardHeader className="flex flex-row items-center justify-between">
+                      <CardTitle className="flex items-center gap-2">
+                        <Brain className="h-5 w-5 text-primary" />
+                        AI Analysis Results
+                      </CardTitle>
+                      <Button variant="ghost" size="sm" onClick={() => setSelectedAnalysis(null)}>
+                        Close Analysis
+                      </Button>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="bg-muted/30 rounded-lg p-4 space-y-4">
+                        <div>
+                          <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Summary</p>
+                          <p className="text-sm leading-relaxed">{String(selectedAnalysis.summary ?? "")}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Risk Level</p>
+                            <Badge variant={selectedAnalysis.risk_level === "High" ? "destructive" : "secondary"}>
+                              {String(selectedAnalysis.risk_level ?? "")}
+                            </Badge>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Urgency</p>
+                            <Badge variant="outline">{String(selectedAnalysis.urgency ?? "")}</Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+                {false && (
                 <Card>
                   <CardHeader>
                     <CardTitle>Documents ({documents.length})</CardTitle>
@@ -1074,6 +1129,7 @@ export default function LawyerCaseDetailPage() {
                     )}
                   </CardContent>
                 </Card>
+                )}
               </TabsContent>
 
               <TabsContent value="appointments" className="mt-0">

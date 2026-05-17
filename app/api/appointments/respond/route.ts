@@ -105,6 +105,7 @@ export async function POST(req: NextRequest) {
           .from("cases")
           .update({ status: "open", lawyer_id: user.id, updated_at: new Date().toISOString() })
           .eq("id", caseId)
+          .eq("status", "open")
       }
 
       await notifyAppointmentUpdate(admin, "lawyer_accept", {
@@ -158,6 +159,7 @@ export async function POST(req: NextRequest) {
         .from("cases")
         .update({ lawyer_id: null, status: "closed", updated_at: new Date().toISOString() })
         .eq("id", caseId)
+        .eq("status", "open")
     }
 
     await notifyAppointmentUpdate(admin, "lawyer_reject", {

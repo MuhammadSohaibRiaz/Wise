@@ -127,7 +127,10 @@ export default function LawyerCasesPage() {
 
         if (appointmentsData) {
           appointmentsData.forEach((apt) => {
-            if (!appointmentsMap[apt.case_id] && apt.status === "scheduled") {
+            if (
+              !appointmentsMap[apt.case_id] &&
+              ["awaiting_payment", "scheduled", "rescheduled", "cancellation_requested"].includes(apt.status)
+            ) {
               appointmentsMap[apt.case_id] = apt
             }
             appointmentCounts[apt.case_id] = (appointmentCounts[apt.case_id] || 0) + 1
@@ -408,4 +411,3 @@ export default function LawyerCasesPage() {
     </div>
   )
 }
-

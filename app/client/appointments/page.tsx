@@ -533,6 +533,10 @@ export default function ClientAppointmentsPage() {
     apt.reschedule_count < 3 &&
     new Date(apt.scheduled_at).getTime() - Date.now() > 2 * 60 * 60 * 1000
 
+  const canMarkHeld = (apt: Appointment) =>
+    (apt.status === "scheduled" || apt.status === "rescheduled") &&
+    Date.now() >= new Date(apt.scheduled_at).getTime() - 7 * 24 * 60 * 60 * 1000
+
   // --- Render helpers ---
 
   const statusBorderClass = (status: string) => {
@@ -754,8 +758,9 @@ export default function ClientAppointmentsPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={processingId === appointment.id}
+                        disabled={processingId === appointment.id || !canMarkHeld(appointment)}
                         onClick={() => void handleMarkAttended(appointment.id)}
+                        title={!canMarkHeld(appointment) ? "Available within 7 days of the consultation" : undefined}
                       >
                         {processingId === appointment.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark Consultation Held"}
                       </Button>
@@ -782,8 +787,9 @@ export default function ClientAppointmentsPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={processingId === appointment.id}
+                        disabled={processingId === appointment.id || !canMarkHeld(appointment)}
                         onClick={() => void handleMarkAttended(appointment.id)}
+                        title={!canMarkHeld(appointment) ? "Available within 7 days of the consultation" : undefined}
                       >
                         {processingId === appointment.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark Consultation Held"}
                       </Button>

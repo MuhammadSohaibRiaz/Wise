@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, CheckCircle, XCircle, AlertTriangle, Calendar, Clock, User, FileText } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { AdminHeader } from "@/components/admin/admin-header"
-import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { useRouter } from "next/navigation"
 import {
   Dialog,
@@ -85,53 +84,11 @@ export default function AdminCancellationRequestsPage() {
   const fetchRequests = async () => {
     try {
       setIsLoading(true)
+      const res = await fetch("/api/admin/cancellation-requests", { cache: "no-store" })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || "Failed to load cancellation requests")
 
-      const { data, error } = await supabase
-        .from("appointments")
-        .select(`
-          id,
-          scheduled_at,
-          duration_minutes,
-          reschedule_count,
-          previous_status,
-          case_id,
-          cases (
-            id,
-            title,
-            case_type
-          ),
-          client:profiles!appointments_client_id_fkey (
-            id,
-            first_name,
-            last_name,
-            email
-          ),
-          lawyer:profiles!appointments_lawyer_id_fkey (
-            id,
-            first_name,
-            last_name,
-            email
-          )
-        `)
-        .eq("status", "cancellation_requested")
-        .order("updated_at", { ascending: false })
-
-      if (error) throw error
-
-      const mapped: CancellationRequest[] = (data || []).map((apt: any) => ({
-        id: apt.id,
-        scheduled_at: apt.scheduled_at,
-        duration_minutes: apt.duration_minutes,
-        reschedule_count: apt.reschedule_count || 0,
-        previous_status: apt.previous_status || null,
-        case_id: apt.cases?.id || apt.case_id || "",
-        case_title: apt.cases?.title || "Unknown",
-        case_type: apt.cases?.case_type || "",
-        client: apt.client || { id: "", first_name: "Unknown", last_name: "", email: "" },
-        lawyer: apt.lawyer || { id: "", first_name: "Unknown", last_name: "", email: "" },
-      }))
-
-      setRequests(mapped)
+      setRequests(json.requests || [])
     } catch (error) {
       console.error("Fetch cancellation requests error:", error)
       toast({ title: "Error", description: "Failed to load cancellation requests.", variant: "destructive" })
@@ -144,75 +101,13 @@ export default function AdminCancellationRequestsPage() {
     try {
       setProcessingId(request.id)
 
-      const { error } = await supabase
-        .from("appointments")
-        .update({ status: "cancelled", previous_status: null, updated_at: new Date().toISOString() })
-        .eq("id", request.id)
-        .eq("status", "cancellation_requested")
-
-      if (error) throw error
-
-      // Notify both parties via email
-      const emailPromises = [
-        fetch("/api/notify/email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            template: "appointment_cancellation_resolved",
-            data: {
-              recipient_id: request.client.id,
-              case_title: request.case_title,
-              resolution: "approved",
-              recipient_role: "client",
-            },
-          }),
-        }),
-        fetch("/api/notify/email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            template: "appointment_cancellation_resolved",
-            data: {
-              recipient_id: request.lawyer.id,
-              case_title: request.case_title,
-              resolution: "approved",
-              recipient_role: "lawyer",
-            },
-          }),
-        }),
-      ]
-      await Promise.allSettled(emailPromises)
-
-      // In-app notifications
-      const { data: { user } } = await supabase.auth.getUser()
-      await supabase.from("notifications").insert([
-        {
-          user_id: request.client.id,
-          created_by: user?.id || request.client.id,
-          type: "appointment_update",
-          title: "Cancellation Approved",
-          description: `Your cancellation request for "${request.case_title}" has been approved.`,
-          data: { appointment_id: request.id, status: "cancelled" },
-        },
-        {
-          user_id: request.lawyer.id,
-          created_by: user?.id || request.lawyer.id,
-          type: "appointment_update",
-          title: "Cancellation Approved",
-          description: `The cancellation request for "${request.case_title}" has been approved.`,
-          data: { appointment_id: request.id, status: "cancelled" },
-        },
-      ])
-
-      if (request.case_id) {
-        const { data: { user: adminUser } } = await supabase.auth.getUser()
-        await appendCaseTimelineEvent(supabase, {
-          caseId: request.case_id,
-          actorId: adminUser?.id || null,
-          eventType: CaseTimelineEventType.CANCELLATION_RESOLVED,
-          metadata: { appointment_id: request.id, resolution: "approved" },
-        })
-      }
+      const res = await fetch("/api/admin/cancellation-requests", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request_id: request.id, action: "approved" }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || "Failed to approve cancellation")
 
       setRequests((prev) => prev.filter((r) => r.id !== request.id))
       toast({ title: "Cancellation Approved", description: "Both parties have been notified." })
@@ -228,75 +123,13 @@ export default function AdminCancellationRequestsPage() {
     try {
       setProcessingId(request.id)
 
-      const restoredStatus = request.previous_status === "rescheduled" ? "rescheduled" : "scheduled"
-      const { error } = await supabase
-        .from("appointments")
-        .update({ status: restoredStatus, previous_status: null, updated_at: new Date().toISOString() })
-        .eq("id", request.id)
-        .eq("status", "cancellation_requested")
-
-      if (error) throw error
-
-      const emailPromises = [
-        fetch("/api/notify/email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            template: "appointment_cancellation_resolved",
-            data: {
-              recipient_id: request.client.id,
-              case_title: request.case_title,
-              resolution: "rejected",
-              reason: rejectReason || undefined,
-              recipient_role: "client",
-            },
-          }),
-        }),
-        fetch("/api/notify/email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            template: "appointment_cancellation_resolved",
-            data: {
-              recipient_id: request.lawyer.id,
-              case_title: request.case_title,
-              resolution: "rejected",
-              reason: rejectReason || undefined,
-              recipient_role: "lawyer",
-            },
-          }),
-        }),
-      ]
-      await Promise.allSettled(emailPromises)
-
-      const { data: { user } } = await supabase.auth.getUser()
-      await supabase.from("notifications").insert([
-        {
-          user_id: request.client.id,
-          created_by: user?.id || request.client.id,
-          type: "appointment_update",
-          title: "Cancellation Rejected",
-          description: `Your cancellation request for "${request.case_title}" was rejected. Please attend your appointment as scheduled.${rejectReason ? ` Reason: ${rejectReason}` : ""}`,
-          data: { appointment_id: request.id, status: restoredStatus },
-        },
-        {
-          user_id: request.lawyer.id,
-          created_by: user?.id || request.lawyer.id,
-          type: "appointment_update",
-          title: "Cancellation Rejected",
-          description: `The cancellation request for "${request.case_title}" was rejected. The appointment remains active.${rejectReason ? ` Reason: ${rejectReason}` : ""}`,
-          data: { appointment_id: request.id, status: restoredStatus },
-        },
-      ])
-
-      if (request.case_id) {
-        await appendCaseTimelineEvent(supabase, {
-          caseId: request.case_id,
-          actorId: user?.id || null,
-          eventType: CaseTimelineEventType.CANCELLATION_RESOLVED,
-          metadata: { appointment_id: request.id, resolution: "rejected", reason: rejectReason || undefined },
-        })
-      }
+      const res = await fetch("/api/admin/cancellation-requests", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request_id: request.id, action: "rejected", reason: rejectReason || undefined }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || "Failed to reject cancellation")
 
       setRequests((prev) => prev.filter((r) => r.id !== request.id))
       setRejectTarget(null)

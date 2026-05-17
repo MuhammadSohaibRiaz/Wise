@@ -29,6 +29,7 @@ import {
 import { ReviewModal } from "@/components/client/review-modal"
 // import { DisputeModal } from "@/components/cases/dispute-modal"
 import { createNotification } from "@/lib/notifications"
+import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { appointmentDisplayLabel } from "@/lib/appointment-display"
 import { deriveCaseLifecycleStages } from "@/lib/case-lifecycle-stages"
 import { CaseProgressStepper } from "@/components/cases/case-progress-stepper"
@@ -300,12 +301,23 @@ export default function ClientCaseDetailPage() {
       setIsConfirming(true)
       const supabase = createClient()
 
-      const { error } = await supabase
+      const { data: updatedCase, error } = await supabase
         .from("cases")
         .update({ status: "completed", updated_at: new Date().toISOString() })
         .eq("id", caseId)
+        .eq("status", "pending_completion")
+        .select("id")
+        .maybeSingle()
 
       if (error) throw error
+      if (!updatedCase) throw new Error("Completion request is no longer pending.")
+
+      await appendCaseTimelineEvent(supabase, {
+        caseId,
+        actorId: clientId,
+        eventType: CaseTimelineEventType.CASE_COMPLETED,
+        metadata: { previous_status: "pending_completion", source: "client_confirm_completion" },
+      })
 
       if (caseDetail.lawyer?.id) {
         await createNotification(supabase, {
@@ -355,12 +367,16 @@ export default function ClientCaseDetailPage() {
       setIsConfirming(true)
       const supabase = createClient()
 
-      const { error } = await supabase
+      const { data: updatedCase, error } = await supabase
         .from("cases")
         .update({ status: "in_progress", updated_at: new Date().toISOString() })
         .eq("id", caseId)
+        .eq("status", "pending_completion")
+        .select("id")
+        .maybeSingle()
 
       if (error) throw error
+      if (!updatedCase) throw new Error("Completion request is no longer pending.")
 
       if (caseDetail.lawyer?.id) {
         await createNotification(supabase, {
@@ -617,15 +633,6 @@ export default function ClientCaseDetailPage() {
         </TabsContent>
 
         <TabsContent value="timeline" className="mt-0">
-          <>
-            <CaseDocumentsPanel
-              caseId={caseDetail.id}
-              caseStatus={caseDetail.status}
-              documents={documents}
-              currentUserId={clientId}
-              onUploaded={fetchCaseDetail}
-            />
-            {false && (
           <Card>
             <CardHeader>
               <CardTitle>Case Activity</CardTitle>
@@ -634,11 +641,17 @@ export default function ClientCaseDetailPage() {
               <CaseActivityFeed events={timelineEvents} />
             </CardContent>
           </Card>
-            )}
-          </>
         </TabsContent>
 
         <TabsContent value="documents" className="mt-0">
+          <CaseDocumentsPanel
+            caseId={caseDetail.id}
+            caseStatus={caseDetail.status}
+            documents={documents}
+            currentUserId={clientId}
+            onUploaded={fetchCaseDetail}
+          />
+          {false && (
           <Card>
             <CardHeader>
               <CardTitle>Documents ({documents.length})</CardTitle>
@@ -685,6 +698,7 @@ export default function ClientCaseDetailPage() {
               )}
             </CardContent>
           </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="appointments" className="mt-0">
