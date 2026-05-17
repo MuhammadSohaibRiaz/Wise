@@ -65,28 +65,14 @@ export async function POST(request: NextRequest) {
             .maybeSingle()
 
           if (updatedAppointment?.case_id) {
-            await supabase
-              .from("cases")
-              .update({
-                status: "in_progress",
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", updatedAppointment.case_id)
-
             await appendCaseTimelineEvent(supabase, {
               caseId: updatedAppointment.case_id,
               actorId: null,
               eventType: CaseTimelineEventType.PAYMENT_COMPLETED,
               metadata: { appointment_id, payment_id, source: "stripe_webhook_checkout" },
             })
-            await appendCaseTimelineEvent(supabase, {
-              caseId: updatedAppointment.case_id,
-              actorId: null,
-              eventType: CaseTimelineEventType.CASE_ACTIVATED,
-              metadata: { source: "stripe_webhook_checkout" },
-            })
 
-            console.log(`[Stripe] Updated case ${updatedAppointment.case_id} to in_progress`)
+            console.log(`[Stripe] Scheduled consultation ${appointment_id} for case ${updatedAppointment.case_id}`)
           }
 
           const { data: appointment } = await supabase
@@ -237,4 +223,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 })
   }
 }
-

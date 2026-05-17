@@ -34,6 +34,7 @@ import { deriveCaseLifecycleStages } from "@/lib/case-lifecycle-stages"
 import { CaseProgressStepper } from "@/components/cases/case-progress-stepper"
 import { CaseActivityFeed } from "@/components/cases/case-activity-feed"
 import { AiCaseSummary } from "@/components/cases/ai-case-summary"
+import { CaseDocumentsPanel } from "@/components/cases/case-documents-panel"
 
 interface CaseDetail {
   id: string
@@ -387,6 +388,15 @@ export default function LawyerCaseDetailPage() {
         title: "Consultation required",
         description:
           "At least one consultation must be marked as held before moving the case to in progress.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (statusToApply === "open" && caseDetail.status !== "open") {
+      toast({
+        title: "Status cannot be reverted",
+        description: "An active case cannot be moved back to open from the lawyer dashboard.",
         variant: "destructive",
       })
       return
@@ -766,7 +776,9 @@ export default function LawyerCaseDetailPage() {
                                   <SelectValue placeholder="Select status" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="open">Open</SelectItem>
+                                  <SelectItem value="open" disabled={caseDetail.status !== "open"}>
+                                    Open
+                                  </SelectItem>
                                   <SelectItem value="in_progress" disabled={!hasAttendedAppointment}>
                                     In Progress {!hasAttendedAppointment ? "(needs held consult)" : ""}
                                   </SelectItem>
@@ -835,6 +847,17 @@ export default function LawyerCaseDetailPage() {
                   </div>
                 </div>
 
+                <>
+                  <CaseDocumentsPanel
+                    caseId={caseDetail.id}
+                    caseStatus={caseDetail.status}
+                    documents={documents}
+                    currentUserId={lawyerId}
+                    onUploaded={fetchCaseDetail}
+                    onFetchAnalysis={fetchAnalysis}
+                    isAnalysisLoading={isAnalysisLoading}
+                  />
+                  {false && (
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <CardTitle className="text-lg">Private Lawyer Notes</CardTitle>
@@ -860,6 +883,66 @@ export default function LawyerCaseDetailPage() {
                     </p>
                   </CardContent>
                 </Card>
+                  )}
+                  {selectedAnalysis && (
+                    <Card className="animate-in fade-in slide-in-from-top-2">
+                      <CardHeader className="flex flex-row items-center justify-between">
+                        <CardTitle className="flex items-center gap-2">
+                          <Brain className="h-5 w-5 text-primary" />
+                          AI Analysis Results
+                        </CardTitle>
+                        <Button variant="ghost" size="sm" onClick={() => setSelectedAnalysis(null)}>
+                          Close Analysis
+                        </Button>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="bg-muted/30 rounded-lg p-4 space-y-4">
+                          <div>
+                            <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Summary</p>
+                            <p className="text-sm leading-relaxed">{String(selectedAnalysis.summary ?? "")}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Risk Level</p>
+                              <Badge variant={selectedAnalysis.risk_level === "High" ? "destructive" : "secondary"}>
+                                {String(selectedAnalysis.risk_level ?? "")}
+                              </Badge>
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Urgency</p>
+                              <Badge variant="outline">{String(selectedAnalysis.urgency ?? "")}</Badge>
+                            </div>
+                          </div>
+                          {(() => {
+                            const raw = selectedAnalysis.recommendations as unknown
+                            const list: string[] = Array.isArray(raw)
+                              ? (raw as string[])
+                              : typeof raw === "string"
+                                ? (() => {
+                                    try {
+                                      const parsed = JSON.parse(raw)
+                                      return Array.isArray(parsed) ? parsed.map(String) : []
+                                    } catch {
+                                      return []
+                                    }
+                                  })()
+                                : []
+                            return list.length > 0 ? (
+                              <div>
+                                <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Recommendations</p>
+                                <ul className="list-disc ml-4 text-sm space-y-1">
+                                  {list.map((rec: string, i: number) => (
+                                    <li key={i}>{rec}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null
+                          })()}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
               </TabsContent>
 
               <TabsContent value="timeline" className="mt-0">

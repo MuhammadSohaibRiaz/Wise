@@ -34,6 +34,7 @@ import { deriveCaseLifecycleStages } from "@/lib/case-lifecycle-stages"
 import { CaseProgressStepper } from "@/components/cases/case-progress-stepper"
 import { CaseActivityFeed } from "@/components/cases/case-activity-feed"
 import { AiCaseSummary } from "@/components/cases/ai-case-summary"
+import { CaseDocumentsPanel } from "@/components/cases/case-documents-panel"
 
 interface CaseDetail {
   id: string
@@ -616,6 +617,15 @@ export default function ClientCaseDetailPage() {
         </TabsContent>
 
         <TabsContent value="timeline" className="mt-0">
+          <>
+            <CaseDocumentsPanel
+              caseId={caseDetail.id}
+              caseStatus={caseDetail.status}
+              documents={documents}
+              currentUserId={clientId}
+              onUploaded={fetchCaseDetail}
+            />
+            {false && (
           <Card>
             <CardHeader>
               <CardTitle>Case Activity</CardTitle>
@@ -624,6 +634,8 @@ export default function ClientCaseDetailPage() {
               <CaseActivityFeed events={timelineEvents} />
             </CardContent>
           </Card>
+            )}
+          </>
         </TabsContent>
 
         <TabsContent value="documents" className="mt-0">

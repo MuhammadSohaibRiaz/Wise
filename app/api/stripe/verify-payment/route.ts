@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
             const admin = createAdminClient()
             const { data: appointmentForAuth, error: appointmentAuthError } = await admin
                 .from("appointments")
-                .select("id, client_id, status")
+                .select("id, client_id, status, case_id")
                 .eq("id", appointment_id)
                 .maybeSingle()
 
@@ -82,39 +82,26 @@ export async function POST(request: NextRequest) {
             }
 
             if (!updatedAppointment && !appointmentError) {
+                if (["scheduled", "rescheduled", "attended", "completed"].includes(appointmentForAuth.status)) {
+                    return NextResponse.json({ success: true, status: "completed", alreadyProcessed: true })
+                }
+
                 return NextResponse.json(
                     { error: "Appointment is no longer available for payment" },
                     { status: 400 },
                 )
             }
 
-            // Update case status to in_progress
+            // Payment confirms/schedules the consultation only. Case work starts
+            // after the consultation is explicitly marked as held.
             if (updatedAppointment?.case_id) {
-                const { error: caseError } = await admin
-                    .from("cases")
-                    .update({
-                        status: "in_progress",
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq("id", updatedAppointment.case_id)
-
-                if (caseError) {
-                    console.error("[Payment Verify] Error updating case:", caseError)
-                } else {
-                    console.log(`[Payment Verify] ✅ Case ${updatedAppointment.case_id} marked as in_progress`)
-                    await appendCaseTimelineEvent(admin, {
-                        caseId: updatedAppointment.case_id,
-                        actorId: user.id,
-                        eventType: CaseTimelineEventType.PAYMENT_COMPLETED,
-                        metadata: { appointment_id, payment_id, source: "verify_payment" },
-                    })
-                    await appendCaseTimelineEvent(admin, {
-                        caseId: updatedAppointment.case_id,
-                        actorId: user.id,
-                        eventType: CaseTimelineEventType.CASE_ACTIVATED,
-                        metadata: { source: "verify_payment" },
-                    })
-                }
+                console.log(`[Payment Verify] Consultation ${appointment_id} scheduled for case ${updatedAppointment.case_id}`)
+                await appendCaseTimelineEvent(admin, {
+                    caseId: updatedAppointment.case_id,
+                    actorId: user.id,
+                    eventType: CaseTimelineEventType.PAYMENT_COMPLETED,
+                    metadata: { appointment_id, payment_id, source: "verify_payment" },
+                })
             }
 
             // Create notifications

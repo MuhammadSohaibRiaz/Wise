@@ -59,15 +59,36 @@ export async function POST(req: NextRequest) {
     }
 
     if (row.case_id) {
+      const { data: activatedCase, error: caseUpdateError } = await supabase
+        .from("cases")
+        .update({ status: "in_progress", updated_at: new Date().toISOString() })
+        .eq("id", row.case_id)
+        .eq("status", "open")
+        .select("id")
+        .maybeSingle()
+
+      if (caseUpdateError) {
+        return NextResponse.json({ error: caseUpdateError.message }, { status: 400 })
+      }
+
       await appendCaseTimelineEvent(supabase, {
         caseId: row.case_id,
         actorId: user.id,
         eventType: CaseTimelineEventType.CONSULTATION_ATTENDED,
         metadata: { appointment_id: appointmentId },
       })
+
+      if (activatedCase) {
+        await appendCaseTimelineEvent(supabase, {
+          caseId: row.case_id,
+          actorId: user.id,
+          eventType: CaseTimelineEventType.CASE_ACTIVATED,
+          metadata: { appointment_id: appointmentId, source: "mark_attended" },
+        })
+      }
     }
 
-    return NextResponse.json({ success: true, status: "attended" })
+    return NextResponse.json({ success: true, status: "attended", case_status: "in_progress" })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 })
   }
