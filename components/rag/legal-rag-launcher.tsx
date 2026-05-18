@@ -1,29 +1,32 @@
 "use client"
 
-import { useState } from "react"
-import { AnimatePresence, motion } from "framer-motion"
+import { Suspense, useState } from "react"
+import { motion } from "framer-motion"
 import { BookOpen, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { LegalRagAssistant } from "./legal-rag-assistant"
 
 export function LegalRagLauncher() {
   const [isOpen, setIsOpen] = useState(false)
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-3 md:bottom-6 md:right-6">
-      <AnimatePresence>
-        {isOpen ? (
-          <motion.div
-            initial={{ opacity: 0, y: 18, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 18, scale: 0.96 }}
-            className="shadow-2xl"
-          >
-            <LegalRagAssistant onClose={() => setIsOpen(false)} />
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+    <div className="fixed bottom-4 right-4 z-50 md:bottom-6 md:right-6">
+      <motion.div
+        initial={false}
+        animate={isOpen ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 18, scale: 0.96 }}
+        transition={{ duration: 0.18, ease: "easeOut" }}
+        aria-hidden={!isOpen}
+        className={cn(
+          "absolute bottom-16 right-0 shadow-2xl",
+          !isOpen && "pointer-events-none invisible",
+        )}
+      >
+        <Suspense fallback={null}>
+          <LegalRagAssistant onClose={() => setIsOpen(false)} />
+        </Suspense>
+      </motion.div>
 
       <Button
         type="button"

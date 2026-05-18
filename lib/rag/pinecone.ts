@@ -211,12 +211,20 @@ function expandPakistaniLegalQuery(query: string) {
   const normalized = query.toLowerCase()
   const expansions: string[] = []
 
-  if (/\bmurder\b|\bhomicide\b|\bqatl\b/.test(normalized)) {
+  if (/\bmurder\b|\bhomicide\b|\bqatl\b|\u0642\u062A\u0644/.test(normalized)) {
     expansions.push("qatl-e-amd qatl-i-amd Section 300 Section 302 punishment death qisas ta'zir Pakistan Penal Code")
   }
 
-  if (/\btheft\b|\bsteal\b|\bstolen\b/.test(normalized)) {
+  if (/\bsection\s*302\b|\u062F\u0641\u0639\u06C1\s*302/.test(normalized)) {
+    expansions.push("Section 302 qatl-i-amd murder punishment death qisas ta'zir Pakistan Penal Code")
+  }
+
+  if (/\btheft\b|\bsteal\b|\bstolen\b|\u0686\u0648\u0631\u06CC/.test(normalized)) {
     expansions.push("theft Section 378 Section 379 Section 380 Section 381 Section 382 dishonestly movable property Pakistan Penal Code")
+  }
+
+  if (/\bdivorce\b|\bdivoce\b|\bdissolution\b|\bkhula\b|\btalaq\b|\bcustody\b|\bguardian\b|\bward\b|\bchild\b|\bchildren\b|\bminor\b|\bvisitation\b|\bhusband\b|\bwife\b|\bfather\b|\bmother\b|\u0637\u0644\u0627\u0642|\u062E\u0644\u0639|\u062D\u0636\u0627\u0646\u062A|\u0628\u0686\u06C1|\u0628\u0686\u0648\u06BA|\u0634\u0648\u06C1\u0631|\u0628\u06CC\u0648\u06CC|\u0648\u0627\u0644\u062F|\u0648\u0627\u0644\u062F\u06C1/.test(normalized)) {
+    expansions.push("divorce dissolution marriage khula talaq child children minor custody visitation guardian ward maintenance Family Courts Muslim Family Laws Guardians and Wards Pakistan")
   }
 
   if (/\brobbery\b|\bdacoity\b/.test(normalized)) {
@@ -227,8 +235,12 @@ function expandPakistaniLegalQuery(query: string) {
     expansions.push("kidnapping abduction Section 359 Section 362 Pakistan Penal Code")
   }
 
-  if (/\bfamily\b|\bmarriage\b|\bdivorce\b|\bdissolution\b|\bmaintenance\b|\bguardian|\bcustody\b|\bward\b/.test(normalized)) {
-    expansions.push("family law marriage divorce dissolution maintenance guardians wards custody Pakistan")
+  if (/\bfir\b|\barrest\b|\bbail\b|\bremand\b|\btrial\b|\bappeal\b|\baccused\b|\bcomplainant\b|\bvictim\b|\u0636\u0645\u0627\u0646\u062A|\u06AF\u0631\u0641\u062A\u0627\u0631|\u0631\u06CC\u0645\u0627\u0646\u0688|\u0645\u0642\u062F\u0645\u06C1|\u0627\u067E\u06CC\u0644|\u0645\u0644\u0632\u0645|\u0645\u062F\u0639\u06CC/.test(normalized)) {
+    expansions.push("criminal procedure FIR arrest bail remand trial appeal accused complainant victim Code of Criminal Procedure Pakistan")
+  }
+
+  if (/\bfamily\b|\bmarriage\b|\bdivorce\b|\bdissolution\b|\bmaintenance\b|\bguardian\b|\bcustody\b|\bward\b|\bvisitation\b|\u062E\u0627\u0646\u062F\u0627\u0646\u06CC|\u0634\u0627\u062F\u06CC|\u0637\u0644\u0627\u0642|\u062E\u0644\u0639|\u062D\u0636\u0627\u0646\u062A|\u0646\u0627\u0646|\u0646\u0641\u0642\u06C1/.test(normalized)) {
+    expansions.push("family law marriage divorce dissolution maintenance guardians wards custody visitation minor child Pakistan")
   }
 
   if (/\btax\b|\bincome tax\b|\bsales tax\b|\bfbr\b|\breturn\b|\bassessment\b|\bwithholding\b/.test(normalized)) {
@@ -247,6 +259,10 @@ function expandPakistaniLegalQuery(query: string) {
     expansions.push("Contract Act agreement proposal acceptance consideration breach civil dispute Pakistan")
   }
 
+  if (/\bproperty\b|\bland\b|\bregistration\b|\btransfer\b|\bmortgage\b|\blease\b|\btenant\b|\blandlord\b|\bsale deed\b|\bgift\b/.test(normalized)) {
+    expansions.push("property land registration transfer mortgage lease sale deed gift Transfer of Property Registration Act Pakistan")
+  }
+
   if (!expansions.length) return query
   return `${query}\n\nRelevant Pakistani legal terms: ${expansions.join("; ")}`
 }
@@ -263,21 +279,26 @@ function boostedScore(hit: LegalKnowledgeHit, query: string) {
   const searchable = `${hit.section_ref || ""} ${hit.act_name || ""} ${hit.chunk_text}`.toLowerCase()
   let score = hit.score
 
-  const sectionNumbers = [...query.matchAll(/\bsection\s+(\d+[a-z]?)\b/g)].map((match) => match[1])
+  const sectionNumbers = [
+    ...query.matchAll(/\bsection\s+(\d+[a-z]?)\b/g),
+    ...query.matchAll(/\u062F\u0641\u0639\u06C1\s*(\d+[a-z]?)/g),
+  ].map((match) => match[1])
   for (const sectionNumber of sectionNumbers) {
     if ((hit.section_ref || "").toLowerCase().includes(`section ${sectionNumber}`)) score += 0.25
   }
 
   const keywordBoosts: Array<[RegExp, string[]]> = [
-    [/\bmurder\b|\bhomicide\b|\bqatl\b/, ["section 300", "section 302", "qatl-i-amd", "qatl-e-amd"]],
-    [/\btheft\b|\bsteal\b|\bstolen\b/, ["section 378", "section 379", "section 380", "section 381", "section 382", "theft"]],
+    [/\bmurder\b|\bhomicide\b|\bqatl\b|\bsection\s*302\b|\u0642\u062A\u0644|\u062F\u0641\u0639\u06C1\s*302/, ["section 300", "section 302", "qatl-i-amd", "qatl-e-amd"]],
+    [/\btheft\b|\bsteal\b|\bstolen\b|\u0686\u0648\u0631\u06CC/, ["section 378", "section 379", "section 380", "section 381", "section 382", "theft"]],
     [/\brobbery\b|\bdacoity\b/, ["section 390", "section 391", "section 392", "section 395", "robbery", "dacoity"]],
     [/\bkidnap|\babduct/, ["section 359", "section 362", "kidnapping", "abduction"]],
-    [/\bfamily\b|\bmarriage\b|\bdivorce\b|\bdissolution\b|\bmaintenance\b|\bguardian|\bcustody\b|\bward\b/, ["family", "marriage", "divorce", "dissolution", "maintenance", "guardian", "custody", "ward"]],
+    [/\bfir\b|\barrest\b|\bbail\b|\bremand\b|\btrial\b|\bappeal\b|\baccused\b|\bcomplainant\b|\bvictim\b|\u0636\u0645\u0627\u0646\u062A|\u06AF\u0631\u0641\u062A\u0627\u0631|\u0631\u06CC\u0645\u0627\u0646\u0688|\u0645\u0642\u062F\u0645\u06C1|\u0627\u067E\u06CC\u0644|\u0645\u0644\u0632\u0645|\u0645\u062F\u0639\u06CC/, ["fir", "arrest", "bail", "remand", "trial", "appeal", "accused", "complainant", "victim"]],
+    [/\bfamily\b|\bmarriage\b|\bdivorce\b|\bdissolution\b|\bmaintenance\b|\bguardian\b|\bcustody\b|\bward\b|\bvisitation\b|\bchild\b|\bchildren\b|\bminor\b|\bhusband\b|\bwife\b|\bfather\b|\bmother\b|\u062E\u0627\u0646\u062F\u0627\u0646\u06CC|\u0634\u0627\u062F\u06CC|\u0637\u0644\u0627\u0642|\u062E\u0644\u0639|\u062D\u0636\u0627\u0646\u062A|\u0628\u0686\u06C1|\u0628\u0686\u0648\u06BA|\u0646\u0627\u0646|\u0646\u0641\u0642\u06C1/, ["family", "marriage", "divorce", "dissolution", "maintenance", "guardian", "custody", "ward", "visitation", "minor", "child", "children"]],
     [/\btax\b|\bincome tax\b|\bsales tax\b|\bfbr\b|\breturn\b|\bassessment\b|\bwithholding\b/, ["income tax", "sales tax", "fbr", "assessment", "return", "withholding"]],
     [/\blabour\b|\blabor\b|\bemployment\b|\bindustrial relation|\btrade union\b|\bworker\b|\bemployer\b/, ["industrial relations", "labour", "employment", "worker", "employer", "trade union"]],
     [/\bemigration\b|\boverseas\b|\bimmigration\b|\bprotector\b|\bforeign employment\b/, ["emigration", "overseas", "protector", "foreign employment"]],
     [/\bcontract\b|\bagreement\b|\bcivil dispute\b|\bbreach\b|\bconsideration\b|\bproposal\b|\bacceptance\b/, ["contract", "agreement", "proposal", "acceptance", "consideration", "breach"]],
+    [/\bproperty\b|\bland\b|\bregistration\b|\btransfer\b|\bmortgage\b|\blease\b|\btenant\b|\blandlord\b|\bsale deed\b|\bgift\b/, ["property", "land", "registration", "transfer", "mortgage", "lease", "sale deed", "gift"]],
   ]
 
   for (const [pattern, terms] of keywordBoosts) {

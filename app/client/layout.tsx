@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ClientSidebar } from "@/components/client/sidebar"
 import { ClientHeader } from "@/components/client/header"
@@ -16,6 +17,7 @@ export default function ClientLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const pathname = usePathname()
   const [isLoading, setIsLoading] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
 
   const toggleSidebar = useMemo(() => () => setSidebarOpen((prev) => !prev), [])
 
@@ -24,9 +26,11 @@ export default function ClientLayout({
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
+        setIsAuthenticated(false)
         setIsLoading(false)
         return
       }
+      setIsAuthenticated(true)
 
       const handleResize = () => {
         if (window.innerWidth >= 768) {
@@ -54,6 +58,34 @@ export default function ClientLayout({
     )
   }
 
+  const isPublicLawyerProfile = /^\/client\/lawyer\/[^/]+/.test(pathname)
+
+  if (!isAuthenticated && isPublicLawyerProfile) {
+    return (
+      <>
+        <Suspense fallback={null}><ProgressBar /></Suspense>
+        <div className="min-h-screen bg-background">
+          <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
+            <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+              <Link href="/" className="text-lg font-bold text-foreground">
+                WiseCase
+              </Link>
+              <Link
+                href="/auth/client/sign-in"
+                className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"
+              >
+                Sign In
+              </Link>
+            </div>
+          </header>
+          <main>
+            <div className="p-4 md:p-6 lg:p-8">{children}</div>
+          </main>
+        </div>
+      </>
+    )
+  }
+
   return (
     <>
       <Suspense fallback={null}><ProgressBar /></Suspense>
@@ -75,6 +107,5 @@ export default function ClientLayout({
     </>
   )
 }
-
 
 

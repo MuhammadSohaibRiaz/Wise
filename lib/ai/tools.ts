@@ -131,7 +131,7 @@ export const tools = {
 
   searchLawyers: tool({
     description:
-      "Searches verified lawyers by practice area and/or name. Always pass a non-empty query or specialty when the user names a person (e.g. query: 'Ahsan'). Returns up to five matches with UUID ids for profile links.",
+      "Searches verified lawyers by practice area and/or name. Always pass a non-empty query or specialty when the user names a person (e.g. query: 'Ahsan'). For Urdu specialty requests, pass the original Urdu query or translate it to the closest English specialty such as Family Law, Criminal Law, Tax Law, Labour Law, Property Law, Civil Law, or Immigration Law. Returns up to five matches with UUID ids for profile links.",
     inputSchema: z.object({
       specialty: z.string().optional().describe("Practice area, e.g. Real Estate, Family Law"),
       query: z.string().optional().describe("Lawyer name or keywords, e.g. Sher Shah, Ahsan Ali"),

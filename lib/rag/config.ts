@@ -15,7 +15,7 @@ export function getLegalRagConfig(): LegalRagConfig {
   return {
     pineconeApiKey: process.env.PINECONE_API_KEY || "",
     indexName: process.env.PINECONE_INDEX || "wisecase-legal-rag",
-    namespace: process.env.PINECONE_NAMESPACE || "criminal-law",
+    namespace: process.env.PINECONE_NAMESPACE || "pakistan-legal-kb",
     cloud: (process.env.PINECONE_CLOUD || "aws") as LegalRagConfig["cloud"],
     region: process.env.PINECONE_REGION || "us-east-1",
     embedModel: process.env.PINECONE_EMBED_MODEL || "llama-text-embed-v2",
