@@ -6,7 +6,6 @@ import "./globals.css"
 
 import type { Metadata } from "next"
 import { ThemeProvider } from "@/components/theme-provider"
-import Chatbot from "@/components/chatbot/chatbot"
 import { LegalRagLauncher } from "@/components/rag/legal-rag-launcher"
 import { Toaster } from "@/components/ui/toaster"
 import { NotificationToastListener } from "@/components/notifications/notification-toast-listener"
@@ -82,7 +81,6 @@ export default function RootLayout({
         <ThemeProvider defaultTheme="system" enableSystem>
           <RootProgressBar />
           {children}
-          <Chatbot />
           <LegalRagLauncher />
           <Toaster />
           <NotificationToastListener />
@@ -91,5 +89,4 @@ export default function RootLayout({
     </html>
   )
 }
-
 

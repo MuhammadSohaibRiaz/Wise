@@ -11,7 +11,7 @@ export function LegalRagLauncher() {
   const [isOpen, setIsOpen] = useState(false)
 
   return (
-    <div className="fixed bottom-4 left-4 z-50 flex flex-col items-start gap-3 md:bottom-6 md:left-6">
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-3 md:bottom-6 md:right-6">
       <AnimatePresence>
         {isOpen ? (
           <motion.div
