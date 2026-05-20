@@ -63,6 +63,18 @@ function isLikelyPlatformQuery(text: string) {
   )
 }
 
+function isLikelyLegalSearchQuery(text: string) {
+  const normalized = text.toLowerCase().replace(/\s+/g, " ").trim()
+  if (isLocalGreeting(normalized)) return false
+  if (normalized.length < 4) return false
+
+  return (
+    /\b(pakistan|pakistani|ppc|penal code|law|legal|court|case|suit|petition|fir|bail|trial|appeal|offence|offense|crime|punishment|sentence|section|act|ordinance|rules|evidence|witness|divorce|khula|custody|maintenance|guardian|tax|labou?r|employment|immigration|emigration|contract|agreement|property|land|registration|transfer|mortgage|lease|theft|murder|fraud|forgery|defamation)\b/.test(normalized) ||
+    /\b\d{2,3}[a-z]?\b/.test(normalized) ||
+    /(?:\u062F\u0641\u0639\u06C1|\u0642\u0627\u0646\u0648\u0646|\u067E\u0627\u06A9\u0633\u062A\u0627\u0646\u06CC|\u0633\u0632\u0627|\u062C\u0631\u0645|\u0636\u0645\u0627\u0646\u062A|\u0686\u0648\u0631\u06CC|\u0642\u062A\u0644|\u0639\u062F\u0627\u0644\u062A|\u0641\u0648\u062C\u062F\u0627\u0631\u06CC|\u0634\u06C1\u0627\u062F\u062A|\u0637\u0644\u0627\u0642|\u062E\u0644\u0639|\u062D\u0636\u0627\u0646\u062A|\u0646\u0641\u0642\u06C1)/.test(text)
+  )
+}
+
 function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
@@ -228,6 +240,8 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
   const voiceBaseInputRef = useRef("")
   const shouldScrollToLatestOnOpenRef = useRef(false)
   const pendingAssistantScrollIdRef = useRef<string | null>(null)
+  const userScrolledUpRef = useRef(false)
+  const programmaticScrollRef = useRef(false)
 
   const caseIdFromQuery = searchParams.get("case")
   const caseIdFromPath = pathname.match(/\/(?:client|lawyer)\/cases\/([0-9a-fA-F-]{36})(?:\/|$)/)?.[1] ?? null
@@ -323,9 +337,25 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
     shouldScrollToLatestOnOpenRef.current = false
 
     requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "auto" })
+      if (!scrollRef.current) return
+      markProgrammaticScroll()
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "auto" })
     })
   }, [historyReady])
+
+  const handleChatScroll = useCallback(() => {
+    const container = scrollRef.current
+    if (!container) return
+
+    if (isNearScrollBottom(container)) {
+      userScrolledUpRef.current = false
+      return
+    }
+
+    if (!programmaticScrollRef.current) {
+      userScrolledUpRef.current = true
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -418,6 +448,8 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
       if (!normalized || !normalized.startsWith("/") || /\/https?:\/\//i.test(normalized)) return false
       const blocked = ["doctor", "surgeon", "hospital", "clinic", "medicine", "heart"]
       if (blocked.some((term) => label.toLowerCase().includes(term))) return false
+      if (/leave\s+(a\s+)?review|write\s+(a\s+)?review|add\s+(a\s+)?review|submit\s+(a\s+)?review/i.test(label)) return false
+      if (normalized === "/client/reviews" || normalized.startsWith("/client/reviews/")) return false
       const allowedPrefixes = ["/match", "/client/", "/lawyer/", "/admin/", "/auth/", "/register", "/terms", "/privacy"]
       return allowedPrefixes.some((prefix) => normalized === prefix || normalized.startsWith(prefix))
     },
@@ -515,7 +547,18 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
     window.setTimeout(() => inputRef.current?.focus(), 0)
   }
 
-  function scrollAssistantStartIntoView(messageId: string) {
+  function isNearScrollBottom(container: HTMLElement, threshold = 100) {
+    return container.scrollHeight - container.scrollTop - container.clientHeight <= threshold
+  }
+
+  function markProgrammaticScroll() {
+    programmaticScrollRef.current = true
+    window.setTimeout(() => {
+      programmaticScrollRef.current = false
+    }, 700)
+  }
+
+  function scrollMessageStartIntoView(messageId: string, behavior: ScrollBehavior = "smooth") {
     requestAnimationFrame(() => {
       const container = scrollRef.current
       const bubble = container?.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`)
@@ -526,10 +569,26 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
       const topPadding = 12
       const targetTop = container.scrollTop + (bubbleRect.top - containerRect.top) - topPadding
 
+      markProgrammaticScroll()
       container.scrollTo({
         top: Math.max(0, targetTop),
-        behavior: "smooth",
+        behavior,
       })
+    })
+  }
+
+  function shouldAutoFollowStream() {
+    const container = scrollRef.current
+    return Boolean(container && !userScrolledUpRef.current && isNearScrollBottom(container))
+  }
+
+  function smartScrollToBottomDuringStream(shouldFollow: boolean) {
+    requestAnimationFrame(() => {
+      const container = scrollRef.current
+      if (!container || !shouldFollow || userScrolledUpRef.current) return
+
+      markProgrammaticScroll()
+      container.scrollTo({ top: container.scrollHeight, behavior: "auto" })
     })
   }
 
@@ -540,7 +599,7 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
     const userMessage: RagMessage = { id: createId(), role: "user", content: trimmed, status: "done" }
     const assistantId = createId()
     const nextMessages = [...messages, userMessage]
-    const shouldShowLegalSearchStatus = !isLikelyPlatformQuery(trimmed)
+    const shouldShowLegalSearchStatus = !isLikelyPlatformQuery(trimmed) && isLikelyLegalSearchQuery(trimmed)
 
     if (isLocalGreeting(trimmed)) {
       const response = localGreetingResponse(chatRole)
@@ -548,14 +607,15 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
       setInput("")
       setError(null)
       window.setTimeout(() => inputRef.current?.focus(), 0)
-      window.setTimeout(() => scrollAssistantStartIntoView(assistantId), 0)
+      window.setTimeout(() => scrollMessageStartIntoView(trimmed.length > 200 ? assistantId : userMessage.id, "smooth"), 0)
       speak(response)
       return
     }
 
-    pendingAssistantScrollIdRef.current = assistantId
+    pendingAssistantScrollIdRef.current = trimmed.length > 200 ? assistantId : null
     setMessages([...nextMessages, { id: assistantId, role: "assistant", content: "", status: "streaming" }])
     setInput("")
+    window.setTimeout(() => scrollMessageStartIntoView(userMessage.id, "smooth"), 0)
     window.setTimeout(() => inputRef.current?.focus(), 0)
     setError(null)
     setIsSending(true)
@@ -601,10 +661,13 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
         const chunk = decoder.decode(value, { stream: true })
         if (chunk) setIsSearching(false)
         accumulated += chunk
+        const shouldFollowStream = shouldAutoFollowStream()
         paint()
         if (pendingAssistantScrollIdRef.current === assistantId && accumulated.trim()) {
           pendingAssistantScrollIdRef.current = null
-          scrollAssistantStartIntoView(assistantId)
+          scrollMessageStartIntoView(assistantId, "smooth")
+        } else {
+          smartScrollToBottomDuringStream(shouldFollowStream)
         }
       }
 
@@ -626,7 +689,7 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
       )
       if (pendingAssistantScrollIdRef.current === assistantId) {
         pendingAssistantScrollIdRef.current = null
-        window.setTimeout(() => scrollAssistantStartIntoView(assistantId), 0)
+        window.setTimeout(() => scrollMessageStartIntoView(assistantId, "smooth"), 0)
       }
       speak(finalText)
     } catch (caught: any) {
@@ -640,7 +703,7 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
         )
         if (pendingAssistantScrollIdRef.current === assistantId) {
           pendingAssistantScrollIdRef.current = null
-          window.setTimeout(() => scrollAssistantStartIntoView(assistantId), 0)
+          window.setTimeout(() => scrollMessageStartIntoView(assistantId, "smooth"), 0)
         }
       }
     } finally {
@@ -925,7 +988,7 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
         </div>
       ) : null}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto px-4 py-4">
         {!historyReady ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
             <Loader2 className="h-7 w-7 animate-spin" />
