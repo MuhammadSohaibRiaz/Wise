@@ -2,23 +2,34 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { Suspense, useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
-import { getAuthCallbackUrl } from "@/lib/auth/redirect-urls"
+import { getPasswordResetCallbackUrl } from "@/lib/auth/redirect-urls"
 import { ArrowLeft } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
-export default function ForgotPasswordPage() {
+function ForgotPasswordContent() {
+  const searchParams = useSearchParams()
+  const fromRole = searchParams.get("from") === "lawyer" ? "lawyer" : "client"
+  const backHref = fromRole === "lawyer" ? "/auth/lawyer/sign-in" : "/auth/client/sign-in"
+
   const [email, setEmail] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
   const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
   const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
+
+  useEffect(() => {
+    if (searchParams.get("error") === "link-expired") {
+      showError("This reset link has expired. Request a new link below.")
+    }
+  }, [searchParams])
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,7 +40,7 @@ export default function ForgotPasswordPage() {
 
       const normalizedEmail = email.trim().toLowerCase()
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: getAuthCallbackUrl("/auth/reset-password"),
+        redirectTo: getPasswordResetCallbackUrl(),
       })
 
       if (resetError) {
@@ -59,7 +70,7 @@ export default function ForgotPasswordPage() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-background px-4 relative">
       <Link
-        href="/auth/client/sign-in"
+        href={backHref}
         className="absolute top-4 right-4 sm:top-6 sm:right-6 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors z-10"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -116,5 +127,13 @@ export default function ForgotPasswordPage() {
         </div>
       </div>
     </main>
+  )
+}
+
+export default function ForgotPasswordPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen flex items-center justify-center">Loading...</main>}>
+      <ForgotPasswordContent />
+    </Suspense>
   )
 }

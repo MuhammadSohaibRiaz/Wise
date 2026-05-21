@@ -2,8 +2,9 @@
 
 import { useEffect } from "react"
 import { parseHashParams, stashAuthHash } from "@/lib/auth/callback-storage"
+import { isPasswordRecoveryLink } from "@/lib/auth/establish-session-from-url"
 import { getUserTypeFromAccessTokenHash } from "@/lib/auth/parse-auth-hash"
-import { getEmailVerificationRedirectUrl } from "@/lib/auth/redirect-urls"
+import { getEmailVerificationRedirectUrl, getPasswordResetCallbackUrl } from "@/lib/auth/redirect-urls"
 
 const SIGN_IN_PATHS = ["/auth/client/sign-in", "/auth/lawyer/sign-in"]
 
@@ -28,11 +29,21 @@ export function OAuthCallbackHashRedirect() {
     if (hash) {
       stashAuthHash(hash)
       const hashParams = parseHashParams(hash)
+      const linkType = hashParams.get("type")
+
       if (hashParams.get("error") || hashParams.get("error_code")) {
-        const userType = getUserTypeFromAccessTokenHash(hash) ?? "client"
-        window.location.replace(getEmailVerificationRedirectUrl(userType))
+        const dest = isPasswordRecoveryLink(linkType, null)
+          ? "/auth/forgot-password?error=link-expired"
+          : getEmailVerificationRedirectUrl(getUserTypeFromAccessTokenHash(hash) ?? "client")
+        window.location.replace(dest)
         return
       }
+
+      if (isPasswordRecoveryLink(linkType, null) && hash.includes("access_token")) {
+        window.location.replace(getPasswordResetCallbackUrl())
+        return
+      }
+
       if (hash.includes("access_token")) {
         const userType = getUserTypeFromAccessTokenHash(hash) ?? "client"
         window.location.replace(getEmailVerificationRedirectUrl(userType))
@@ -44,6 +55,9 @@ export function OAuthCallbackHashRedirect() {
       stashAuthHash(hash)
       const target = new URL("/auth/callback", window.location.origin)
       params.forEach((value, key) => target.searchParams.set(key, value))
+      if (isPasswordRecoveryLink(params.get("type"), null)) {
+        target.searchParams.set("next", "/auth/reset-password")
+      }
       window.location.replace(target.toString())
     }
   }, [])

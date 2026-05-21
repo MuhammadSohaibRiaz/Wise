@@ -3,7 +3,12 @@
 import { Suspense, useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
-import { consumeAuthHash, parseHashParams } from "@/lib/auth/callback-storage"
+import { consumeAuthHash } from "@/lib/auth/callback-storage"
+import {
+  establishSessionFromAuthUrl,
+  isPasswordRecoveryLink,
+} from "@/lib/auth/establish-session-from-url"
+import { sanitizeAuthCallbackNext } from "@/lib/auth/redirect-urls"
 import { Loader2 } from "lucide-react"
 
 function signInPathForUserType(userType: string | undefined): string {
@@ -23,6 +28,7 @@ function AuthCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [error, setError] = useState<string | null>(null)
+  const [isRecoveryFlow, setIsRecoveryFlow] = useState(false)
   const handledRef = useRef(false)
 
   useEffect(() => {
@@ -31,14 +37,10 @@ function AuthCallbackContent() {
 
     async function run() {
       const supabase = createClient()
-      const requestedNext = searchParams.get("next")
-      const linkTypeParam = searchParams.get("type")
-      const safeNext =
-        requestedNext === "/auth/reset-password" ||
-        requestedNext === "/auth/client/sign-in" ||
-        requestedNext === "/auth/lawyer/sign-in"
-          ? requestedNext
-          : null
+      const safeNext = sanitizeAuthCallbackNext(searchParams.get("next"))
+      if (isPasswordRecoveryLink(searchParams.get("type"), safeNext)) {
+        if (!cancelled) setIsRecoveryFlow(true)
+      }
 
       let hashRaw = window.location.hash
       if (hashRaw) {
@@ -47,68 +49,26 @@ function AuthCallbackContent() {
         hashRaw = consumeAuthHash() || ""
       }
 
-      if (hashRaw) {
-        const hashParams = parseHashParams(hashRaw)
-        if (hashParams.get("error") || hashParams.get("error_code")) {
-          handledRef.current = true
-          const errorCode = hashParams.get("error_code")
-          const desc = hashParams.get("error_description")?.replace(/\+/g, " ") ?? "Link invalid or expired."
-          if (!cancelled) {
-            setError(desc)
-          }
-          window.history.replaceState(null, "", window.location.pathname + window.location.search)
-          setTimeout(() => {
-            if (!cancelled) router.replace(signInPathForAuthError(undefined, errorCode))
-          }, 2500)
-          return
-        }
+      const sessionResult = await establishSessionFromAuthUrl(supabase, {
+        searchParams,
+        hashFromWindow: hashRaw,
+      })
+
+      if (!sessionResult.ok) {
+        handledRef.current = true
+        if (!cancelled) setError(sessionResult.error)
+        window.history.replaceState(null, "", window.location.pathname + window.location.search)
+        const dest = isPasswordRecoveryLink(null, safeNext)
+          ? "/auth/forgot-password?error=link-expired"
+          : signInPathForAuthError(undefined, sessionResult.errorCode)
+        setTimeout(() => {
+          if (!cancelled) router.replace(dest)
+        }, 2500)
+        return
       }
 
-      const code = searchParams.get("code")
-      let linkType: string | null = linkTypeParam
-      let sessionEstablished = false
-
-      if (code) {
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-        if (exchangeError) {
-          if (!cancelled) setError(exchangeError.message)
-          return
-        }
-        sessionEstablished = true
-      } else if (hashRaw) {
-        const hashParams = parseHashParams(hashRaw)
-        linkType = linkType ?? hashParams.get("type")
-        const access_token = hashParams.get("access_token")
-        const refresh_token = hashParams.get("refresh_token")
-
-        if (!access_token || !refresh_token) {
-          if (!cancelled) setError("Invalid or expired link.")
-          return
-        }
-
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token,
-          refresh_token,
-        })
-        if (sessionError) {
-          if (!cancelled) setError(sessionError.message)
-          return
-        }
-        sessionEstablished = true
-        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)
-      } else {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        if (session) {
-          sessionEstablished = true
-        } else {
-          if (!cancelled) setError("Invalid or expired link.")
-          return
-        }
-      }
-
-      if (cancelled || !sessionEstablished) return
+      const linkType = sessionResult.linkType
+      if (cancelled || !sessionResult.sessionEstablished) return
       handledRef.current = true
 
       const {
@@ -122,11 +82,13 @@ function AuthCallbackContent() {
 
       const userType = user.user_metadata?.user_type as string | undefined
 
+      const isRecovery = isPasswordRecoveryLink(linkType, safeNext)
       const isEmailVerificationLink =
-        linkType === "magiclink" || linkType === "signup" || linkType === "email" || linkType === "invite"
-      const isRecovery =
-        !isEmailVerificationLink &&
-        (safeNext === "/auth/reset-password" || linkType === "recovery")
+        !isRecovery &&
+        (linkType === "magiclink" ||
+          linkType === "signup" ||
+          linkType === "email" ||
+          linkType === "invite")
 
       if (isRecovery) {
         router.replace("/auth/reset-password")
@@ -184,7 +146,9 @@ function AuthCallbackContent() {
       ) : (
         <>
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Verifying your email…</p>
+          <p className="text-sm text-muted-foreground">
+            {isRecoveryFlow ? "Preparing password reset…" : "Verifying your email…"}
+          </p>
         </>
       )}
     </main>

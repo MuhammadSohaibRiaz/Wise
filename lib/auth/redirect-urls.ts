@@ -19,6 +19,26 @@ export function getAuthCallbackUrl(next?: string): string {
   return url.toString()
 }
 
+/** Supabase resetPasswordForEmail redirect — must be allow-listed in Supabase Auth URLs. */
+export function getPasswordResetCallbackUrl(): string {
+  return getAuthCallbackUrl("/auth/reset-password")
+}
+
+/**
+ * Paths allowed in ?next= on /auth/callback (blocks open redirects).
+ * Add new auth destinations here and in Supabase redirect allow list.
+ */
+export const AUTH_CALLBACK_NEXT_PATHS = [
+  "/auth/reset-password",
+  "/auth/client/sign-in",
+  "/auth/lawyer/sign-in",
+] as const
+
+export function sanitizeAuthCallbackNext(requested: string | null): string | null {
+  if (!requested) return null
+  return (AUTH_CALLBACK_NEXT_PATHS as readonly string[]).includes(requested) ? requested : null
+}
+
 /** Email verification links land directly on the role sign-in page (no /auth/callback hop). */
 export function getEmailVerificationRedirectUrl(userType: AuthUserType): string {
   const path = userType === "lawyer" ? "/auth/lawyer/sign-in" : "/auth/client/sign-in"

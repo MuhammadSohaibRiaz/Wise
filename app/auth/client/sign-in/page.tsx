@@ -53,6 +53,14 @@ export default function ClientSignInPage() {
   useEffect(() => {
     if (typeof window === "undefined") return
     const params = new URLSearchParams(window.location.search)
+    if (params.get("message") === "password-reset") {
+      const msg = "Your password was reset. Sign in with your new password."
+      setSuccessBanner(true)
+      setBannerMessage(msg)
+      showSuccess(msg)
+      window.history.replaceState(null, "", window.location.pathname)
+      return
+    }
     if (params.get("message") === "email-confirmed" || params.get("confirmed") === "1") {
       const msg = "Email verified successfully! You can now sign in."
       setSuccessBanner(true)
@@ -254,7 +262,7 @@ export default function ClientSignInPage() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label htmlFor="password">Password</Label>
-              <Link href="/auth/forgot-password" className="text-sm text-blue-600 hover:underline">
+              <Link href="/auth/forgot-password?from=client" className="text-sm text-blue-600 hover:underline">
                 Forgot password?
               </Link>
             </div>
