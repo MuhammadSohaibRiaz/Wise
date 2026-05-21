@@ -110,6 +110,13 @@ export function MessagesShell({ userType }: MessagesShellProps) {
   const [typingParticipant, setTypingParticipant] = useState<string | null>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null)
+
+  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const el = messagesContainerRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior })
+  }, [])
 
   const fetchCurrentUser = useCallback(async () => {
     const {
@@ -387,17 +394,9 @@ export function MessagesShell({ userType }: MessagesShellProps) {
     if (!currentUserId || !activeCaseId) return
     loadMessages(activeCaseId, currentUserId)
 
-    // Scroll to bottom when messages load
-    setTimeout(() => {
-      const messagesEnd = document.getElementById("messages-end")
-      const messagesContainer = document.getElementById("messages-container")
-      if (messagesEnd) {
-        messagesEnd.scrollIntoView({ behavior: "auto", block: "end" })
-      } else if (messagesContainer) {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight
-      }
-    }, 200)
-  }, [activeCaseId, currentUserId, loadMessages])
+    const t = setTimeout(() => scrollMessagesToBottom("auto"), 200)
+    return () => clearTimeout(t)
+  }, [activeCaseId, currentUserId, loadMessages, scrollMessagesToBottom])
 
   useEffect(() => {
     if (!currentUserId || !activeCaseId) return
@@ -429,16 +428,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
               new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
             )
 
-            // Scroll to bottom when new message arrives
-            setTimeout(() => {
-              const messagesEnd = document.getElementById("messages-end")
-              const messagesContainer = document.getElementById("messages-container")
-              if (messagesEnd) {
-                messagesEnd.scrollIntoView({ behavior: "smooth", block: "end" })
-              } else if (messagesContainer) {
-                messagesContainer.scrollTop = messagesContainer.scrollHeight
-              }
-            }, 100)
+            setTimeout(() => scrollMessagesToBottom("smooth"), 100)
 
             return updated
           })
@@ -483,7 +473,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [supabase, currentUserId, activeCaseId, markMessagesRead, conversations])
+  }, [supabase, currentUserId, activeCaseId, markMessagesRead, conversations, scrollMessagesToBottom])
 
   const handleTyping = useCallback(() => {
     if (!activeCaseId || !currentUserId) return
@@ -611,19 +601,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
       })
       setNewMessage("")
 
-      // Scroll to bottom after adding message - increased timeout for reliability
-      setTimeout(() => {
-        const messagesEnd = document.getElementById("messages-end")
-        const messagesContainer = document.getElementById("messages-container")
-        if (messagesEnd) {
-          messagesEnd.scrollIntoView({ behavior: "smooth", block: "end" })
-        } else if (messagesContainer) {
-          messagesContainer.scrollTo({
-            top: messagesContainer.scrollHeight,
-            behavior: "smooth"
-          })
-        }
-      }, 250)
+      setTimeout(() => scrollMessagesToBottom("smooth"), 100)
 
       try {
         await notifyMessage(
@@ -877,7 +855,11 @@ export function MessagesShell({ userType }: MessagesShellProps) {
             </div>
 
             {/* Messages container */}
-            <CardContent className="flex-1 overflow-y-auto p-8 scroll-smooth" id="messages-container">
+            <div
+              ref={messagesContainerRef}
+              className="flex-1 overflow-y-auto overflow-x-hidden p-8 scroll-smooth overscroll-contain"
+              id="messages-container"
+            >
               {isLoadingMessages ? (
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="h-8 w-8 animate-spin text-primary/30" />
@@ -944,10 +926,10 @@ export function MessagesShell({ userType }: MessagesShellProps) {
                   <div id="messages-end" />
                 </div>
               )}
-            </CardContent>
+            </div>
 
             {/* Input Area */}
-            <div className="px-8 pb-8 pt-4">
+            <div className="px-8 pb-8 pt-4 pr-4 md:pr-28">
               {messagingBlocked && (
                 <p className="mb-2 text-xs text-muted-foreground">
                   Messaging unlocks after your lawyer accepts this consultation request.

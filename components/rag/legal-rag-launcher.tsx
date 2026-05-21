@@ -17,8 +17,15 @@ export function LegalRagLauncher() {
     return null
   }
 
+  const isMessagesPage = pathname?.includes("/messages")
+
   return (
-    <div className="fixed bottom-4 right-4 z-50 md:bottom-6 md:right-6">
+    <div
+      className={cn(
+        "fixed right-4 z-50 md:right-6",
+        isMessagesPage ? "bottom-[5.5rem] md:bottom-[6.5rem]" : "bottom-4 md:bottom-6",
+      )}
+    >
       <motion.div
         initial={false}
         animate={isOpen ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 18, scale: 0.96 }}
