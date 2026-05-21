@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { formatAppointmentDateTime } from "@/lib/datetime"
 
 export type NotificationType =
   | "system"
@@ -67,7 +68,7 @@ const appointmentCopy: Record<
 > = {
   lawyer_accept: ({ caseTitle, scheduledAt }) => ({
     title: "Lawyer accepted your request",
-    description: `${caseTitle || "Consultation"} • ${scheduledAt ? new Date(scheduledAt).toLocaleString() : ""}`,
+    description: `${caseTitle || "Consultation"} • ${formatAppointmentDateTime(scheduledAt)}`,
   }),
   lawyer_reject: ({ caseTitle }) => ({
     title: "Lawyer declined your request",
@@ -75,19 +76,19 @@ const appointmentCopy: Record<
   }),
   client_cancel: ({ caseTitle, scheduledAt }) => ({
     title: "Client cancelled the appointment",
-    description: `${caseTitle || "Consultation"} • ${scheduledAt ? new Date(scheduledAt).toLocaleString() : ""}`,
+    description: `${caseTitle || "Consultation"} • ${formatAppointmentDateTime(scheduledAt)}`,
   }),
   lawyer_cancel: ({ caseTitle, scheduledAt }) => ({
     title: "Lawyer cancelled the appointment",
-    description: `${caseTitle || "Consultation"} • ${scheduledAt ? new Date(scheduledAt).toLocaleString() : ""}`,
+    description: `${caseTitle || "Consultation"} • ${formatAppointmentDateTime(scheduledAt)}`,
   }),
   lawyer_reschedule: ({ caseTitle, scheduledAt }) => ({
     title: "Lawyer rescheduled your appointment",
-    description: `${caseTitle || "Consultation"} • New time: ${scheduledAt ? new Date(scheduledAt).toLocaleString() : ""}`,
+    description: `${caseTitle || "Consultation"} • New time: ${formatAppointmentDateTime(scheduledAt)}`,
   }),
   client_reschedule: ({ caseTitle, scheduledAt }) => ({
     title: "Client rescheduled your appointment",
-    description: `${caseTitle || "Consultation"} • New time: ${scheduledAt ? new Date(scheduledAt).toLocaleString() : ""}`,
+    description: `${caseTitle || "Consultation"} • New time: ${formatAppointmentDateTime(scheduledAt)}`,
   }),
 }
 
@@ -107,7 +108,7 @@ export async function notifyAppointmentRequest(
     created_by: params.clientId,
     type: "appointment_request",
     title: "New appointment request",
-    description: `${params.caseTitle || "Consultation"} • ${params.scheduledAt ? new Date(params.scheduledAt).toLocaleString() : ""}`,
+    description: `${params.caseTitle || "Consultation"} • ${formatAppointmentDateTime(params.scheduledAt)}`,
     data: {
       appointment_id: params.appointmentId,
       case_id: params.caseId,

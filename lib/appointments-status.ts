@@ -37,7 +37,7 @@ export function appointmentStatusLabel(status: string | null | undefined): strin
     case "rescheduled":
       return "Rescheduled"
     case "attended":
-      return "Consultation completed"
+      return "Consultation held"
     case "completed":
       return "Closed with case"
     case "cancelled":
@@ -64,7 +64,7 @@ export function appointmentWorkflowPhase(status: string | null | undefined): str
     case "scheduled":
       return "Confirmed"
     case "attended":
-      return "Completed"
+      return "Consultation held"
     case "completed":
       return "Closed with case"
     case "cancelled":

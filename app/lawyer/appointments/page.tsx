@@ -9,13 +9,15 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, AlertCircle, Calendar, Clock, FileText, User, Check, X, CalendarClock, MessageSquare, XCircle } from "lucide-react"
+import { Loader2, AlertCircle, Calendar, Clock, FileText, User, Check, X, MessageSquare, XCircle } from "lucide-react"
 import { LawyerDashboardHeader } from "@/components/lawyer/dashboard-header"
 import { appointmentStatusLabel, appointmentWorkflowPhase, APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 import { ScheduledConsultationActions } from "@/components/appointments/scheduled-consultation-actions"
-import { notifyCaseDetailChanged } from "@/lib/case-detail-events"
+import { CASE_DETAIL_CHANGED_EVENT, notifyCaseDetailChanged } from "@/lib/case-detail-events"
 import { formatRescheduleModalHint } from "@/lib/appointments/reschedule-label"
+import { formatAppointmentDate, formatAppointmentDateTime, formatAppointmentTime } from "@/lib/datetime"
 import {
+  bookedSlotsIncludingCurrent,
   getAvailableSlotsForDay,
   getFullyBookedDateStrings,
   toLocalDateString,
@@ -42,6 +44,7 @@ interface Appointment {
     id: string
     title: string
     case_type: string
+    status?: string
     description?: string
     hourly_rate?: number | null
   }
@@ -107,6 +110,7 @@ export default function LawyerAppointmentsPage() {
               id,
               title,
               case_type,
+              status,
               description
             ),
             profiles!appointments_client_id_fkey (
@@ -132,7 +136,7 @@ export default function LawyerAppointmentsPage() {
           request_message: apt.request_message,
           notes: apt.notes,
           reschedule_count: apt.reschedule_count || 0,
-          case: apt.cases || { id: "", title: "Unknown", case_type: "", description: "", hourly_rate: null },
+          case: apt.cases || { id: "", title: "Unknown", case_type: "", status: "", description: "", hourly_rate: null },
           client: apt.profiles || { id: "", first_name: "Unknown", last_name: "", avatar_url: null, email: "" },
         })),
       )
@@ -156,6 +160,12 @@ export default function LawyerAppointmentsPage() {
   }, [loadAppointments])
 
   useEffect(() => {
+    const onCaseChanged = () => void loadAppointments()
+    window.addEventListener(CASE_DETAIL_CHANGED_EVENT, onCaseChanged)
+    return () => window.removeEventListener(CASE_DETAIL_CHANGED_EVENT, onCaseChanged)
+  }, [loadAppointments])
+
+  useEffect(() => {
     if (!lawyerId) return
 
     const supabase = createClient()
@@ -168,10 +178,19 @@ export default function LawyerAppointmentsPage() {
       )
       .on(
         "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "cases", filter: `lawyer_id=eq.${lawyerId}` },
+        () => void loadAppointments(),
+      )
+      .on(
+        "postgres_changes",
         { event: "UPDATE", schema: "public", table: "appointments", filter: `lawyer_id=eq.${lawyerId}` },
         (payload) => {
           const updated = payload.new as any
           const old = payload.old as any
+          if (updated.status === "attended" || updated.status === "completed") {
+            void loadAppointments()
+            return
+          }
           setAppointments((prev) =>
             prev.map((apt) =>
               apt.id === updated.id
@@ -262,11 +281,16 @@ export default function LawyerAppointmentsPage() {
           .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
           .neq("id", rescheduleTarget.id)
 
+        const durationMinutes = rescheduleTarget.duration_minutes || 60
         setRescheduleSlots(
           getAvailableSlotsForDay({
             date: rescheduleDate,
-            durationMinutes: rescheduleTarget.duration_minutes || 60,
-            booked: booked || [],
+            durationMinutes,
+            booked: bookedSlotsIncludingCurrent(
+              booked || [],
+              rescheduleTarget.scheduled_at,
+              durationMinutes,
+            ),
           }),
         )
       } catch {
@@ -431,7 +455,10 @@ export default function LawyerAppointmentsPage() {
       setRescheduleTarget(null)
       setRescheduleDate(undefined)
       setRescheduleTime("")
-      toast({ title: "Appointment rescheduled", description: `New time: ${format(newDateTime, "PPP 'at' p")}. The client has been notified.` })
+      toast({
+        title: "Appointment rescheduled",
+        description: `New time: ${formatAppointmentDateTime(newDateTime)}. The client has been notified.`,
+      })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Failed to reschedule"
       setRescheduleError(message)
@@ -583,7 +610,7 @@ export default function LawyerAppointmentsPage() {
                           <Calendar className="h-4 w-4 text-muted-foreground" />
                           <div>
                             <p className="text-xs text-muted-foreground">Date</p>
-                            <p className="text-sm font-medium">{new Date(appointment.scheduled_at).toLocaleDateString()}</p>
+                            <p className="text-sm font-medium">{formatAppointmentDate(appointment.scheduled_at)}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -591,7 +618,7 @@ export default function LawyerAppointmentsPage() {
                           <div>
                             <p className="text-xs text-muted-foreground">Time</p>
                             <p className="text-sm font-medium">
-                              {new Date(appointment.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ({appointment.duration_minutes}m)
+                              {formatAppointmentTime(appointment.scheduled_at)} ({appointment.duration_minutes}m)
                             </p>
                           </div>
                         </div>
@@ -679,7 +706,7 @@ export default function LawyerAppointmentsPage() {
                           <Calendar className="h-4 w-4 text-muted-foreground" />
                           <div>
                             <p className="text-xs text-muted-foreground">Date</p>
-                            <p className="text-sm font-medium">{new Date(appointment.scheduled_at).toLocaleDateString()}</p>
+                            <p className="text-sm font-medium">{formatAppointmentDate(appointment.scheduled_at)}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -687,7 +714,7 @@ export default function LawyerAppointmentsPage() {
                           <div>
                             <p className="text-xs text-muted-foreground">Time</p>
                             <p className="text-sm font-medium">
-                              {new Date(appointment.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ({appointment.duration_minutes}m)
+                              {formatAppointmentTime(appointment.scheduled_at)} ({appointment.duration_minutes}m)
                             </p>
                           </div>
                         </div>
@@ -758,7 +785,7 @@ export default function LawyerAppointmentsPage() {
                           <Calendar className="h-4 w-4 text-muted-foreground" />
                           <div>
                             <p className="text-xs text-muted-foreground">Date</p>
-                            <p className="text-sm font-medium">{new Date(appointment.scheduled_at).toLocaleDateString()}</p>
+                            <p className="text-sm font-medium">{formatAppointmentDate(appointment.scheduled_at)}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -766,7 +793,7 @@ export default function LawyerAppointmentsPage() {
                           <div>
                             <p className="text-xs text-muted-foreground">Time</p>
                             <p className="text-sm font-medium">
-                              {new Date(appointment.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ({appointment.duration_minutes}m)
+                              {formatAppointmentTime(appointment.scheduled_at)} ({appointment.duration_minutes}m)
                             </p>
                           </div>
                         </div>
@@ -784,20 +811,33 @@ export default function LawyerAppointmentsPage() {
                       <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${statusBadgeClass(appointment.status)}`}>
                         {appointmentStatusLabel(appointment.status)}
                       </span>
-                      {appointment.status === "rescheduled" && (
-                        <Badge variant="outline" className="text-indigo-600 border-indigo-300">
-                          <CalendarClock className="h-3 w-3 mr-1" />
-                          Rescheduled
-                        </Badge>
-                      )}
-                      <p className="text-[11px] text-muted-foreground">Workflow: {appointmentWorkflowPhase(appointment.status)}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Workflow: {appointmentWorkflowPhase(appointment.status)}
+                        {appointment.status === "rescheduled" && appointment.reschedule_count > 0
+                          ? ` (${appointment.reschedule_count}/3)`
+                          : ""}
+                      </p>
 
                       {/* Attended */}
                       {appointment.status === "attended" && (
-                        <div className="mt-1 text-right">
-                          <p className="text-xs text-green-700 dark:text-green-400 font-medium">Consultation held</p>
+                        <div className="mt-1 flex flex-col items-end gap-1.5">
                           {appointment.case.status === "closed" ? (
-                            <p className="text-xs text-muted-foreground">Case closed by client</p>
+                            <>
+                              <Badge className="bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-600">
+                                Case closed by client
+                              </Badge>
+                              <a href={`/lawyer/cases/${appointment.case.id}`} className="text-xs text-primary hover:underline">
+                                View case &rarr;
+                              </a>
+                            </>
+                          ) : appointment.case.status === "pending_completion" ? (
+                            <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200 border border-purple-200 dark:border-purple-800">
+                              Completion requested
+                            </Badge>
+                          ) : appointment.case.status === "completed" ? (
+                            <Badge className="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200 border border-green-200 dark:border-green-800">
+                              Case completed
+                            </Badge>
                           ) : (
                             <a href={`/lawyer/cases/${appointment.case.id}`} className="text-xs text-primary hover:underline">
                               Go to Case &rarr; Request Case Completion

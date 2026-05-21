@@ -1,3 +1,4 @@
+import { APP_TIMEZONE } from "@/lib/datetime"
 import { APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 
 /** Calendar day key in local timezone (YYYY-MM-DD). */
@@ -30,6 +31,44 @@ export function slotsOverlap(
   aptEnd: Date,
 ): boolean {
   return !(slotEnd <= aptStart || slotStart >= aptEnd)
+}
+
+/** Minute-level slot key in app timezone (e.g. 2025-05-24T15:00) for comparing picks to stored times. */
+export function getAppointmentSlotMinuteKey(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso
+  if (Number.isNaN(d.getTime())) return ""
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: APP_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(d)
+      .filter((p) => p.type !== "literal")
+      .map((p) => [p.type, p.value]),
+  )
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+}
+
+/** True when the candidate start is the same calendar slot as the appointment's current time (PKT). */
+export function isSameAppointmentSlot(candidateStart: Date, currentScheduledAt: string): boolean {
+  const a = getAppointmentSlotMinuteKey(candidateStart)
+  const b = getAppointmentSlotMinuteKey(currentScheduledAt)
+  return Boolean(a && b && a === b)
+}
+
+/** Treat the appointment's current time as booked so reschedule UIs do not offer a no-op slot. */
+export function bookedSlotsIncludingCurrent(
+  booked: BookedAppointmentSlot[],
+  currentScheduledAt: string,
+  durationMinutes: number,
+): BookedAppointmentSlot[] {
+  if (!currentScheduledAt) return booked
+  return [...booked, { scheduled_at: currentScheduledAt, duration_minutes: durationMinutes }]
 }
 
 export function buildSlotTimes(

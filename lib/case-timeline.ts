@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { formatAppointmentDateTime } from "@/lib/datetime"
 
 /** Stable codes for UI / filtering — append-only. */
 export const CaseTimelineEventType = {
@@ -59,7 +60,7 @@ export function caseTimelineEventDetail(
   const m = metadata ?? {}
   if (eventType === CaseTimelineEventType.CONSULTATION_REQUESTED && typeof m.scheduled_at === "string") {
     try {
-      return new Date(m.scheduled_at).toLocaleString()
+      return formatAppointmentDateTime(m.scheduled_at as string)
     } catch {
       return null
     }

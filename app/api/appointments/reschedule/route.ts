@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { notifyAppointmentUpdate } from "@/lib/notifications"
+import { isSameAppointmentSlot } from "@/lib/appointments/slot-availability"
 import { APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000
@@ -84,6 +85,16 @@ export async function POST(req: NextRequest) {
     if (row.reschedule_count >= 3) {
       return NextResponse.json(
         { error: "Maximum reschedules (3) reached for this appointment" },
+        { status: 400 },
+      )
+    }
+
+    if (isSameAppointmentSlot(newTime, row.scheduled_at)) {
+      return NextResponse.json(
+        {
+          error:
+            "Choose a different date or time. This appointment is already scheduled for that slot.",
+        },
         { status: 400 },
       )
     }

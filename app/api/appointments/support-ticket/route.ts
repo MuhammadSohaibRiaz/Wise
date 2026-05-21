@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { formatAppointmentDateTime } from "@/lib/datetime"
 import { sendEmail, buildEmailHtml, escapeHtml } from "@/lib/email"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 
@@ -130,10 +131,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Send email to support
-    const scheduledAtFormatted = new Date(row.scheduled_at).toLocaleString("en-US", {
-      dateStyle: "full",
-      timeStyle: "short",
-    })
+    const scheduledAtFormatted = formatAppointmentDateTime(row.scheduled_at)
 
     const safeUserName = escapeHtml(userName)
     const safeUserEmail = escapeHtml(userEmail)

@@ -7,6 +7,7 @@ import { format, isPast, startOfDay, addDays } from "date-fns"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, AlertCircle, Calendar, Clock, FileText, CreditCard, CheckCircle2, XCircle, CalendarClock, MessageSquare } from "lucide-react"
@@ -14,7 +15,9 @@ import { appointmentStatusLabel, appointmentWorkflowPhase, APPOINTMENT_SLOT_BLOC
 import { ConsultationHeldDialog } from "@/components/appointments/consultation-held-dialog"
 import { ScheduledConsultationActions } from "@/components/appointments/scheduled-consultation-actions"
 import { formatRescheduleModalHint } from "@/lib/appointments/reschedule-label"
+import { formatAppointmentDate, formatAppointmentDateTime, formatAppointmentTime } from "@/lib/datetime"
 import {
+  bookedSlotsIncludingCurrent,
   getAvailableSlotsForDay,
   getFullyBookedDateStrings,
   toLocalDateString,
@@ -506,10 +509,15 @@ function ClientAppointmentsContent() {
           .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
           .neq("id", rescheduleTarget.id)
 
+        const durationMinutes = rescheduleTarget.duration_minutes || 60
         const slots = getAvailableSlotsForDay({
           date: rescheduleDate,
-          durationMinutes: rescheduleTarget.duration_minutes || 60,
-          booked: booked || [],
+          durationMinutes,
+          booked: bookedSlotsIncludingCurrent(
+            booked || [],
+            rescheduleTarget.scheduled_at,
+            durationMinutes,
+          ),
         })
         setRescheduleSlots(slots)
       } catch {
@@ -661,7 +669,10 @@ function ClientAppointmentsContent() {
       setRescheduleTarget(null)
       setRescheduleDate(undefined)
       setRescheduleTime("")
-      toast({ title: "Appointment rescheduled successfully", description: `New time: ${format(newDateTime, "PPP 'at' p")}` })
+      toast({
+        title: "Appointment rescheduled successfully",
+        description: `New time: ${formatAppointmentDateTime(newDateTime)}`,
+      })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Failed to reschedule"
       setRescheduleError(message)
@@ -826,7 +837,7 @@ function ClientAppointmentsContent() {
                       <Calendar className="h-4 w-4 text-muted-foreground" />
                       <div>
                         <p className="text-xs text-muted-foreground">Date</p>
-                        <p className="text-sm font-medium">{new Date(appointment.scheduled_at).toLocaleDateString()}</p>
+                        <p className="text-sm font-medium">{formatAppointmentDate(appointment.scheduled_at)}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -834,7 +845,7 @@ function ClientAppointmentsContent() {
                       <div>
                         <p className="text-xs text-muted-foreground">Time</p>
                         <p className="text-sm font-medium">
-                          {new Date(appointment.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}{" "}
+                          {formatAppointmentTime(appointment.scheduled_at)}{" "}
                           ({appointment.duration_minutes}m)
                         </p>
                       </div>
@@ -961,10 +972,11 @@ function ClientAppointmentsContent() {
 
                   {/* Attended */}
                   {appointment.status === "attended" && (
-                    <div className="text-right">
-                      <p className="text-xs text-green-700 dark:text-green-400 font-medium">Consultation held</p>
+                    <div className="text-right flex flex-col items-end gap-1.5">
                       {appointment.case.status === "closed" ? (
-                        <p className="mt-1 text-xs font-medium text-muted-foreground">Case closed</p>
+                        <Badge className="bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-600">
+                          Case closed
+                        </Badge>
                       ) : appointment.case.status === "pending_completion" ? (
                         <a href={`/client/cases/${appointment.case.id}`} className="block mt-1">
                           <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 dark:bg-purple-900/30 px-2.5 py-1 text-xs font-semibold text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-200 transition-colors">

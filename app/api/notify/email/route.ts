@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { authorizeNotifyEmailRequest } from "@/lib/api/authorize-notify-email"
+import { formatAppointmentDateTime } from "@/lib/datetime"
 import { sendEmail, buildEmailHtml, escapeHtml } from "@/lib/email"
 
 type EmailTemplate =
@@ -240,7 +241,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Recipient email not found" }, { status: 404 })
         }
 
-        const formattedTime = new_time ? new Date(new_time).toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" }) : "a new time"
+        const formattedTime = formatAppointmentDateTime(new_time) || "a new time"
         const appointmentsUrl = recipient_role === "lawyer" ? `${siteUrl}/lawyer/appointments` : `${siteUrl}/client/appointments`
         const safeActorName = escapeHtml(actor_name || "The other party")
         const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
