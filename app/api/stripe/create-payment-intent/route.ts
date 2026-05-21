@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { stripe } from "@/lib/stripe/config"
 import { createClient } from "@/lib/supabase/server"
+import { APP_CURRENCY_CODE } from "@/lib/currency"
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
     console.log("[Stripe API] User authenticated:", user.id)
 
     const body = await request.json()
-    const { appointmentId, amount, currency = "usd" } = body
+    const { appointmentId, amount, currency = APP_CURRENCY_CODE } = body
 
     console.log("[Stripe API] Request body:", { appointmentId, amount, currency })
 
@@ -157,4 +158,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 })
   }
 }
-

@@ -143,7 +143,7 @@ SELECT
   lp.id AS lawyer_id,
   ca.id AS case_id,
   FLOOR(random() * 1000 + 250),   -- 250–1250
-  'USD',
+  'PKR',
   (ARRAY['completed', 'pending', 'completed'])[ (floor(random() * 3) + 1)::int ],
   (ARRAY['credit_card', 'bank_transfer', 'credit_card'])[ (floor(random() * 3) + 1)::int ],
   'Legal services for ' || ca.case_type,

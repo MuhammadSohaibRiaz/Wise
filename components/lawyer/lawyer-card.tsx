@@ -5,6 +5,7 @@ import { Star, MapPin, Briefcase, Clock, Badge, Sparkles } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { formatConsultationFeeFrom } from "@/lib/currency"
 import { BookAppointmentModal } from "@/components/lawyer/book-appointment-modal"
 import { createClient } from "@/lib/supabase/client"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
@@ -162,8 +163,8 @@ export function LawyerCard({
         {/* Rate and CTA */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-xs text-muted-foreground">Hourly Rate</p>
-            <p className="text-lg font-bold text-foreground">${hourly_rate?.toFixed(2) || "0"}</p>
+            <p className="text-xs text-muted-foreground">Consultation Fee</p>
+            <p className="text-lg font-bold text-foreground">{formatConsultationFeeFrom(hourly_rate)}</p>
           </div>
           {availability_status === "available" && (
             <span className="inline-flex items-center rounded-full bg-green-500/10 px-3 py-1 text-xs font-medium text-green-700">

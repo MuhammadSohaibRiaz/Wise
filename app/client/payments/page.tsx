@@ -5,6 +5,7 @@ import type { Metadata } from "next"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { formatCurrency } from "@/lib/currency"
 import { Download, CreditCard, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
@@ -176,7 +177,7 @@ export default function PaymentsPage() {
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${stats.totalSpent.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{formatCurrency(stats.totalSpent)}</div>
             <p className="text-xs text-muted-foreground">All time</p>
           </CardContent>
         </Card>
@@ -187,7 +188,7 @@ export default function PaymentsPage() {
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${stats.pending.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{formatCurrency(stats.pending)}</div>
             <p className="text-xs text-muted-foreground">Awaiting payment</p>
           </CardContent>
         </Card>
@@ -248,7 +249,7 @@ export default function PaymentsPage() {
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <p className="text-lg font-bold">${payment.amount.toLocaleString()}</p>
+                      <p className="text-lg font-bold">{formatCurrency(payment.amount)}</p>
                     </div>
                     {payment.status === "completed" && (
                       <Button variant="outline" size="sm" className="gap-2">

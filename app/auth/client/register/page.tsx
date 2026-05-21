@@ -48,6 +48,10 @@ export default function ClientRegisterPage() {
     try {
       const supabase = createClient()
       const normalizedEmail = email.trim().toLowerCase()
+      const emailRedirectTo = new URL(
+        process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/auth/callback`
+      )
+      emailRedirectTo.searchParams.set("next", "/auth/client/sign-in")
 
       const { error: connectionError } = await supabase.from("profiles").select("id").limit(1)
 
@@ -82,8 +86,7 @@ export default function ClientRegisterPage() {
             last_name: lastName,
             user_type: "client",
           },
-          emailRedirectTo:
-            process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/auth/callback`,
+          emailRedirectTo: emailRedirectTo.toString(),
         },
       })
 
@@ -105,10 +108,10 @@ export default function ClientRegisterPage() {
       }
 
       if (data.user) {
-        showSuccess("Registration successful! Redirecting to sign in...")
+        showSuccess("Account created. Please check your email to confirm your account, then sign in.")
         setTimeout(() => {
           router.push("/auth/client/sign-in")
-        }, 800)
+        }, 1200)
       }
     } catch (err: any) {
       console.error("Registration error:", err)

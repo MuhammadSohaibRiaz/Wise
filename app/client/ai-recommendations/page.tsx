@@ -121,7 +121,7 @@ export default function AIRecommendationsPage() {
 
                             <div className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
-                                    <Label htmlFor="budget">Budget Range ($)</Label>
+                                    <Label htmlFor="budget">Budget Range (PKR)</Label>
                                     <Input
                                         id="budget"
                                         type="text"

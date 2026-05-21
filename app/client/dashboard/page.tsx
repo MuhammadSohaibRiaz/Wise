@@ -17,6 +17,7 @@ import {
   type PendingReviewCase,
 } from "@/components/client/pending-case-review-dialog"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
+import { formatCurrency } from "@/lib/currency"
 
 interface DashboardStats {
   activeConsultations: number
@@ -371,7 +372,7 @@ export default function ClientDashboardPage() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${stats.pendingPayments.toLocaleString()}</div>
+              <div className="text-2xl font-bold">{formatCurrency(stats.pendingPayments)}</div>
               <p className="text-xs text-muted-foreground">Due now</p>
             </CardContent>
           </Card>
@@ -408,7 +409,7 @@ export default function ClientDashboardPage() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${stats.totalSpent.toLocaleString()}</div>
+              <div className="text-2xl font-bold">{formatCurrency(stats.totalSpent)}</div>
               <p className="text-xs text-muted-foreground">All time</p>
             </CardContent>
           </Card>

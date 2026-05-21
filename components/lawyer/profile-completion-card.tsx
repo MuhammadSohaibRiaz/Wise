@@ -35,7 +35,7 @@ export function ProfileCompletionCard() {
         { label: 'Contact Number', key: 'phone', done: !!profile.phone },
         { label: 'Professional Bio', key: 'bio', done: !!profile.bio },
         { label: 'Specializations', key: 'specializations', done: lawyer?.specializations?.length > 0 },
-        { label: 'Hourly Rate', key: 'hourly_rate', done: !!lawyer?.hourly_rate },
+        { label: 'Consultation Fee', key: 'hourly_rate', done: !!lawyer?.hourly_rate },
         { label: 'Experience', key: 'years_of_experience', done: !!lawyer?.years_of_experience },
         { label: 'Bar License #', key: 'bar_license_number', done: !!lawyer?.bar_license_number },
         { label: 'Verification Doc', key: 'license_file_url', done: !!lawyer?.license_file_url },

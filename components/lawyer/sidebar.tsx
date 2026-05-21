@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { useUnreadMessages } from "@/hooks/use-unread-messages"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
+import { formatCurrency } from "@/lib/currency"
 
 interface LawyerSidebarProps {
     onNavigate?: () => void
@@ -203,7 +204,7 @@ export function LawyerSidebar({ onNavigate }: LawyerSidebarProps) {
                                 <TrendingUp className="h-4 w-4 text-green-600" />
                                 <span className="text-sm">Total Earnings</span>
                             </div>
-                            <span className="font-bold text-lg">${stats.totalEarnings.toLocaleString()}</span>
+                            <span className="font-bold text-lg">{formatCurrency(stats.totalEarnings)}</span>
                         </div>
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">

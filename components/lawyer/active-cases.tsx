@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Clock, MessageSquare, Loader2 } from "lucide-react"
+import { formatHourlyRate } from "@/lib/currency"
 
 interface ActiveCase {
   id: string
@@ -240,7 +241,7 @@ export function ActiveCases({ hideTitle = false }: ActiveCasesProps) {
 
                 <div className="flex md:flex-col items-center md:items-end justify-between md:justify-start w-full md:w-auto gap-3">
                   {caseItem.hourly_rate && (
-                    <p className="font-semibold text-primary text-sm md:text-base">${caseItem.hourly_rate}/hr</p>
+                    <p className="font-semibold text-primary text-sm md:text-base">{formatHourlyRate(caseItem.hourly_rate)}</p>
                   )}
                   <Button
                     size="sm"

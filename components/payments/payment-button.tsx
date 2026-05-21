@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2, CreditCard } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
+import { APP_CURRENCY, APP_CURRENCY_CODE, formatCurrency } from "@/lib/currency"
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "")
 
@@ -16,7 +17,7 @@ interface PaymentButtonProps {
   onPaymentSuccess?: () => void
 }
 
-export function PaymentButton({ appointmentId, amount, currency = "USD", onPaymentSuccess }: PaymentButtonProps) {
+export function PaymentButton({ appointmentId, amount, currency = APP_CURRENCY, onPaymentSuccess }: PaymentButtonProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const { toast } = useToast()
   const supabase = createClient()
@@ -34,7 +35,7 @@ export function PaymentButton({ appointmentId, amount, currency = "USD", onPayme
         body: JSON.stringify({
           appointmentId,
           amount,
-          currency: currency.toLowerCase(),
+          currency: (currency || APP_CURRENCY_CODE).toLowerCase(),
         }),
       })
 
@@ -63,7 +64,7 @@ export function PaymentButton({ appointmentId, amount, currency = "USD", onPayme
         body: JSON.stringify({
           appointmentId,
           amount,
-          currency: currency.toLowerCase(),
+          currency: (currency || APP_CURRENCY_CODE).toLowerCase(),
           paymentId,
         }),
       })
@@ -104,10 +105,9 @@ export function PaymentButton({ appointmentId, amount, currency = "USD", onPayme
       ) : (
         <>
           <CreditCard className="h-4 w-4" />
-          Pay ${amount.toFixed(2)}
+          Pay {formatCurrency(amount)}
         </>
       )}
     </Button>
   )
 }
-

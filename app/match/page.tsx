@@ -38,7 +38,7 @@ function filtersFromSearchParams(searchParams: URLSearchParams): Partial<FilterS
   const location = searchParams.get("location") || ""
   const search = searchParams.get("q") || searchParams.get("search") || ""
   const minRating = Number.parseFloat(searchParams.get("minRating") || "0") || 0
-  const maxRate = Number.parseFloat(searchParams.get("maxRate") || "500") || 500
+  const maxRate = Number.parseFloat(searchParams.get("maxRate") || "50000") || 50000
   const out: Partial<FilterState> = {
     location: location ? decodeURIComponent(location) : "",
     search: search ? decodeURIComponent(search) : "",
@@ -64,7 +64,7 @@ function MatchPageInner() {
     search: urlFilters.search ?? "",
     specializations: urlFilters.specializations ?? [],
     minRating: urlFilters.minRating ?? 0,
-    maxRate: urlFilters.maxRate ?? 500,
+    maxRate: urlFilters.maxRate ?? 50000,
     availability: null,
     location: urlFilters.location ?? "",
   })
@@ -237,7 +237,7 @@ function MatchPageInner() {
       result = result.filter((lawyer) => lawyer.average_rating >= filters.minRating)
     }
 
-    if (filters.maxRate < 500) {
+    if (filters.maxRate < 50000) {
       result = result.filter((lawyer) => lawyer.hourly_rate <= filters.maxRate)
     }
 
@@ -253,7 +253,7 @@ function MatchPageInner() {
     urlFilters.location ||
     urlFilters.search ||
     (urlFilters.minRating ?? 0) > 0 ||
-    (urlFilters.maxRate ?? 500) < 500
+    (urlFilters.maxRate ?? 50000) < 50000
 
   return (
     <>

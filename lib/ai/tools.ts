@@ -39,7 +39,7 @@ export const tools = {
 
         if (lawyerProfile) {
           if (!lawyerProfile.specializations || lawyerProfile.specializations.length === 0) missingFields.push('Specializations');
-          if (!lawyerProfile.hourly_rate) missingFields.push('Hourly Rate');
+          if (!lawyerProfile.hourly_rate) missingFields.push('Consultation Fee');
           if (!lawyerProfile.years_of_experience) missingFields.push('Years of Experience');
           if (!lawyerProfile.bar_license_number) missingFields.push('Bar License Number');
         } else {

@@ -36,6 +36,7 @@ import { CaseProgressStepper } from "@/components/cases/case-progress-stepper"
 import { CaseActivityFeed } from "@/components/cases/case-activity-feed"
 import { AiCaseSummary } from "@/components/cases/ai-case-summary"
 import { CaseDocumentsPanel } from "@/components/cases/case-documents-panel"
+import { formatCurrency, formatHourlyRate } from "@/lib/currency"
 
 interface CaseDetail {
   id: string
@@ -600,8 +601,8 @@ export default function ClientCaseDetailPage() {
                 <div className="flex items-center gap-2">
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
                   <div>
-                    <p className="text-xs text-muted-foreground">Hourly Rate</p>
-                    <p className="text-sm font-medium">${caseDetail.hourly_rate}/hr</p>
+                    <p className="text-xs text-muted-foreground">Consultation Fee</p>
+                    <p className="text-sm font-medium">{formatHourlyRate(caseDetail.hourly_rate)}</p>
                   </div>
                 </div>
               )}
@@ -613,10 +614,10 @@ export default function ClientCaseDetailPage() {
                     <p className="text-xs text-muted-foreground">Budget</p>
                     <p className="text-sm font-medium">
                       {caseDetail.budget_min && caseDetail.budget_max
-                        ? `$${caseDetail.budget_min} - $${caseDetail.budget_max}`
+                        ? `${formatCurrency(caseDetail.budget_min)} - ${formatCurrency(caseDetail.budget_max)}`
                         : caseDetail.budget_min
-                          ? `From $${caseDetail.budget_min}`
-                          : `Up to $${caseDetail.budget_max}`}
+                          ? `From ${formatCurrency(caseDetail.budget_min)}`
+                          : `Up to ${formatCurrency(caseDetail.budget_max)}`}
                     </p>
                   </div>
                 </div>

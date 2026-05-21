@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { formatCurrency } from "@/lib/currency"
 import { Input } from "@/components/ui/input"
 
 const SPECIALIZATIONS = [
@@ -45,7 +46,7 @@ export function LawyerFilters({ onFilterChange, isLoading, initialFilters }: Law
     search: initialFilters?.search ?? "",
     specializations: initialFilters?.specializations ?? [],
     minRating: initialFilters?.minRating ?? 0,
-    maxRate: initialFilters?.maxRate ?? 500,
+    maxRate: initialFilters?.maxRate ?? 50000,
     availability: initialFilters?.availability ?? null,
     location: initialFilters?.location ?? "",
   }))
@@ -79,7 +80,7 @@ export function LawyerFilters({ onFilterChange, isLoading, initialFilters }: Law
   }
 
   const handleRateChange = (value: string) => {
-    const newFilters = { ...filters, maxRate: Number.parseFloat(value) || 500 }
+    const newFilters = { ...filters, maxRate: Number.parseFloat(value) || 50000 }
     setFilters(newFilters)
     onFilterChange(newFilters)
   }
@@ -101,7 +102,7 @@ export function LawyerFilters({ onFilterChange, isLoading, initialFilters }: Law
       search: "",
       specializations: [],
       minRating: 0,
-      maxRate: 500,
+      maxRate: 50000,
       availability: null,
       location: "",
     }
@@ -113,7 +114,7 @@ export function LawyerFilters({ onFilterChange, isLoading, initialFilters }: Law
     (filters.search ? 1 : 0) +
     filters.specializations.length +
     (filters.minRating > 0 ? 1 : 0) +
-    (filters.maxRate < 500 ? 1 : 0) +
+    (filters.maxRate < 50000 ? 1 : 0) +
     (filters.availability ? 1 : 0) +
     (filters.location ? 1 : 0)
 
@@ -196,21 +197,21 @@ export function LawyerFilters({ onFilterChange, isLoading, initialFilters }: Law
         </select>
       </div>
 
-      {/* Max Hourly Rate */}
+      {/* Max Consultation Fee */}
       <div className="space-y-2">
-        <label className="text-sm font-medium">Max Hourly Rate</label>
+        <label className="text-sm font-medium">Max Consultation Fee</label>
         <div className="flex items-center gap-2">
           <input
             type="range"
-            min="50"
-            max="500"
-            step="50"
+            min="500"
+            max="50000"
+            step="500"
             value={filters.maxRate}
             onChange={(e) => handleRateChange(e.target.value)}
             disabled={isLoading}
             className="flex-1"
           />
-          <span className="text-sm font-semibold w-20 text-right">${filters.maxRate}</span>
+          <span className="text-sm font-semibold w-24 text-right">{formatCurrency(filters.maxRate)}</span>
         </div>
       </div>
 

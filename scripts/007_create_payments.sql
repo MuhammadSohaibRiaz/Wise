@@ -5,7 +5,7 @@ create table if not exists public.payments (
   client_id uuid not null references public.profiles(id) on delete cascade,
   lawyer_id uuid not null references public.profiles(id) on delete cascade,
   amount decimal(12, 2) not null,
-  currency text default 'USD',
+  currency text default 'PKR',
   status text not null default 'pending' check (status in ('pending', 'completed', 'failed', 'refunded')),
   stripe_payment_id text,
   payment_method text,

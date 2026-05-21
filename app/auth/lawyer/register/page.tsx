@@ -68,6 +68,10 @@ export default function LawyerRegisterPage() {
     try {
       const supabase = createClient()
       const normalizedEmail = email.trim().toLowerCase()
+      const emailRedirectTo = new URL(
+        process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/auth/callback`
+      )
+      emailRedirectTo.searchParams.set("next", "/auth/lawyer/sign-in")
 
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: normalizedEmail,
@@ -80,8 +84,7 @@ export default function LawyerRegisterPage() {
             bar_license: barLicense,
             practice_area: practiceArea,
           },
-          emailRedirectTo:
-            process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/auth/callback`,
+          emailRedirectTo: emailRedirectTo.toString(),
         },
       })
 
@@ -102,7 +105,7 @@ export default function LawyerRegisterPage() {
 
         if (uploadError) {
           console.error("Storage upload error:", uploadError)
-          showSuccess("Account created, but license upload failed. You can upload it later from your profile.")
+          showSuccess("Account created, but license upload failed. Please confirm your email, then upload it from your profile.")
         } else {
           const { data: { publicUrl } } = supabase.storage
             .from("verifications")
@@ -119,10 +122,10 @@ export default function LawyerRegisterPage() {
             })
             .eq("id", data.user.id)
 
-          showSuccess("Registration successful! Your account is now pending admin verification.")
+          showSuccess("Account created. Please check your email to confirm it. Your license is pending admin verification.")
         }
 
-        setTimeout(() => router.push("/auth/lawyer/sign-in"), 1000)
+        setTimeout(() => router.push("/auth/lawyer/sign-in"), 1200)
       }
     } catch (err: any) {
       showError(err.message || "An unexpected error occurred.")

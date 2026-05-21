@@ -11,7 +11,7 @@ const workflow = [
   },
   {
     title: "Choose the right lawyer",
-    description: "Compare verified lawyers by specialization, rating, hourly rate, and match reason before booking.",
+    description: "Compare verified lawyers by specialization, rating, consultation fee, and match reason before booking.",
     image: "/lawyers-team-portrait.jpg",
     imagePosition: "center top",
     icon: Users,

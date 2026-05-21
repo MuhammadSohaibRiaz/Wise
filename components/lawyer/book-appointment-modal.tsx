@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, Calendar, Clock, FileText, AlertCircle, CheckCircle } from "lucide-react"
 import "react-day-picker/style.css"
+import { formatCurrency, formatConsultationFeeBase } from "@/lib/currency"
 
 interface BookAppointmentModalProps {
   open: boolean
@@ -245,11 +246,11 @@ export function BookAppointmentModal({
       return
     }
 
-    // Validate hourly rate
+    // Validate consultation fee
     if (!hourlyRate || hourlyRate <= 0) {
       toast({
         title: "Error",
-        description: "Lawyer's hourly rate is not set. Please contact the lawyer directly.",
+        description: "Lawyer's consultation fee is not set. Please contact the lawyer directly.",
         variant: "destructive",
       })
       return
@@ -511,12 +512,16 @@ export function BookAppointmentModal({
   const calculateCost = () => {
     const rate = Number(hourlyRate) || 0
     if (rate <= 0) {
-      console.warn("[v0] Invalid hourly rate:", hourlyRate)
+      console.warn("[v0] Invalid consultation fee:", hourlyRate)
       return 0
     }
     const cost = (duration / 60) * rate
-    console.log("[v0] Cost calculation:", { hourlyRate: rate, duration, cost })
+    console.log("[v0] Cost calculation:", { consultationFee: rate, duration, cost })
     return cost
+  }
+
+  const calculateDurationFee = (minutes: 30 | 60 | 90) => {
+    return ((Number(hourlyRate) || 0) * minutes) / 60
   }
 
   const isDateDisabled = (date: Date) => {
@@ -623,10 +628,11 @@ export function BookAppointmentModal({
                           : "border-input bg-background text-foreground hover:border-primary/50"
                       }`}
                     >
-                      {d}m
+                      <span>{d} min &bull; {formatCurrency(calculateDurationFee(d as 30 | 60 | 90))}</span>
                     </button>
                   ))}
                 </div>
+                <p className="mt-2 text-xs text-muted-foreground">Fee is calculated based on consultation duration.</p>
               </div>
 
               {selectedDate && (
@@ -790,8 +796,8 @@ export function BookAppointmentModal({
                 </p>
                 <p className="text-sm text-muted-foreground">{duration} minutes</p>
                 <p className="text-sm font-medium">
-                  Est. Cost: ${calculateCost().toFixed(2)}
-                  {hourlyRate > 0 ? ` (${hourlyRate.toFixed(2)}/hr × ${(duration / 60).toFixed(1)}hr)` : ""}
+                  Est. Cost: {formatCurrency(calculateCost())}
+                  {hourlyRate > 0 ? ` (${formatConsultationFeeBase(hourlyRate)} x ${(duration / 60).toFixed(1)})` : ""}
                 </p>
               </div>
 
@@ -835,7 +841,7 @@ export function BookAppointmentModal({
                 </div>
                 <div className="border-t border-border pt-3">
                   <p className="text-xs text-muted-foreground">Estimated Cost</p>
-                  <p className="text-lg font-bold text-primary">${calculateCost().toFixed(2)}</p>
+                  <p className="text-lg font-bold text-primary">{formatCurrency(calculateCost())}</p>
                 </div>
               </div>
 

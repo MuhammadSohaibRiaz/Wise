@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { stripe } from "@/lib/stripe/config"
 import { createClient } from "@/lib/supabase/server"
+import { APP_CURRENCY_CODE } from "@/lib/currency"
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { appointmentId, amount, currency = "usd", paymentId } = body
+    const { appointmentId, amount, currency = APP_CURRENCY_CODE, paymentId } = body
 
     if (!appointmentId || !amount || !paymentId) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
@@ -95,4 +96,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to create checkout session" }, { status: 500 })
   }
 }
-

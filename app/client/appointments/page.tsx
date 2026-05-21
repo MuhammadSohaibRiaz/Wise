@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, AlertCircle, Calendar, Clock, FileText, CreditCard, CheckCircle2, XCircle, CalendarClock, MessageSquare } from "lucide-react"
 import { appointmentStatusLabel, appointmentWorkflowPhase, APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 import { PaymentButton } from "@/components/payments/payment-button"
+import { formatConsultationFeeBase, formatCurrency } from "@/lib/currency"
 import {
   Dialog,
   DialogContent,
@@ -705,11 +706,11 @@ export default function ClientAppointmentsPage() {
                               <div className="flex justify-between text-sm">
                                 <span className="text-muted-foreground">Consultation Fee:</span>
                                 <span className="font-semibold">
-                                  ${(((appointment.case.hourly_rate || 0) * appointment.duration_minutes) / 60).toFixed(2)}
+                                  {formatCurrency(((appointment.case.hourly_rate || 0) * appointment.duration_minutes) / 60)}
                                 </span>
                               </div>
                               <div className="mt-2 text-xs text-muted-foreground">
-                                {appointment.duration_minutes} minutes @ ${appointment.case.hourly_rate || 0}/hour
+                                {appointment.duration_minutes} minutes based on {formatConsultationFeeBase(appointment.case.hourly_rate || 0)}
                               </div>
                             </div>
                             <PaymentButton

@@ -3,7 +3,7 @@ import type { Metadata } from "next"
 export const metadata: Metadata = {
   title: "Find Your Perfect Lawyer | WiseCase",
   description:
-    "Search through our network of verified lawyers by specialization, location, rating, and hourly rate. Book a consultation today.",
+    "Search through our network of verified lawyers by specialization, location, rating, and consultation fee. Book a consultation today.",
   keywords: [
     "lawyer search",
     "find lawyer",
@@ -34,4 +34,3 @@ export default function MatchLayout({
 }) {
   return <>{children}</>
 }
-

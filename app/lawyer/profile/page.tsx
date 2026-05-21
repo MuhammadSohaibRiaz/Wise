@@ -825,8 +825,8 @@ export default function LawyerProfilePage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Rates & Availability</CardTitle>
-              <CardDescription>Set your hourly rate and availability</CardDescription>
+              <CardTitle>Fees & Availability</CardTitle>
+              <CardDescription>Set your consultation fee and availability</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
@@ -841,15 +841,18 @@ export default function LawyerProfilePage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Hourly Rate ($)</label>
+                  <label className="text-sm font-medium">Consultation Fee (60 min base)</label>
                   <Input
                     type="number"
                     value={formData.hourlyRate}
                     onChange={(e) => setFormData({ ...formData, hourlyRate: e.target.value })}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    This is your fee for a standard 60-minute consultation. Shorter/longer sessions are calculated proportionally.
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Min. Consultation Hours</label>
+                  <label className="text-sm font-medium">Minimum Consultation Duration (hours)</label>
                   <Input
                     type="number"
                     min="1"

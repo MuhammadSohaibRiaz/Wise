@@ -3,13 +3,19 @@
 import { Suspense, useState } from "react"
 import { motion } from "framer-motion"
 import { BookOpen, X } from "lucide-react"
+import { usePathname } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { LegalRagAssistant } from "./legal-rag-assistant"
 
 export function LegalRagLauncher() {
+  const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
+
+  if (pathname?.startsWith("/admin")) {
+    return null
+  }
 
   return (
     <div className="fixed bottom-4 right-4 z-50 md:bottom-6 md:right-6">

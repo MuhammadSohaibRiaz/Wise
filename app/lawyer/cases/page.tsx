@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card"
 import { Loader2, AlertCircle, Briefcase, MessageSquare, Eye, Calendar, User, FileText } from "lucide-react"
 import { LawyerDashboardHeader } from "@/components/lawyer/dashboard-header"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { formatHourlyRate } from "@/lib/currency"
 // import { getOpenDisputeCaseIds } from "@/lib/case-disputes"
 
 interface Case {
@@ -348,8 +349,8 @@ export default function LawyerCasesPage() {
                                 <div className="flex items-center gap-2">
                                   <FileText className="h-4 w-4 text-muted-foreground" />
                                   <div>
-                                    <p className="text-xs text-muted-foreground">Hourly Rate</p>
-                                    <p className="text-sm font-medium">${caseItem.hourly_rate}/hr</p>
+                                    <p className="text-xs text-muted-foreground">Consultation Fee</p>
+                                    <p className="text-sm font-medium">{formatHourlyRate(caseItem.hourly_rate)}</p>
                                   </div>
                                 </div>
                               )}

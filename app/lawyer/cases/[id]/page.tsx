@@ -35,6 +35,7 @@ import { CaseProgressStepper } from "@/components/cases/case-progress-stepper"
 import { CaseActivityFeed } from "@/components/cases/case-activity-feed"
 import { AiCaseSummary } from "@/components/cases/ai-case-summary"
 import { CaseDocumentsPanel } from "@/components/cases/case-documents-panel"
+import { formatCurrency, formatHourlyRate } from "@/lib/currency"
 
 interface CaseDetail {
   id: string
@@ -714,8 +715,8 @@ export default function LawyerCaseDetailPage() {
                         <div className="flex items-center gap-2">
                           <DollarSign className="h-4 w-4 text-muted-foreground" />
                           <div>
-                            <p className="text-xs text-muted-foreground">Hourly Rate</p>
-                            <p className="text-sm font-medium">${caseDetail.hourly_rate}/hr</p>
+                            <p className="text-xs text-muted-foreground">Consultation Fee</p>
+                            <p className="text-sm font-medium">{formatHourlyRate(caseDetail.hourly_rate)}</p>
                           </div>
                         </div>
                       )}
@@ -727,10 +728,10 @@ export default function LawyerCaseDetailPage() {
                             <p className="text-xs text-muted-foreground">Budget</p>
                             <p className="text-sm font-medium">
                               {caseDetail.budget_min && caseDetail.budget_max
-                                ? `$${caseDetail.budget_min} - $${caseDetail.budget_max}`
+                                ? `${formatCurrency(caseDetail.budget_min)} - ${formatCurrency(caseDetail.budget_max)}`
                                 : caseDetail.budget_min
-                                  ? `From $${caseDetail.budget_min}`
-                                  : `Up to $${caseDetail.budget_max}`}
+                                  ? `From ${formatCurrency(caseDetail.budget_min)}`
+                                  : `Up to ${formatCurrency(caseDetail.budget_max)}`}
                             </p>
                           </div>
                         </div>
@@ -836,18 +837,18 @@ export default function LawyerCaseDetailPage() {
                       <CardContent className="space-y-4">
                         <div className="grid grid-cols-2 gap-4 border-b pb-4">
                           <div>
-                            <p className="text-[10px] font-bold text-muted-foreground uppercase">Rate</p>
-                            <p className="text-sm font-medium">${caseDetail.hourly_rate || 0}/hr</p>
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase">Consultation Fee</p>
+                            <p className="text-sm font-medium">{formatHourlyRate(caseDetail.hourly_rate || 0)}</p>
                           </div>
                           <div>
                             <p className="text-[10px] font-bold text-muted-foreground uppercase">Total Billed</p>
-                            <p className="text-sm font-bold text-green-600">${calculateTotalBilled().toFixed(2)}</p>
+                            <p className="text-sm font-bold text-green-600">{formatCurrency(calculateTotalBilled())}</p>
                           </div>
                         </div>
                         <div className="flex justify-between items-center text-xs">
-                          <span className="text-muted-foreground">Confirmed Hours:</span>
+                          <span className="text-muted-foreground">Confirmed Duration:</span>
                           <span className="font-medium">
-                            {(appointments.filter((a) => isAppointmentBillable(a.status)).reduce((acc, a) => acc + a.duration_minutes, 0) / 60).toFixed(1)} hrs
+                            {(appointments.filter((a) => isAppointmentBillable(a.status)).reduce((acc, a) => acc + a.duration_minutes, 0) / 60).toFixed(1)} hours
                           </span>
                         </div>
                         <Button variant="outline" size="sm" className="w-full text-xs" disabled>

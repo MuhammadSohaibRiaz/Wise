@@ -27,10 +27,13 @@ export default function ForgotPasswordPage() {
       const supabase = createClient()
 
       const normalizedEmail = email.trim().toLowerCase()
+      const redirectTo = new URL(
+        process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/auth/callback`
+      )
+      redirectTo.searchParams.set("next", "/auth/reset-password")
+
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL
-          ? `${process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL}/auth/reset-password`
-          : `${window.location.origin}/auth/reset-password`,
+        redirectTo: redirectTo.toString(),
       })
 
       if (resetError) {
@@ -109,7 +112,7 @@ export default function ForgotPasswordPage() {
             <Link href="/auth/client/sign-in" className="text-blue-600 hover:underline">
               Client Sign In
             </Link>
-            <span>•</span>
+            <span>&bull;</span>
             <Link href="/auth/lawyer/sign-in" className="text-blue-600 hover:underline">
               Lawyer Sign In
             </Link>

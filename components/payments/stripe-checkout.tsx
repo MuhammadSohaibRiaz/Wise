@@ -8,6 +8,7 @@ import { Loader2, CreditCard } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { APP_CURRENCY, APP_CURRENCY_CODE, formatCurrency } from "@/lib/currency"
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "")
 
@@ -18,7 +19,7 @@ interface StripeCheckoutProps {
   onPaymentSuccess?: () => void
 }
 
-function CheckoutForm({ appointmentId, amount, currency = "USD", onPaymentSuccess }: StripeCheckoutProps) {
+function CheckoutForm({ appointmentId, amount, currency = APP_CURRENCY, onPaymentSuccess }: StripeCheckoutProps) {
   const stripe = useStripe()
   const elements = useElements()
   const [isProcessing, setIsProcessing] = useState(false)
@@ -37,7 +38,7 @@ function CheckoutForm({ appointmentId, amount, currency = "USD", onPaymentSucces
           body: JSON.stringify({
             appointmentId,
             amount,
-            currency: currency.toLowerCase(),
+            currency: (currency || APP_CURRENCY_CODE).toLowerCase(),
           }),
         })
 
@@ -162,7 +163,7 @@ function CheckoutForm({ appointmentId, amount, currency = "USD", onPaymentSucces
         ) : (
           <>
             <CreditCard className="h-4 w-4" />
-            Pay ${amount.toFixed(2)}
+            Pay {formatCurrency(amount)}
           </>
         )}
       </Button>
@@ -170,11 +171,11 @@ function CheckoutForm({ appointmentId, amount, currency = "USD", onPaymentSucces
   )
 }
 
-export function StripeCheckout({ appointmentId, amount, currency = "USD", onPaymentSuccess }: StripeCheckoutProps) {
+export function StripeCheckout({ appointmentId, amount, currency = APP_CURRENCY, onPaymentSuccess }: StripeCheckoutProps) {
   const options: StripeElementsOptions = {
     mode: "payment",
     amount: Math.round(amount * 100),
-    currency: currency.toLowerCase(),
+    currency: (currency || APP_CURRENCY_CODE).toLowerCase(),
     appearance: {
       theme: "stripe",
     },
@@ -184,7 +185,7 @@ export function StripeCheckout({ appointmentId, amount, currency = "USD", onPaym
     <Card>
       <CardHeader>
         <CardTitle>Complete Payment</CardTitle>
-        <CardDescription>Total amount: ${amount.toFixed(2)} {currency}</CardDescription>
+        <CardDescription>Total amount: {formatCurrency(amount)}</CardDescription>
       </CardHeader>
       <CardContent>
         <Elements stripe={stripePromise} options={options}>
@@ -199,4 +200,3 @@ export function StripeCheckout({ appointmentId, amount, currency = "USD", onPaym
     </Card>
   )
 }
-

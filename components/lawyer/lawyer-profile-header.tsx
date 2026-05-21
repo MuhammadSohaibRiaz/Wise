@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { BookAppointmentModal } from "@/components/lawyer/book-appointment-modal"
 import { createClient } from "@/lib/supabase/client"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
+import { formatConsultationFeeBase, formatCurrency } from "@/lib/currency"
 
 interface LawyerProfileHeaderProps {
   id: string
@@ -111,6 +112,12 @@ export function LawyerProfileHeader({
             {/* Bio */}
             {bio && <p className="text-base text-muted-foreground mb-4 line-clamp-3">{bio}</p>}
 
+            {hourly_rate > 0 && (
+              <div className="mb-4 inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+                Consultation Fee: {formatConsultationFeeBase(hourly_rate)}
+              </div>
+            )}
+
             {/* Quick Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="bg-background rounded-lg p-3">
@@ -172,7 +179,7 @@ export function LawyerProfileHeader({
                       <Star className="h-4 w-4 text-green-500" />
                       <span className="text-xs text-muted-foreground">Total Earnings</span>
                     </div>
-                    <p className="text-lg font-bold">${total_earnings.toLocaleString()}</p>
+                    <p className="text-lg font-bold">{formatCurrency(total_earnings)}</p>
                   </div>
                 )}
               </div>

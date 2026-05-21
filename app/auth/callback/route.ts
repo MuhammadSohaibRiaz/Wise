@@ -4,6 +4,14 @@ import { NextResponse, type NextRequest } from "next/server"
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get("code")
+  const requestedNext = requestUrl.searchParams.get("next")
+
+  const safeNext =
+    requestedNext === "/auth/client/sign-in" || requestedNext === "/auth/lawyer/sign-in"
+      ? `${requestedNext}?confirmed=1`
+      : requestedNext === "/auth/reset-password"
+        ? requestedNext
+        : null
 
   if (code) {
     const supabase = createServerClient(
@@ -29,11 +37,10 @@ export async function GET(request: NextRequest) {
         data: { user },
       } = await supabase.auth.getUser()
       const userType = user?.user_metadata?.user_type as string | undefined
-      const dest =
-        userType === "lawyer" ? "/lawyer/dashboard" : "/client/dashboard"
+      const dest = safeNext || (userType === "lawyer" ? "/auth/lawyer/sign-in?confirmed=1" : "/auth/client/sign-in?confirmed=1")
       return NextResponse.redirect(new URL(dest, requestUrl.origin))
     }
   }
 
-  return NextResponse.redirect(new URL("/client/dashboard", requestUrl.origin))
+  return NextResponse.redirect(new URL("/auth/client/sign-in", requestUrl.origin))
 }
