@@ -77,10 +77,13 @@ function AuthCallbackContent() {
       }
 
       const userType = user.user_metadata?.user_type as string | undefined
+
+      // Only true password-reset flows — never treat email verification magic links as recovery.
+      const isEmailVerificationLink =
+        linkType === "magiclink" || linkType === "signup" || linkType === "email" || linkType === "invite"
       const isRecovery =
-        safeNext === "/auth/reset-password" ||
-        linkType === "recovery" ||
-        Boolean(user.recovery_sent_at)
+        !isEmailVerificationLink &&
+        (safeNext === "/auth/reset-password" || linkType === "recovery")
 
       if (isRecovery) {
         router.replace("/auth/reset-password")

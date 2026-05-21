@@ -117,30 +117,12 @@ export default function LawyerSignInPage() {
       }
 
       if (!profile.email_verified_at) {
-        if (user.email_confirmed_at) {
-          await fetch("/api/auth/mark-email-verified", { method: "POST" })
-          const { data: refreshed } = await supabase
-            .from("profiles")
-            .select("email_verified_at, user_type")
-            .eq("id", user.id)
-            .single()
-          if (!refreshed?.email_verified_at) {
-            await supabase.auth.signOut()
-            showError(
-              "Please verify your email address before signing in. Check your inbox for the verification link.",
-            )
-            setIsLoading(false)
-            return
-          }
-          Object.assign(profile, refreshed)
-        } else {
-          await supabase.auth.signOut()
-          showError(
-            "Please verify your email address before signing in. Check your inbox for the verification link.",
-          )
-          setIsLoading(false)
-          return
-        }
+        await supabase.auth.signOut()
+        showError(
+          "Please verify your email address before signing in. Check your inbox for the verification link.",
+        )
+        setIsLoading(false)
+        return
       }
 
       if (profile.user_type !== "lawyer") {

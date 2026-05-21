@@ -21,6 +21,14 @@ export function OAuthCallbackHashRedirect() {
     if (code) {
       const target = new URL("/auth/callback", window.location.origin)
       params.forEach((value, key) => target.searchParams.set(key, value))
+      // Root ?code= from email links has no next — infer from hash type when present.
+      if (!target.searchParams.has("next") && hash) {
+        const hashParams = new URLSearchParams(hash.replace(/^#/, ""))
+        const hashType = hashParams.get("type")
+        if (hashType === "recovery") {
+          target.searchParams.set("next", "/auth/reset-password")
+        }
+      }
       window.location.replace(target.toString() + hash)
       return
     }
