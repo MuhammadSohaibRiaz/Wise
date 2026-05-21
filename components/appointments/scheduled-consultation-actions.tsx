@@ -32,6 +32,7 @@ export function ScheduledConsultationActions({
   appointment,
   processingId,
   canReschedule,
+  allowMarkHeld = false,
   onMarkHeld,
   onReschedule,
   onSupport,
