@@ -9,6 +9,7 @@ import {
   fetchCompletedPaymentForCase,
   type PaymentSummary,
 } from "@/lib/admin/cancellation-refund"
+import { fetchAdminCancellationQueues } from "@/lib/admin/cancellation-queues"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -16,7 +17,7 @@ import { createClient } from "@/lib/supabase/server"
 type Resolution = "approved" | "rejected"
 
 function buildResolutionNotifications(
-  request: ReturnType<typeof mapRequest>,
+  request: { case_title: string; client: { id: string }; lawyer: { id: string } },
   action: Resolution,
   requestedBy: CancellationRequester | null,
   reason: string,
@@ -85,24 +86,12 @@ async function requireAdmin() {
   return { user }
 }
 
-function mapRequest(apt: any) {
-  return {
-    id: apt.id,
-    scheduled_at: apt.scheduled_at,
-    duration_minutes: apt.duration_minutes,
-    reschedule_count: apt.reschedule_count || 0,
-    previous_status: apt.previous_status || null,
-    cancellation_requested_by: apt.cancellation_requested_by || null,
-    cancellation_request_message: apt.cancellation_request_message || null,
-    case_id: apt.cases?.id || apt.case_id || "",
-    case_title: apt.cases?.title || "Unknown",
-    case_type: apt.cases?.case_type || "",
-    client: apt.client || { id: "", first_name: "Unknown", last_name: "", email: "" },
-    lawyer: apt.lawyer || { id: "", first_name: "Unknown", last_name: "", email: "" },
-  }
-}
-
-async function sendResolutionEmails(req: NextRequest, request: any, resolution: Resolution, reason?: string) {
+async function sendResolutionEmails(
+  req: NextRequest,
+  request: { case_title: string; client: { id: string }; lawyer: { id: string }; cancellation_requested_by?: CancellationRequester | null },
+  resolution: Resolution,
+  reason?: string,
+) {
   const origin = req.nextUrl.origin
   const headers: Record<string, string> = { "Content-Type": "application/json" }
   if (process.env.CRON_SECRET) headers["x-cron-secret"] = process.env.CRON_SECRET
@@ -145,98 +134,14 @@ export async function GET() {
   const auth = await requireAdmin()
   if (auth.error) return auth.error
 
-  const admin = createAdminClient()
-  const { data, error } = await admin
-    .from("appointments")
-    .select(`
-      id,
-      scheduled_at,
-      duration_minutes,
-      reschedule_count,
-      previous_status,
-      cancellation_requested_by,
-      cancellation_request_message,
-      case_id,
-      cases (
-        id,
-        title,
-        case_type
-      ),
-      client:profiles!appointments_client_id_fkey (
-        id,
-        first_name,
-        last_name,
-        email
-      ),
-      lawyer:profiles!appointments_lawyer_id_fkey (
-        id,
-        first_name,
-        last_name,
-        email
-      )
-    `)
-    .eq("status", "cancellation_requested")
-    .order("updated_at", { ascending: false })
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  try {
+    const admin = createAdminClient()
+    const queues = await fetchAdminCancellationQueues(admin)
+    return NextResponse.json(queues)
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Failed to load cancellation requests"
+    return NextResponse.json({ error: message }, { status: 500 })
   }
-
-  const requests = await Promise.all(
-    (data || []).map(async (apt) => {
-      const mapped = mapRequest(apt)
-      const payment =
-        mapped.case_id && mapped.client.id && mapped.lawyer.id
-          ? await fetchCompletedPaymentForCase(admin, mapped.case_id, mapped.client.id, mapped.lawyer.id)
-          : null
-      return { ...mapped, payment, refund_eligible: Boolean(payment?.stripe_payment_id) }
-    }),
-  )
-
-  const { data: cancelledRows } = await admin
-    .from("appointments")
-    .select(`
-      id,
-      scheduled_at,
-      duration_minutes,
-      reschedule_count,
-      cancellation_requested_by,
-      case_id,
-      client_id,
-      lawyer_id,
-      cases ( id, title, case_type ),
-      client:profiles!appointments_client_id_fkey ( id, first_name, last_name, email ),
-      lawyer:profiles!appointments_lawyer_id_fkey ( id, first_name, last_name, email )
-    `)
-    .eq("status", "cancelled")
-    .order("updated_at", { ascending: false })
-    .limit(50)
-
-  const awaiting_refund: Array<ReturnType<typeof mapRequest> & { payment: PaymentSummary; refund_eligible: boolean }> = []
-
-  for (const apt of cancelledRows || []) {
-    const mapped = mapRequest(apt)
-    if (!mapped.case_id || !mapped.client.id || !mapped.lawyer.id) continue
-    const payment = await fetchCompletedPaymentForCase(
-      admin,
-      mapped.case_id,
-      mapped.client.id,
-      mapped.lawyer.id,
-    )
-    if (!payment?.stripe_payment_id) continue
-    awaiting_refund.push({
-      ...mapped,
-      payment,
-      refund_eligible: true,
-    })
-  }
-
-  return NextResponse.json({
-    requests,
-    awaiting_refund,
-    pending_count: requests.length,
-    awaiting_refund_count: awaiting_refund.length,
-  })
 }
 
 export async function PATCH(req: NextRequest) {
@@ -294,8 +199,22 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "This request has already been resolved" }, { status: 409 })
   }
 
-  const requestData = mapRequest(row)
-  const requestedBy = (row.cancellation_requested_by as CancellationRequester | null) || null
+  const cases = row.cases as { id?: string; title?: string; case_type?: string } | { id?: string; title?: string; case_type?: string }[] | null
+  const caseRow = Array.isArray(cases) ? cases[0] : cases
+  const client = row.client as { id: string; first_name: string; last_name: string; email: string }
+  const lawyer = row.lawyer as { id: string; first_name: string; last_name: string; email: string }
+
+  const requestData = {
+    id: row.id,
+    case_id: caseRow?.id || row.case_id || "",
+    case_title: caseRow?.title || "Unknown",
+    case_type: caseRow?.case_type || "",
+    client,
+    lawyer,
+    cancellation_requested_by: row.cancellation_requested_by as CancellationRequester | null,
+  }
+
+  const requestedBy = requestData.cancellation_requested_by
   const restoredStatus = row.previous_status === "rescheduled" ? "rescheduled" : "scheduled"
   const nextStatus = action === "approved" ? "cancelled" : restoredStatus
 

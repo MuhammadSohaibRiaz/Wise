@@ -2,6 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
+import type { AdminCancellationRequest } from "@/lib/admin/cancellation-queues"
+import {
+  dispatchAdminCancellationRefresh,
+  useAdminCancellationSync,
+} from "@/lib/hooks/use-admin-cancellation-sync"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -29,6 +34,32 @@ import {
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { formatCurrency } from "@/lib/currency"
+import { REFUND_ARRIVAL_MESSAGE } from "@/lib/admin/cancellation-refund"
+
+function CopyIdLine({ label, value }: { label: string; value: string }) {
+  const { toast } = useToast()
+  if (!value) return null
+  return (
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between gap-x-2 py-1.5 border-b border-purple-100/80 last:border-0">
+      <span className="text-[10px] font-bold text-purple-800/90 uppercase tracking-wider shrink-0">{label}</span>
+      <div className="flex items-center gap-2 min-w-0">
+        <code className="text-xs font-mono text-purple-950 break-all">{value}</code>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-[10px] shrink-0 border-purple-200"
+          onClick={() => {
+            void navigator.clipboard.writeText(value)
+            toast({ title: "Copied", description: `${label} copied to clipboard.` })
+          }}
+        >
+          Copy
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 type PaymentSummary = {
   id: string
@@ -39,34 +70,7 @@ type PaymentSummary = {
   payment_method: string | null
 }
 
-interface CancellationRequest {
-  id: string
-  scheduled_at: string
-  duration_minutes: number
-  reschedule_count: number
-  previous_status: string | null
-  cancellation_requested_by?: "client" | "lawyer" | null
-  cancellation_request_message?: string | null
-  case_id: string
-  case_title: string
-  case_type: string
-  payment?: PaymentSummary | null
-  refund_eligible?: boolean
-  client: {
-    id: string
-    first_name: string
-    last_name: string
-    email: string
-  }
-  lawyer: {
-    id: string
-    first_name: string
-    last_name: string
-    email: string
-  }
-}
-
-function RequestDetails({ request }: { request: CancellationRequest }) {
+function RequestDetails({ request }: { request: AdminCancellationRequest }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div className="space-y-3">
@@ -79,6 +83,11 @@ function RequestDetails({ request }: { request: CancellationRequest }) {
             </span>
           </div>
           <p className="text-xs text-muted-foreground ml-6">{request.client.email}</p>
+          {request.client.id && (
+            <p className="text-[10px] text-muted-foreground ml-6 font-mono mt-0.5">
+              Profile ID: {request.client.id}
+            </p>
+          )}
         </div>
         <div>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Lawyer</p>
@@ -89,6 +98,15 @@ function RequestDetails({ request }: { request: CancellationRequest }) {
             </span>
           </div>
           <p className="text-xs text-muted-foreground ml-6">{request.lawyer.email}</p>
+          {request.lawyer.id && (
+            <p className="text-[10px] text-muted-foreground ml-6 font-mono mt-0.5">
+              Profile ID: {request.lawyer.id}
+            </p>
+          )}
+        </div>
+        <div>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Appointment</p>
+          <p className="text-[10px] text-muted-foreground font-mono mt-0.5 break-all">{request.id}</p>
         </div>
       </div>
 
@@ -138,8 +156,8 @@ function RequestDetails({ request }: { request: CancellationRequest }) {
           </div>
         )}
         {request.payment && (
-          <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-3">
-            <div className="flex items-center gap-2 mb-1">
+          <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-3 space-y-2">
+            <div className="flex items-center gap-2">
               <CreditCard className="h-4 w-4 text-purple-700" />
               <p className="text-[10px] font-bold text-purple-800 uppercase tracking-widest">Payment</p>
             </div>
@@ -147,13 +165,19 @@ function RequestDetails({ request }: { request: CancellationRequest }) {
               {formatCurrency(request.payment.amount)} {request.payment.currency} —{" "}
               <span className="capitalize">{request.payment.status}</span>
             </p>
-            {request.payment.stripe_payment_id ? (
-              <p className="text-xs text-purple-700/80 mt-1 font-mono truncate">
-                Stripe: {request.payment.stripe_payment_id}
+            <div className="rounded-md border border-purple-200 bg-white/80 px-3 py-2">
+              <p className="text-[10px] font-bold text-purple-900 uppercase tracking-widest mb-1">
+                Stripe Dashboard lookup
               </p>
-            ) : (
-              <p className="text-xs text-amber-700 mt-1">No Stripe ID — manual refund only</p>
-            )}
+              <p className="text-xs text-purple-800/90 mb-2">
+                In Stripe → Payments, search the <strong>Payment intent ID</strong> below (not the WiseCase payment UUID).
+              </p>
+              <CopyIdLine label="Payment intent (Stripe)" value={request.payment.stripe_payment_id || ""} />
+              <CopyIdLine label="WiseCase payment ID" value={request.payment.id} />
+              {!request.payment.stripe_payment_id && (
+                <p className="text-xs text-amber-700 pt-1">No Stripe payment intent on file — refund manually in Stripe, then sync.</p>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -162,34 +186,52 @@ function RequestDetails({ request }: { request: CancellationRequest }) {
 }
 
 export default function AdminCancellationRequestsPage() {
-  const [requests, setRequests] = useState<CancellationRequest[]>([])
-  const [awaitingRefund, setAwaitingRefund] = useState<CancellationRequest[]>([])
+  const [requests, setRequests] = useState<AdminCancellationRequest[]>([])
+  const [awaitingRefund, setAwaitingRefund] = useState<AdminCancellationRequest[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [realtimeHint, setRealtimeHint] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [processingId, setProcessingId] = useState<string | null>(null)
-  const [rejectTarget, setRejectTarget] = useState<CancellationRequest | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<AdminCancellationRequest | null>(null)
   const [rejectReason, setRejectReason] = useState("")
-  const [refundTarget, setRefundTarget] = useState<CancellationRequest | null>(null)
+  const [refundTarget, setRefundTarget] = useState<AdminCancellationRequest | null>(null)
   const { toast } = useToast()
   const supabase = createClient()
   const router = useRouter()
 
-  const fetchRequests = useCallback(async () => {
-    try {
-      setIsLoading(true)
-      const res = await fetch("/api/admin/cancellation-requests", { cache: "no-store" })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || "Failed to load cancellation requests")
+  const fetchRequests = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      try {
+        if (opts?.silent) {
+          setIsRefreshing(true)
+        } else {
+          setIsLoading(true)
+        }
+        const res = await fetch("/api/admin/cancellation-requests", { cache: "no-store" })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(json.error || "Failed to load cancellation requests")
 
-      setRequests(json.requests || [])
-      setAwaitingRefund(json.awaiting_refund || [])
-    } catch (error) {
-      console.error("Fetch cancellation requests error:", error)
-      toast({ title: "Error", description: "Failed to load cancellation requests.", variant: "destructive" })
-    } finally {
-      setIsLoading(false)
-    }
-  }, [toast])
+        setRequests(json.requests || [])
+        setAwaitingRefund(json.awaiting_refund || [])
+      } catch (error) {
+        console.error("Fetch cancellation requests error:", error)
+        if (!opts?.silent) {
+          toast({ title: "Error", description: "Failed to load cancellation requests.", variant: "destructive" })
+        }
+      } finally {
+        setIsLoading(false)
+        setIsRefreshing(false)
+      }
+    },
+    [toast],
+  )
+
+  useAdminCancellationSync({
+    enabled: isAdmin,
+    onSync: () => fetchRequests({ silent: true }),
+    onRealtimeUnavailable: () => setRealtimeHint(true),
+  })
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -220,7 +262,7 @@ export default function AdminCancellationRequestsPage() {
     void checkAdmin()
   }, [fetchRequests, supabase])
 
-  const handleApprove = async (request: CancellationRequest) => {
+  const handleApprove = async (request: AdminCancellationRequest) => {
     try {
       setProcessingId(request.id)
 
@@ -232,7 +274,8 @@ export default function AdminCancellationRequestsPage() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || "Failed to approve cancellation")
 
-      await fetchRequests()
+      await fetchRequests({ silent: true })
+      dispatchAdminCancellationRefresh()
 
       const refundHint = json.refund_eligible
         ? " Use Refund client below to return payment via Stripe."
@@ -249,7 +292,7 @@ export default function AdminCancellationRequestsPage() {
     }
   }
 
-  const handleReject = async (request: CancellationRequest) => {
+  const handleReject = async (request: AdminCancellationRequest) => {
     try {
       setProcessingId(request.id)
 
@@ -261,7 +304,8 @@ export default function AdminCancellationRequestsPage() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || "Failed to reject cancellation")
 
-      setRequests((prev) => prev.filter((r) => r.id !== request.id))
+      await fetchRequests({ silent: true })
+      dispatchAdminCancellationRefresh()
       setRejectTarget(null)
       setRejectReason("")
       toast({
@@ -276,7 +320,7 @@ export default function AdminCancellationRequestsPage() {
     }
   }
 
-  const handleRefund = async (request: CancellationRequest) => {
+  const handleRefund = async (request: AdminCancellationRequest) => {
     try {
       setProcessingId(request.id)
 
@@ -289,13 +333,21 @@ export default function AdminCancellationRequestsPage() {
       if (!res.ok) throw new Error(json.error || "Failed to issue refund")
 
       setRefundTarget(null)
-      await fetchRequests()
+      await fetchRequests({ silent: true })
+      dispatchAdminCancellationRefresh()
 
+      const synced = Boolean(json.synced_from_stripe)
       toast({
-        title: json.already_refunded ? "Already refunded" : "Refund Issued",
+        title: json.already_refunded
+          ? synced
+            ? "Synced with Stripe"
+            : "Already refunded"
+          : "Refund issued",
         description: json.already_refunded
-          ? "This payment was already marked as refunded."
-          : "Stripe refund created. Client will see funds on their original payment method.",
+          ? synced
+            ? `This payment was already refunded in Stripe. WiseCase is now updated. ${REFUND_ARRIVAL_MESSAGE}`
+            : `This payment is already marked refunded in WiseCase. ${REFUND_ARRIVAL_MESSAGE}`
+          : `Stripe refund created. ${REFUND_ARRIVAL_MESSAGE}`,
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to issue refund"
@@ -336,11 +388,29 @@ export default function AdminCancellationRequestsPage() {
       <AdminHeader />
 
       <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Cancellation Requests</h1>
-          <p className="text-gray-500 mt-1">
-            Step 1: Approve or reject. Step 2: Refund paid consultations via Stripe (separate action).
-          </p>
+        <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Cancellation Requests</h1>
+            <p className="text-gray-500 mt-1">
+              Step 1: Approve or reject. Step 2: Refund paid consultations via Stripe (separate action).
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Updates automatically when clients, lawyers, or admins change appointment or payment status.
+            </p>
+            {realtimeHint && (
+              <p className="text-xs text-amber-700 mt-2 max-w-lg">
+                Live sync may be limited — run{" "}
+                <code className="text-[11px] bg-amber-100 px-1 rounded">063_admin_appointments_payments_realtime.sql</code>{" "}
+                in Supabase. The list still refreshes every ~45s and when you return to this tab.
+              </p>
+            )}
+          </div>
+          {isRefreshing && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Syncing…
+            </div>
+          )}
         </div>
 
         {!hasWork ? (
@@ -450,6 +520,12 @@ export default function AdminCancellationRequestsPage() {
                           )}
                           Refund client via Stripe
                         </Button>
+                        {!request.refund_eligible && request.payment && (
+                          <p className="text-xs text-amber-700 mt-2">
+                            Stripe payment ID missing — refund manually in Stripe Dashboard, then set payment to
+                            refunded in Supabase.
+                          </p>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -522,7 +598,8 @@ export default function AdminCancellationRequestsPage() {
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            This cannot be undone. The lawyer will be notified that the client payment was refunded.
+            This cannot be undone. The lawyer will be notified that the client payment was refunded.{" "}
+            {REFUND_ARRIVAL_MESSAGE}
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRefundTarget(null)}>

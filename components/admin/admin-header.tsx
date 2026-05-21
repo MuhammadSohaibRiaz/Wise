@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { useAdminCancellationSync } from "@/lib/hooks/use-admin-cancellation-sync"
 import { Button } from "@/components/ui/button"
 import { 
   ShieldCheck, 
@@ -29,24 +30,44 @@ function CancellationNavBadge({ count }: { count: number }) {
 export function AdminHeader() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [cancellationCount, setCancellationCount] = useState(0)
+  const [syncEnabled, setSyncEnabled] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
+  const loadCancellationCount = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/cancellation-requests/count", { cache: "no-store" })
+      if (!res.ok) return
+      const json = await res.json()
+      setCancellationCount(json.total_actionable ?? 0)
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch("/api/admin/cancellation-requests/count", { cache: "no-store" })
-        if (!res.ok) return
-        const json = await res.json()
-        setCancellationCount(json.total_actionable ?? 0)
-      } catch {
-        /* ignore */
+    const init = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("user_type")
+        .eq("id", user.id)
+        .maybeSingle()
+      if (profile?.user_type === "admin") {
+        setSyncEnabled(true)
+        void loadCancellationCount()
       }
     }
-    void load()
-    const interval = setInterval(load, 60_000)
-    return () => clearInterval(interval)
-  }, [])
+    void init()
+  }, [loadCancellationCount, supabase])
+
+  useAdminCancellationSync({
+    enabled: syncEnabled,
+    onSync: loadCancellationCount,
+  })
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -86,7 +107,6 @@ export function AdminHeader() {
               Cancellations
               <CancellationNavBadge count={cancellationCount} />
             </Link>
-            {/* Disputes nav hidden — module disabled for now */}
             <Link href="/admin/security-logs" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5">
               <ShieldAlert className="h-4 w-4 text-amber-600" />
               AI Security
@@ -105,7 +125,6 @@ export function AdminHeader() {
               Sign Out
             </Button>
             
-            {/* Mobile menu button */}
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               className="md:hidden p-2 rounded-md text-muted-foreground hover:bg-muted"
@@ -116,7 +135,6 @@ export function AdminHeader() {
         </div>
       </div>
 
-      {/* Mobile Navigation */}
       {isMenuOpen && (
         <div className="md:hidden border-t bg-white p-4 space-y-4">
           <Link href="/admin/dashboard" className="block text-sm font-medium px-4 py-2 hover:bg-muted rounded-md">
@@ -132,7 +150,6 @@ export function AdminHeader() {
             <span>Cancellations</span>
             <CancellationNavBadge count={cancellationCount} />
           </Link>
-          {/* Disputes nav hidden — module disabled for now */}
           <Link href="/admin/security-logs" className="block text-sm font-medium px-4 py-2 hover:bg-muted rounded-md">
             AI Security
           </Link>

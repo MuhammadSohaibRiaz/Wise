@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { AdminHeader } from "@/components/admin/admin-header"
+import { useAdminCancellationSync } from "@/lib/hooks/use-admin-cancellation-sync"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
@@ -26,7 +27,23 @@ export default function AdminDashboardPage() {
     awaitingRefund: 0,
   })
   const [isLoading, setIsLoading] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
   const supabase = createClient()
+
+  const loadCancellationCounts = useCallback(async () => {
+    try {
+      const cancelRes = await fetch("/api/admin/cancellation-requests/count", { cache: "no-store" })
+      if (!cancelRes.ok) return
+      const cancelJson = await cancelRes.json()
+      setStats((prev) => ({
+        ...prev,
+        pendingCancellations: cancelJson.pending_count ?? 0,
+        awaitingRefund: cancelJson.awaiting_refund_count ?? 0,
+      }))
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   useEffect(() => {
     async function fetchStats() {
@@ -40,6 +57,7 @@ export default function AdminDashboardPage() {
         .maybeSingle()
 
       if (profile?.user_type !== "admin") return
+      setIsAdmin(true)
 
       try {
         const [
@@ -54,28 +72,15 @@ export default function AdminDashboardPage() {
           supabase.from("cases").select("*", { count: 'exact', head: true })
         ])
 
-        let pendingCancellations = 0
-        let awaitingRefund = 0
-        try {
-          const cancelRes = await fetch("/api/admin/cancellation-requests/count", { cache: "no-store" })
-          if (cancelRes.ok) {
-            const cancelJson = await cancelRes.json()
-            pendingCancellations = cancelJson.pending_count ?? 0
-            awaitingRefund = cancelJson.awaiting_refund_count ?? 0
-          }
-        } catch {
-          /* ignore */
-        }
-
-        setStats({
+        setStats((prev) => ({
+          ...prev,
           totalUsers: usersCount || 0,
           totalLawyers: lawyersCount || 0,
           pendingVerifications: pendingCount || 0,
           openDisputes: 0,
           totalCases: casesCount || 0,
-          pendingCancellations,
-          awaitingRefund,
-        })
+        }))
+        await loadCancellationCounts()
       } catch (error) {
         console.error("Error fetching admin stats:", error)
       } finally {
@@ -83,8 +88,13 @@ export default function AdminDashboardPage() {
       }
     }
 
-    fetchStats()
-  }, [])
+    void fetchStats()
+  }, [loadCancellationCounts, supabase])
+
+  useAdminCancellationSync({
+    enabled: isAdmin,
+    onSync: loadCancellationCounts,
+  })
 
   if (isLoading) {
     return (
@@ -226,19 +236,39 @@ export default function AdminDashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Activity Placeholder */}
+          {/* Cancellation queue — live counts */}
           <Card className="lg:col-span-2">
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg">Platform Growth</CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-500" />
+              <CardTitle className="text-lg">Cancellation queue</CardTitle>
+              <AlertCircle className="h-4 w-4 text-amber-600" />
             </CardHeader>
-            <CardContent className="h-[240px] flex items-center justify-center border-t">
-              <div className="text-center">
-                <div className="bg-primary/5 p-4 rounded-full w-fit mx-auto mb-4">
-                  <TrendingUp className="h-8 w-8 text-primary/40" />
+            <CardContent className="border-t pt-6 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4">
+                  <p className="text-sm text-amber-900 font-medium">Pending review</p>
+                  <p className="text-3xl font-bold text-amber-950 mt-1">{stats.pendingCancellations}</p>
+                  <p className="text-xs text-amber-800/80 mt-1">Awaiting approve or reject</p>
                 </div>
-                <p className="text-sm text-muted-foreground">User growth and engagement charts will appear here as data accumulates.</p>
+                <div className="rounded-lg border border-purple-200 bg-purple-50/60 p-4">
+                  <p className="text-sm text-purple-900 font-medium">Awaiting Stripe refund</p>
+                  <p className="text-3xl font-bold text-purple-950 mt-1">{stats.awaitingRefund}</p>
+                  <p className="text-xs text-purple-800/80 mt-1">Approved cancel + completed payment</p>
+                </div>
               </div>
+              {(stats.pendingCancellations + stats.awaitingRefund) > 0 ? (
+                <Button
+                  className="w-full sm:w-auto"
+                  onClick={() => { window.location.href = "/admin/cancellation-requests" }}
+                >
+                  <AlertCircle className="h-4 w-4 mr-2" />
+                  Open cancellation requests
+                </Button>
+              ) : (
+                <p className="text-sm text-muted-foreground flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-green-500 shrink-0" />
+                  No cancellations need action. Counts update live when requests arrive.
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>

@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { fetchCompletedPaymentForCase } from "@/lib/admin/cancellation-refund"
+import {
+  fetchCompletedPaymentForCase,
+  isStripeAlreadyRefundedError,
+  markPaymentRefunded,
+  REFUND_ARRIVAL_MESSAGE,
+  syncPaymentRefundedFromStripe,
+} from "@/lib/admin/cancellation-refund"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -193,6 +199,24 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  const preSync = await syncPaymentRefundedFromStripe(admin, {
+    id: paymentRow.id,
+    amount: paymentRow.amount,
+    currency: paymentRow.currency,
+    status: paymentRow.status,
+    stripe_payment_id: paymentRow.stripe_payment_id,
+    payment_method: null,
+  })
+  if (preSync) {
+    return NextResponse.json({
+      success: true,
+      already_refunded: true,
+      synced_from_stripe: true,
+      payment_id: paymentRow.id,
+      status: "refunded",
+    })
+  }
+
   if (paymentRow.status !== "completed") {
     return NextResponse.json(
       { error: `Payment status is "${paymentRow.status}"; only completed payments can be refunded` },
@@ -218,6 +242,16 @@ export async function POST(req: NextRequest) {
     })
     stripeRefundId = refund.id
   } catch (e: unknown) {
+    if (isStripeAlreadyRefundedError(e)) {
+      await markPaymentRefunded(admin, paymentRow.id)
+      return NextResponse.json({
+        success: true,
+        already_refunded: true,
+        synced_from_stripe: true,
+        payment_id: paymentRow.id,
+        status: "refunded",
+      })
+    }
     const message = e instanceof Error ? e.message : "Stripe refund failed"
     return NextResponse.json({ error: message }, { status: 400 })
   }
@@ -257,7 +291,7 @@ export async function POST(req: NextRequest) {
       created_by: auth.user!.id,
       type: "payment_update",
       title: "Refund Issued",
-      description: `Your payment of ${paymentRow.amount} ${paymentRow.currency} for "${caseTitle}" has been refunded to your original payment method.`,
+      description: `Your payment of ${paymentRow.amount} ${paymentRow.currency} for "${caseTitle}" has been refunded to your original payment method. ${REFUND_ARRIVAL_MESSAGE}`,
       data: { payment_id: paymentRow.id, appointment_id: appointmentRow?.id, stripe_refund_id: stripeRefundId },
     },
     {
