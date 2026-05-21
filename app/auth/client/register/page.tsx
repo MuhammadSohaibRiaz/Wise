@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
-import { getAuthCallbackUrl } from "@/lib/auth/redirect-urls"
+import { getEmailVerificationRedirectUrl } from "@/lib/auth/redirect-urls"
 import { Loader2, ArrowLeft, MailCheck } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -51,7 +51,7 @@ export default function ClientRegisterPage() {
     try {
       const supabase = createClient()
       const normalizedEmail = email.trim().toLowerCase()
-      const emailRedirectTo = getAuthCallbackUrl("/auth/client/sign-in")
+      const emailRedirectTo = getEmailVerificationRedirectUrl("client")
 
       const { error: connectionError } = await supabase.from("profiles").select("id").limit(1)
 

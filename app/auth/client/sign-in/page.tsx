@@ -11,6 +11,7 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2, ArrowLeft } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
+import { useEmailVerificationUrl } from "@/hooks/use-email-verification-url"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export default function ClientSignInPage() {
@@ -23,9 +24,31 @@ export default function ClientSignInPage() {
   const [resendEmail, setResendEmail] = useState("")
   const [isResending, setIsResending] = useState(false)
   const [showResendVerification, setShowResendVerification] = useState(false)
+  const verification = useEmailVerificationUrl("client")
 
   const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
   const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
+
+  useEffect(() => {
+    if (verification.status === "verified") {
+      const msg = "Email verified successfully! You can now sign in."
+      setSuccessBanner(true)
+      setBannerMessage(msg)
+      showSuccess(msg)
+      return
+    }
+    if (verification.status === "link-expired") {
+      setShowResendVerification(true)
+      setBannerMessage(
+        "This verification link has expired. Resend a new link below, then use only the latest email.",
+      )
+      showError("Verification link expired. Please resend and use the newest email only.")
+      return
+    }
+    if (verification.status === "error") {
+      showError(verification.message)
+    }
+  }, [verification])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -174,6 +197,13 @@ export default function ClientSignInPage() {
           <h1 className="text-3xl font-bold">Client Sign In</h1>
           <p className="text-muted-foreground">Access your legal cases and consultations</p>
         </div>
+
+        {verification.status === "verifying" && (
+          <div className="flex items-center justify-center gap-2 rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Verifying your email…
+          </div>
+        )}
 
         {bannerMessage && (
           <Alert

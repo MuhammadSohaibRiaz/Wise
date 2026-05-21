@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
-import { getAuthCallbackUrl } from "@/lib/auth/redirect-urls"
+import { getEmailVerificationRedirectUrl } from "@/lib/auth/redirect-urls"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { LAW_SPECIALIZATIONS } from "@/lib/specializations"
 import { FileUpload } from "@/components/auth/file-upload"
@@ -73,7 +73,7 @@ export default function LawyerRegisterPage() {
     try {
       const supabase = createClient()
       const normalizedEmail = email.trim().toLowerCase()
-      const emailRedirectTo = getAuthCallbackUrl("/auth/lawyer/sign-in")
+      const emailRedirectTo = getEmailVerificationRedirectUrl("lawyer")
 
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: normalizedEmail,

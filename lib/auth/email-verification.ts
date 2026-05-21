@@ -1,14 +1,9 @@
 import "server-only"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { getAuthCallbackUrl } from "@/lib/auth/redirect-urls"
+import { getEmailVerificationRedirectUrl, type AuthUserType } from "@/lib/auth/redirect-urls"
 import { buildEmailHtml, escapeHtml, sendEmail } from "@/lib/email"
 
-export type AuthUserType = "client" | "lawyer"
-
-export function getEmailCallbackUrl(userType: AuthUserType): string {
-  const next = userType === "lawyer" ? "/auth/lawyer/sign-in" : "/auth/client/sign-in"
-  return getAuthCallbackUrl(next)
-}
+export type { AuthUserType } from "@/lib/auth/redirect-urls"
 
 /**
  * Sends a verification link via Resend and ensures the auth user stays unconfirmed
@@ -24,7 +19,7 @@ export async function sendVerificationEmailForUser(
   }
 
   const admin = createAdminClient()
-  const redirectTo = getEmailCallbackUrl(userType)
+  const redirectTo = getEmailVerificationRedirectUrl(userType)
   const normalizedEmail = email.trim().toLowerCase()
 
   // "signup" only works when creating a brand-new user with a password.
