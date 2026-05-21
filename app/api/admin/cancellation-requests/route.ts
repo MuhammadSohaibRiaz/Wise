@@ -36,6 +36,7 @@ function mapRequest(apt: any) {
     duration_minutes: apt.duration_minutes,
     reschedule_count: apt.reschedule_count || 0,
     previous_status: apt.previous_status || null,
+    cancellation_request_message: apt.cancellation_request_message || null,
     case_id: apt.cases?.id || apt.case_id || "",
     case_title: apt.cases?.title || "Unknown",
     case_type: apt.cases?.case_type || "",
@@ -94,6 +95,7 @@ export async function GET() {
       duration_minutes,
       reschedule_count,
       previous_status,
+      cancellation_request_message,
       case_id,
       cases (
         id,
@@ -145,6 +147,7 @@ export async function PATCH(req: NextRequest) {
       duration_minutes,
       reschedule_count,
       previous_status,
+      cancellation_request_message,
       case_id,
       status,
       cases (
@@ -198,7 +201,7 @@ export async function PATCH(req: NextRequest) {
       title: action === "approved" ? "Cancellation Approved" : "Cancellation Rejected",
       description:
         action === "approved"
-          ? `Your cancellation request for "${requestData.case_title}" has been approved.`
+          ? `Your cancellation request for "${requestData.case_title}" has been approved by WiseCase admin. The appointment has been cancelled.`
           : `Your cancellation request for "${requestData.case_title}" was rejected. Please attend your appointment as scheduled.${reason ? ` Reason: ${reason}` : ""}`,
       data: { appointment_id: requestId, status: nextStatus },
     },
@@ -206,11 +209,11 @@ export async function PATCH(req: NextRequest) {
       user_id: requestData.lawyer.id,
       created_by: auth.user.id,
       type: "appointment_update",
-      title: action === "approved" ? "Cancellation Approved" : "Cancellation Rejected",
+      title: action === "approved" ? "Client Cancellation Approved" : "Cancellation Request Rejected",
       description:
         action === "approved"
-          ? `The cancellation request for "${requestData.case_title}" has been approved.`
-          : `The cancellation request for "${requestData.case_title}" was rejected. The appointment remains active.${reason ? ` Reason: ${reason}` : ""}`,
+          ? `The client's cancellation request for "${requestData.case_title}" was approved by WiseCase admin. This appointment has been cancelled.`
+          : `The client's cancellation request for "${requestData.case_title}" was rejected by WiseCase admin. The appointment remains scheduled.${reason ? ` Reason: ${reason}` : ""}`,
       data: { appointment_id: requestId, status: nextStatus },
     },
   ])

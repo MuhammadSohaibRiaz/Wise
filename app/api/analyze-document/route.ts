@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { matchLawyersWithCategory } from "@/lib/ai/lawyer-matching"
+import { isAiCapacityLimitError, toUserFacingAnalysisError } from "@/lib/ai/capacity-messages"
 import { runDocumentAnalysis } from "@/lib/analysis/run-document-analysis"
 
 export async function POST(req: NextRequest) {
@@ -123,7 +124,8 @@ export async function POST(req: NextRequest) {
     })
   } catch (error: unknown) {
     console.error("Analysis API error:", error)
-    const message = error instanceof Error ? error.message : "Analysis failed"
+    const message = toUserFacingAnalysisError(error)
+    const status = isAiCapacityLimitError(error) ? 503 : 500
 
     if (failureDocumentId) {
       try {
@@ -134,6 +136,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: message }, { status })
   }
 }

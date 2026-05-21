@@ -15,6 +15,7 @@ import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { normalizeChatNavigationPath, type ChatRole } from '@/lib/chat-routes';
 import { toast } from '@/hooks/use-toast';
+import { toUserFacingAnalysisError } from '@/lib/ai/capacity-messages';
 
 type QueuedAnalysisJob = {
   status: string
@@ -87,9 +88,9 @@ export function Chat({ onClose }: { onClose: () => void }) {
     if (errorRecoveredRef.current === raw) return;
     errorRecoveredRef.current = raw;
 
-    const isRateLimit = raw.includes("rate limit") || raw.includes("429");
+    const isRateLimit = raw.includes("rate limit") || raw.includes("429") || raw.includes("high demand");
     const recoveryText = isRateLimit
-      ? "I'm a bit busy right now. Please wait a moment and try again."
+      ? "We're experiencing high demand right now. Please wait a few minutes and try again."
       : "I can only assist with **WiseCase platform navigation** and **Pakistani legal matters**. If you have a legal question or need help finding a lawyer, I'm happy to help!\n\n[ACTION:Browse Lawyers:/match]";
 
     setMessages((prev: any[]) => [
@@ -672,10 +673,11 @@ export function Chat({ onClose }: { onClose: () => void }) {
         })
       ]);
 
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const friendly = toUserFacingAnalysisError(err, "Document upload or analysis could not be completed. Please try again.")
       setMessages((prev) => ([
         ...prev,
-        { id: Date.now().toString(), role: 'assistant', parts: [{ type: 'text', text: `Sorry, I encountered an error: ${err.message}` }] }
+        { id: Date.now().toString(), role: 'assistant', parts: [{ type: 'text', text: friendly }] }
       ]));
     } finally {
       setIsUploading(false);

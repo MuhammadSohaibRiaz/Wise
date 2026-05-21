@@ -3,9 +3,9 @@ import { createClient } from "@/lib/supabase/server"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 
 /**
- * Marks a consultation as held (`attended`) so billing/session state is not confused with case closure (`completed`).
- * Allowed when appointment is `scheduled` (or `rescheduled`) and the slot end time is in the past,
- * or up to 7 days before start (lawyer early check-in). Caller must be client or lawyer on the row.
+ * Marks a consultation as held (`attended`).
+ * proceed_with_case=true (default): case open → in_progress.
+ * proceed_with_case=false: case → closed (no review flow).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -19,6 +19,8 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}))
     const appointmentId = body?.appointment_id as string | undefined
+    const proceedWithCase = body?.proceed_with_case !== false
+
     if (!appointmentId) {
       return NextResponse.json({ error: "appointment_id required" }, { status: 400 })
     }
@@ -45,7 +47,10 @@ export async function POST(req: NextRequest) {
     const now = Date.now()
     const allowEarlyMs = 7 * 24 * 60 * 60_000
     if (now < start - allowEarlyMs) {
-      return NextResponse.json({ error: "Consultation slot is too far in the future to mark as held (7-day window)" }, { status: 400 })
+      return NextResponse.json(
+        { error: "Consultation slot is too far in the future to mark as held (7-day window)" },
+        { status: 400 },
+      )
     }
 
     const { error: updErr } = await supabase
@@ -58,40 +63,69 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: updErr.message }, { status: 400 })
     }
 
+    let caseStatus: string | null = null
+
     if (row.case_id) {
-      // This is the only normal path that moves an open case to in_progress:
-      // a consultation must be marked as held first.
-      const { data: activatedCase, error: caseUpdateError } = await supabase
-        .from("cases")
-        .update({ status: "in_progress", updated_at: new Date().toISOString() })
-        .eq("id", row.case_id)
-        .eq("status", "open")
-        .select("id")
-        .maybeSingle()
+      if (proceedWithCase) {
+        const { data: activatedCase, error: caseUpdateError } = await supabase
+          .from("cases")
+          .update({ status: "in_progress", updated_at: new Date().toISOString() })
+          .eq("id", row.case_id)
+          .eq("status", "open")
+          .select("id")
+          .maybeSingle()
 
-      if (caseUpdateError) {
-        return NextResponse.json({ error: caseUpdateError.message }, { status: 400 })
-      }
+        if (caseUpdateError) {
+          return NextResponse.json({ error: caseUpdateError.message }, { status: 400 })
+        }
 
-      await appendCaseTimelineEvent(supabase, {
-        caseId: row.case_id,
-        actorId: user.id,
-        eventType: CaseTimelineEventType.CONSULTATION_ATTENDED,
-        metadata: { appointment_id: appointmentId },
-      })
+        caseStatus = activatedCase ? "in_progress" : "in_progress"
 
-      if (activatedCase) {
         await appendCaseTimelineEvent(supabase, {
           caseId: row.case_id,
           actorId: user.id,
-          eventType: CaseTimelineEventType.CASE_ACTIVATED,
-          metadata: { appointment_id: appointmentId, source: "mark_attended" },
+          eventType: CaseTimelineEventType.CONSULTATION_ATTENDED,
+          metadata: { appointment_id: appointmentId, proceed_with_case: true },
+        })
+
+        if (activatedCase) {
+          await appendCaseTimelineEvent(supabase, {
+            caseId: row.case_id,
+            actorId: user.id,
+            eventType: CaseTimelineEventType.CASE_ACTIVATED,
+            metadata: { appointment_id: appointmentId, source: "mark_attended" },
+          })
+        }
+      } else {
+        const { error: closeErr } = await supabase
+          .from("cases")
+          .update({ status: "closed", updated_at: new Date().toISOString() })
+          .eq("id", row.case_id)
+          .in("status", ["open", "in_progress", "pending_completion"])
+
+        if (closeErr) {
+          return NextResponse.json({ error: closeErr.message }, { status: 400 })
+        }
+
+        caseStatus = "closed"
+
+        await appendCaseTimelineEvent(supabase, {
+          caseId: row.case_id,
+          actorId: user.id,
+          eventType: CaseTimelineEventType.CONSULTATION_ATTENDED,
+          metadata: { appointment_id: appointmentId, proceed_with_case: false, case_closed: true },
         })
       }
     }
 
-    return NextResponse.json({ success: true, status: "attended", case_status: "in_progress" })
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 })
+    return NextResponse.json({
+      success: true,
+      status: "attended",
+      case_status: caseStatus,
+      proceed_with_case: proceedWithCase,
+    })
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Server error"
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

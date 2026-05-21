@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Star, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
+import { markReviewPromptSkipped } from "@/lib/client-review-prompt"
 
 interface ReviewModalProps {
   isOpen: boolean
@@ -15,9 +16,19 @@ interface ReviewModalProps {
   lawyerId: string
   clientId: string
   onSuccess: () => void
+  /** When true, closing without submit remembers skip (no repeat auto-prompt). Default true. */
+  persistSkipOnDismiss?: boolean
 }
 
-export function ReviewModal({ isOpen, onClose, caseId, lawyerId, clientId, onSuccess }: ReviewModalProps) {
+export function ReviewModal({
+  isOpen,
+  onClose,
+  caseId,
+  lawyerId,
+  clientId,
+  onSuccess,
+  persistSkipOnDismiss = true,
+}: ReviewModalProps) {
   const [rating, setRating] = useState(0)
   const [comment, setComment] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -85,8 +96,20 @@ export function ReviewModal({ isOpen, onClose, caseId, lawyerId, clientId, onSuc
     }
   }
 
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
+      if (persistSkipOnDismiss) markReviewPromptSkipped(caseId)
+      onClose()
+    }
+  }
+
+  const handleSkip = () => {
+    if (persistSkipOnDismiss) markReviewPromptSkipped(caseId)
+    onClose()
+  }
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Rate your Experience</DialogTitle>
@@ -117,7 +140,7 @@ export function ReviewModal({ isOpen, onClose, caseId, lawyerId, clientId, onSuc
           />
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>
+          <Button variant="ghost" onClick={handleSkip} disabled={isSubmitting}>
             Skip
           </Button>
           <Button onClick={handleSubmit} disabled={isSubmitting}>

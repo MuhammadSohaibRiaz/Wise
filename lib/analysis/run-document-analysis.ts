@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { Groq } from "groq-sdk"
+import { AI_CAPACITY_USER_MESSAGE, isAiCapacityLimitError } from "@/lib/ai/capacity-messages"
 import { matchLawyersWithCategory } from "@/lib/ai/lawyer-matching"
 import { scanDocumentTextForInjection, hasHighSeverityInjection } from "@/lib/document-analysis-security"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
@@ -312,9 +313,10 @@ Return ONLY the JSON object. No markdown, no explanation, no preamble.`
     }
   } catch (groqError: unknown) {
     const msg = groqError instanceof Error ? groqError.message : String(groqError)
-    if (msg.includes("rate limit") || msg.includes("Rate limit") || msg.includes("429") || msg.includes("TPD")) {
+    if (isAiCapacityLimitError(groqError)) {
+      console.error("[DocumentAnalysis] AI capacity limit:", msg)
       await supabase.from("documents").update({ status: "pending" }).eq("id", documentId)
-      throw new Error("AI service daily limit reached. Please try again later or contact support.")
+      throw new Error(AI_CAPACITY_USER_MESSAGE)
     }
     throw groqError
   }

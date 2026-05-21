@@ -1,10 +1,12 @@
 import { createGroq } from "@ai-sdk/groq"
 import { generateText, streamText, stepCountIs } from "ai"
 
+import { AI_CAPACITY_CHAT_MESSAGE } from "@/lib/ai/capacity-messages"
 import { extractCaseIdFromPath } from "@/lib/chat-case-context"
 import { getInitialMessage } from "@/lib/chatBotData"
 import { tools } from "@/lib/ai/tools"
 import { getLegalRagConfig, assertLegalRagEnv } from "@/lib/rag/config"
+import { isPakistaniLegalStatuteQuestion } from "@/lib/rag/query-intent"
 import { formatLegalContext, searchLegalKnowledge, type LegalKnowledgeHit } from "@/lib/rag/pinecone"
 import { applySimpleRateLimit } from "@/lib/rate-limit"
 import { createClient } from "@/lib/supabase/server"
@@ -74,8 +76,7 @@ const REDUCED_RAG_PROMPT_BUDGET: RagPromptBudget = {
   maxChunkChars: REDUCED_RAG_CHUNK_CHARS,
   maxOutputTokens: REDUCED_RAG_OUTPUT_TOKEN_CAP,
 }
-const GROQ_USAGE_LIMIT_MESSAGE =
-  "The legal assistant is temporarily unavailable due to high usage. Please try again in a few minutes."
+const GROQ_USAGE_LIMIT_MESSAGE = AI_CAPACITY_CHAT_MESSAGE
 
 function plainTextResponse(message: string, status = 200, extraHeaders?: HeadersInit) {
   return new Response(message, {
@@ -301,14 +302,23 @@ function classifyQuery(query: string, context?: { hasRecentLegalContext?: boolea
     return { action: "platform" as const }
   }
 
+  if (isPakistaniLegalStatuteQuestion(query)) {
+    return { action: "retrieve" as const }
+  }
+
   const platformPatterns = [
     /\b(find|search|browse|show|recommend|look for|need|hire|book)\b.*\b(lawyer|lawyers|advocate|advocates)\b/,
     /\b(lawyer|lawyers|advocate|advocates)\b.*\b(review|reviews|rating|ratings|profile|profiles|specialty|specialities|specialization|specialisation)\b/,
     /\b(review|reviews|rating|ratings)\b.*\b(lawyer|lawyers|advocate|advocates)\b/,
     /\b(check|show|complete|update|edit|change)\b.*\b(my )?profile\b/,
-    /\b(missing field|missing fields|complete my profile|profile completion)\b/,
-    /\b(show|list|view|open|check)\b.*\b(my )?(appointment|appointments|case|cases|document|documents|analysis|analyses)\b/,
-    /\b(summarize|summarise)\b.*\b(my )?(case|cases|document|documents|analysis|analyses)\b/,
+    /\b(profile complete|is my profile|what'?s missing|fill my profile|complete my profile|profile completion|missing field|missing fields)\b/,
+    /\b(my phone is|my bio is|my experience is|my fee is|update my|my bio to|my phone to)\b/,
+    /\b03\d{9}\b/,
+    /\b\+92[\d\s-]{9,}\b/,
+    /\b(show my cases|my appointments|recent cases|upcoming appointments)\b/,
+    /\b(show|list|view|open|check)\b.*\b(my|mine)\b.*\b(appointment|appointments|case|cases|document|documents|analysis|analyses)\b/,
+    /\b(my|mine)\b.*\b(appointment|appointments|case|cases|document|documents|analysis|analyses)\b/,
+    /\b(summarize|summarise)\b.*\b(my|mine)\b.*\b(case|cases|document|documents|analysis|analyses)\b/,
     /\b(recent activity|agenda|dashboard|settings|sign in|sign up|register|upload|analyze document|analyse document)\b/,
     /\b(wisecase|platform|fees|fee|refund|refunds|privacy|verification)\b/,
   ]
@@ -338,7 +348,14 @@ function classifyQuery(query: string, context?: { hasRecentLegalContext?: boolea
 
   const platformTerms = [
     "profile",
+    "profile complete",
+    "is my profile",
+    "what's missing",
     "update my",
+    "my phone is",
+    "my bio is",
+    "my experience is",
+    "my fee is",
     "missing field",
     "complete my profile",
     "appointment",
@@ -578,6 +595,32 @@ ${responseLanguageInstruction(input.query)}
 - For document uploads, tell the user to use the upload button in this chat.
 - If a user asks to update profile fields, confirm what will change and update only fields they clearly provided.
 - If a tool returns empty results, say clearly "You don't have any [appointments/cases/etc] yet" rather than suggesting an error occurred.
+
+CRITICAL — Pakistani legal questions vs platform tools:
+- Questions about Pakistani law, statutes, sections, punishments, procedures, family/criminal/tax/labour/property/contract law MUST use legal KB retrieval, NEVER platform tools.
+- Platform tools are ONLY for WiseCase account actions: profile, lawyers, cases, appointments, FAQ.
+
+PROACTIVE TOOL CALLING:
+- Profile status or "what's missing" → call getProfileStatus immediately (never say input is insufficient).
+- Profile update with values in the message → call updateProfile with extracted fields immediately.
+- Lawyer search → call searchLawyers immediately.
+- Cases/appointments summary → call getMyDataSummary.
+- WiseCase fees/refunds/privacy → call getPlatformFAQ.
+
+DO NOT CALL TOOLS when:
+- User asks a general Pakistani legal question (they should use legal KB; if misrouted here, ask them to rephrase as a legal question).
+- User is greeting or making small talk.
+- User asks about WiseCase features in general without needing live data (answer from knowledge when possible).
+- Query is vague with no clear platform action → ask ONE clarifying question.
+
+Example interactions:
+- "is my profile complete?" → getProfileStatus, list missing fields clearly.
+- "what's missing in my profile?" → getProfileStatus.
+- "complete my profile" / "help me complete profile" → getProfileStatus, then ask for missing values one at a time.
+- "my phone is 03001234567" → updateProfile with phone extracted.
+- "update my bio to I am a criminal lawyer with 10 years experience" → updateProfile with bio.
+- "find family lawyers" → searchLawyers with specialty family law.
+- "what are WiseCase fees?" → getPlatformFAQ.
 
 Current user role: ${input.role}
 Current user email: ${input.email || "guest"}

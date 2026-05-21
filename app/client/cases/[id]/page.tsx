@@ -29,7 +29,6 @@ import {
 import { ReviewModal } from "@/components/client/review-modal"
 // import { DisputeModal } from "@/components/cases/dispute-modal"
 import { createNotification } from "@/lib/notifications"
-import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { appointmentDisplayLabel } from "@/lib/appointment-display"
 import { deriveCaseLifecycleStages } from "@/lib/case-lifecycle-stages"
 import { CaseProgressStepper } from "@/components/cases/case-progress-stepper"
@@ -37,12 +36,16 @@ import { CaseActivityFeed } from "@/components/cases/case-activity-feed"
 import { AiCaseSummary } from "@/components/cases/ai-case-summary"
 import { CaseDocumentsPanel } from "@/components/cases/case-documents-panel"
 import { formatCurrency, formatHourlyRate } from "@/lib/currency"
+import { CaseOutcomeDialog, type CaseOutcomeValue } from "@/components/cases/case-outcome-dialog"
+import { CASE_OUTCOME_LABELS } from "@/lib/lawyer-success-rate-display"
+import { shouldAutoPromptReview } from "@/lib/client-review-prompt"
 
 interface CaseDetail {
   id: string
   title: string
   description: string | null
   status: "open" | "in_progress" | "pending_completion" | "completed" | "closed"
+  case_outcome?: string | null
   case_type: string | null
   hourly_rate: number | null
   budget_min: number | null
@@ -125,6 +128,7 @@ export default function ClientCaseDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isConfirming, setIsConfirming] = useState(false)
   const [showReviewModal, setShowReviewModal] = useState(false)
+  const [showOutcomeDialog, setShowOutcomeDialog] = useState(false)
   const [hasReviewed, setHasReviewed] = useState(false)
   // const [showDisputeModal, setShowDisputeModal] = useState(false)
   const [clientId, setClientId] = useState<string | null>(null)
@@ -154,6 +158,7 @@ export default function ClientCaseDetailPage() {
           title,
           description,
           status,
+          case_outcome,
           case_type,
           hourly_rate,
           budget_min,
@@ -185,6 +190,7 @@ export default function ClientCaseDetailPage() {
         title: caseData.title,
         description: caseData.description,
         status: caseData.status,
+        case_outcome: caseData.case_outcome ?? null,
         case_type: caseData.case_type,
         hourly_rate: caseData.hourly_rate,
         budget_min: caseData.budget_min,
@@ -299,62 +305,40 @@ export default function ClientCaseDetailPage() {
     return () => { supabase.removeChannel(channel) }
   }, [caseId, fetchCaseDetail])
 
-  const handleConfirmCompletion = async () => {
+  const handleConfirmCompletion = async (outcome: CaseOutcomeValue) => {
     if (!caseDetail) return
 
     try {
       setIsConfirming(true)
-      const supabase = createClient()
+      const res = await fetch(`/api/cases/${caseId}/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ case_outcome: outcome }),
+      })
+      const json = (await res.json().catch(() => ({}))) as { error?: string }
+      if (!res.ok) throw new Error(json.error || "Failed to confirm completion")
 
-      // Client confirmation is the only normal transition from
-      // pending_completion to completed.
-      const { data: updatedCase, error } = await supabase
-        .from("cases")
-        .update({ status: "completed", updated_at: new Date().toISOString() })
-        .eq("id", caseId)
-        .eq("status", "pending_completion")
-        .select("id")
-        .maybeSingle()
-
-      if (error) throw error
-      if (!updatedCase) throw new Error("Completion request is no longer pending.")
-
-      await appendCaseTimelineEvent(supabase, {
-        caseId,
-        actorId: clientId,
-        eventType: CaseTimelineEventType.CASE_COMPLETED,
-        metadata: { previous_status: "pending_completion", source: "client_confirm_completion" },
+      setShowOutcomeDialog(false)
+      setCaseDetail({
+        ...caseDetail,
+        status: "completed",
+        case_outcome: outcome,
+        updated_at: new Date().toISOString(),
       })
 
-      if (caseDetail.lawyer?.id) {
-        await createNotification(supabase, {
-          user_id: caseDetail.lawyer.id,
-          type: "case_update",
-          title: "Case Completed",
-          description: `Client confirmed completion for "${caseDetail.title}".`,
-          data: { case_id: caseId, status: "completed" },
-        })
-      }
-
-      setCaseDetail({ ...caseDetail, status: "completed", updated_at: new Date().toISOString() })
-      
       toast({
         title: "Case Completed",
         description: "You can now leave a review for your lawyer.",
       })
 
-      // Show review modal after a short delay (only if not already reviewed)
-      if (!hasReviewed) {
-        setTimeout(() => {
-          setShowReviewModal(true)
-        }, 500)
+      if (shouldAutoPromptReview(caseId, false)) {
+        setTimeout(() => setShowReviewModal(true), 500)
       }
-
     } catch (error) {
       console.error("Error confirming completion:", error)
       toast({
         title: "Error",
-        description: "Failed to confirm completion. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to confirm completion. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -500,7 +484,7 @@ export default function ClientCaseDetailPage() {
                 </Button>
                 <Button 
                   className="flex-1 bg-purple-700 hover:bg-purple-800 text-white"
-                  onClick={handleConfirmCompletion}
+                  onClick={() => setShowOutcomeDialog(true)}
                   disabled={isConfirming}
                 >
                   {isConfirming ? (
@@ -516,6 +500,13 @@ export default function ClientCaseDetailPage() {
         </Card>
       )}
 
+      <CaseOutcomeDialog
+        open={showOutcomeDialog}
+        onOpenChange={setShowOutcomeDialog}
+        onConfirm={(outcome) => void handleConfirmCompletion(outcome)}
+        isSubmitting={isConfirming}
+      />
+
       {caseDetail.status === "completed" && (
         <Card className="border-green-200 bg-green-50 dark:bg-green-950/20 border-2">
           <CardContent className="p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -525,6 +516,11 @@ export default function ClientCaseDetailPage() {
                 <p className="font-semibold text-green-900 dark:text-green-400">
                   Case completed successfully
                 </p>
+                {caseDetail.case_outcome && (
+                  <p className="text-sm text-green-700 dark:text-green-500 mt-1">
+                    Outcome: {CASE_OUTCOME_LABELS[caseDetail.case_outcome] ?? caseDetail.case_outcome}
+                  </p>
+                )}
                 <p className="text-sm text-green-700 dark:text-green-500">
                   {hasReviewed
                     ? "Thank you for leaving a review!"

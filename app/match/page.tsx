@@ -23,6 +23,7 @@ interface LawyerProfile {
   specializations: string[]
   average_rating: number
   total_cases: number
+  success_rate: number
   hourly_rate: number
   response_time_hours: number
   verified: boolean
@@ -116,6 +117,7 @@ function MatchPageInner() {
               specializations,
               average_rating,
               total_cases,
+              success_rate,
               hourly_rate,
               response_time_hours,
               verified,
@@ -179,6 +181,7 @@ function MatchPageInner() {
               specializations: profile?.specializations || [],
               average_rating: normalizeLawyerAverageRating(profile?.average_rating),
               total_cases: profile?.total_cases != null ? Number(profile.total_cases) : 0,
+              success_rate: profile?.success_rate != null ? Number(profile.success_rate) : 0,
               hourly_rate: profile?.hourly_rate != null ? Number(profile.hourly_rate) : 0,
               response_time_hours: profile?.response_time_hours != null ? Number(profile.response_time_hours) : 24,
               verified: profile?.verified === true,
@@ -319,6 +322,7 @@ function MatchPageInner() {
                         specializations={lawyer.specializations}
                         average_rating={lawyer.average_rating}
                         total_cases={lawyer.total_cases}
+                        success_rate={lawyer.success_rate}
                         location={lawyer.location}
                         hourly_rate={lawyer.hourly_rate}
                         response_time_hours={lawyer.response_time_hours}

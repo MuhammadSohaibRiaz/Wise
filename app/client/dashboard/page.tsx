@@ -18,6 +18,7 @@ import {
 } from "@/components/client/pending-case-review-dialog"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
 import { formatCurrency } from "@/lib/currency"
+import { isReviewPromptSkipped } from "@/lib/client-review-prompt"
 
 interface DashboardStats {
   activeConsultations: number
@@ -212,15 +213,9 @@ export default function ClientDashboardPage() {
           .in("case_id", caseIds)
 
         const reviewed = new Set((existingReviews || []).map((r) => r.case_id))
-        const skipped =
-          typeof window !== "undefined"
-            ? new Set(
-                completedCases
-                  .map((c) => c.id)
-                  .filter((caseId) => window.localStorage.getItem(`wisecase-review-skipped:${caseId}`) === "true"),
-              )
-            : new Set<string>()
-        const nextCase = completedCases.find((c) => c.lawyer_id && !reviewed.has(c.id) && !skipped.has(c.id))
+        const nextCase = completedCases.find(
+          (c) => c.lawyer_id && !reviewed.has(c.id) && !isReviewPromptSkipped(c.id),
+        )
         if (nextCase?.lawyer_id) {
           const { data: lawyerRow } = await supabase
             .from("profiles")
@@ -238,6 +233,7 @@ export default function ClientDashboardPage() {
           setReviewOpen(true)
         } else {
           setPendingReview(null)
+          setReviewOpen(false)
         }
       } else {
         setPendingReview(null)
@@ -347,7 +343,10 @@ export default function ClientDashboardPage() {
         pending={pendingReview}
         open={reviewOpen && !!pendingReview}
         onOpenChange={setReviewOpen}
-        onSubmitted={() => void loadDashboard()}
+        onSubmitted={() => {
+          setReviewOpen(false)
+          void loadDashboard()
+        }}
       />
 
       {/* Summary Cards */}

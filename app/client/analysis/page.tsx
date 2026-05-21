@@ -14,6 +14,7 @@ import { documentViewUrl } from "@/lib/documents/view-url"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 import { normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
+import { getAnalysisErrorToast } from "@/lib/ai/capacity-messages"
 import { generateRecommendationReason } from "@/lib/ai/lawyer-matching"
 
 import { useSearchParams } from "next/navigation"
@@ -245,11 +246,12 @@ function AICaseAnalysisContent() {
       })
       
       fetchHistory()
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Analysis Error Details:", error)
+      const toastPayload = getAnalysisErrorToast(error)
       toast({
-        title: "Analysis Failed",
-        description: error.message || "An unexpected error occurred while analyzing your document. Please try again.",
+        title: toastPayload.title,
+        description: toastPayload.description,
         variant: "destructive",
       })
     } finally {

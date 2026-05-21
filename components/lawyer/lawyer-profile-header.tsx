@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Star, MapPin, Clock, Check, MessageCircle } from "lucide-react"
 import Image from "next/image"
@@ -9,6 +10,7 @@ import { BookAppointmentModal } from "@/components/lawyer/book-appointment-modal
 import { createClient } from "@/lib/supabase/client"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
 import { formatConsultationFeeBase, formatCurrency } from "@/lib/currency"
+import { formatSuccessRateDisplay } from "@/lib/lawyer-success-rate-display"
 
 interface LawyerProfileHeaderProps {
   id: string
@@ -27,6 +29,10 @@ interface LawyerProfileHeaderProps {
   active_clients: number
   total_earnings?: number
 }
+
+type CaseLinkState = "loading" | "none" | "active"
+
+const ACTIVE_CLIENT_CASE_STATUSES = ["open", "in_progress", "pending_completion"] as const
 
 export function LawyerProfileHeader({
   id,
@@ -47,32 +53,83 @@ export function LawyerProfileHeader({
 }: LawyerProfileHeaderProps) {
   const ratingNorm = normalizeLawyerAverageRating(average_rating)
   const ratingLabel = formatLawyerRatingLabel(ratingNorm)
+  const successDisplay = formatSuccessRateDisplay(total_cases, success_rate)
   const [bookingOpen, setBookingOpen] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const [isClient, setIsClient] = useState(false)
+  const [caseLinkState, setCaseLinkState] = useState<CaseLinkState>("loading")
   const router = useRouter()
 
   useEffect(() => {
-    const getCurrentUser = async () => {
+    let cancelled = false
+
+    const loadAuthAndCase = async () => {
+      setCaseLinkState("loading")
       const supabase = createClient()
       const {
         data: { session },
       } = await supabase.auth.getSession()
-      setUserId(session?.user?.id || null)
+
+      if (cancelled) return
+
+      const uid = session?.user?.id || null
+      setUserId(uid)
+
+      if (!uid) {
+        setIsClient(false)
+        setCaseLinkState("none")
+        return
+      }
+
+      const { data: profile } = await supabase.from("profiles").select("user_type").eq("id", uid).maybeSingle()
+
+      if (cancelled) return
+
+      const clientUser = profile?.user_type === "client"
+      setIsClient(clientUser)
+
+      if (!clientUser) {
+        setCaseLinkState("none")
+        return
+      }
+
+      const { data: activeCase } = await supabase
+        .from("cases")
+        .select("id")
+        .eq("client_id", uid)
+        .eq("lawyer_id", id)
+        .in("status", [...ACTIVE_CLIENT_CASE_STATUSES])
+        .limit(1)
+        .maybeSingle()
+
+      if (cancelled) return
+
+      setCaseLinkState(activeCase ? "active" : "none")
     }
-    getCurrentUser()
-  }, [])
+
+    void loadAuthAndCase()
+
+    return () => {
+      cancelled = true
+    }
+  }, [id])
 
   const handleBookClick = () => {
-    if (!userId) {
-      const next =
-        typeof window !== "undefined"
-          ? `${window.location.pathname}${window.location.search}`
-          : `/client/lawyer/${id}`
+    const next =
+      typeof window !== "undefined"
+        ? `${window.location.pathname}${window.location.search}`
+        : `/client/lawyer/${id}`
+
+    if (!userId || !isClient) {
       router.push(`/auth/client/sign-in?message=sign-in-to-book&next=${encodeURIComponent(next)}`)
       return
     }
     setBookingOpen(true)
   }
+
+  const showSignedInClient = Boolean(userId && isClient)
+  const showMessagingHelper = showSignedInClient && caseLinkState === "none"
+  const showGoToMessages = showSignedInClient && caseLinkState === "active"
 
   return (
     <>
@@ -101,16 +158,23 @@ export function LawyerProfileHeader({
                 </div>
                 <p className="text-lg text-muted-foreground mb-3">{years_of_experience}+ years of experience</p>
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 min-w-[200px]">
                 <Button onClick={handleBookClick} className="w-full">
-                  {userId ? "Book Consultation" : "Sign in to Book"}
+                  {showSignedInClient ? "Book Consultation" : "Sign in to Book"}
                 </Button>
-                <a href={`/client/messages?lawyer=${id}`}>
-                  <Button variant="outline" className="w-full bg-transparent">
-                    <MessageCircle className="h-4 w-4 mr-2" />
-                    Message
+                {showGoToMessages ? (
+                  <Button variant="outline" className="w-full bg-transparent" asChild>
+                    <Link href={`/client/messages?lawyer=${id}`}>
+                      <MessageCircle className="h-4 w-4 mr-2" />
+                      Go to Messages
+                    </Link>
                   </Button>
-                </a>
+                ) : null}
+                {showMessagingHelper ? (
+                  <p className="text-xs text-muted-foreground text-center leading-snug px-1">
+                    Book a consultation to start messaging once your request is accepted.
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -139,7 +203,7 @@ export function LawyerProfileHeader({
                   <Check className="h-4 w-4 text-blue-500" />
                   <span className="text-xs text-muted-foreground">Success</span>
                 </div>
-                <p className="text-lg font-bold">{success_rate > 0 ? `${success_rate.toFixed(0)}%` : "N/A"}</p>
+                <p className="text-lg font-bold">{successDisplay.label}</p>
               </div>
               <div className="bg-background rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-1">
@@ -210,7 +274,7 @@ export function LawyerProfileHeader({
         </div>
       </div>
 
-      {userId && (
+      {userId && isClient && (
         <BookAppointmentModal
           open={bookingOpen}
           onOpenChange={setBookingOpen}
@@ -219,7 +283,6 @@ export function LawyerProfileHeader({
           hourlyRate={hourly_rate}
           clientId={userId}
           onBookingSuccess={() => {
-            // Redirect to appointments page after successful booking
             window.location.href = "/client/appointments"
           }}
         />

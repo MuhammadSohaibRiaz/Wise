@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
       .update({
         status: "cancellation_requested",
         previous_status: row.status,
+        cancellation_request_message: message,
         updated_at: new Date().toISOString(),
       })
       .eq("id", appointmentId)

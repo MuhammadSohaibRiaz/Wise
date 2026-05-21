@@ -295,14 +295,26 @@ export async function POST(req: NextRequest) {
         const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
         const safeReason = reason ? escapeHtml(reason) : ""
 
+        const isLawyer = recipient_role === "lawyer"
+        const approvedBody = isLawyer
+          ? `A client's cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} has been approved by WiseCase admin. The appointment has been cancelled.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""}`
+          : `Your cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} has been approved by WiseCase admin. The appointment has been cancelled.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""}`
+        const rejectedBody = isLawyer
+          ? `A client's cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} was rejected by WiseCase admin. The appointment remains scheduled.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""}`
+          : `Your cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} was rejected by WiseCase admin. The appointment remains scheduled.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""} Please attend your appointment as planned.`
+
         await sendEmail({
           to: profile.email,
-          subject: isApproved ? "Appointment Cancellation Approved" : "Appointment Cancellation Rejected",
+          subject: isApproved
+            ? isLawyer
+              ? "Client Cancellation Request Approved"
+              : "Appointment Cancellation Approved"
+            : isLawyer
+              ? "Client Cancellation Request Rejected"
+              : "Appointment Cancellation Rejected",
           html: buildEmailHtml({
             title: isApproved ? "Cancellation Approved" : "Cancellation Request Rejected",
-            body: isApproved
-              ? `Your cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} has been approved by the admin. The appointment has been cancelled.${safeReason ? `<br><br><strong>Reason:</strong> ${safeReason}` : ""}`
-              : `Your cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} has been rejected by the admin. The appointment remains scheduled.${safeReason ? `<br><br><strong>Reason:</strong> ${safeReason}` : ""} Please attend your appointment as planned.`,
+            body: isApproved ? approvedBody : rejectedBody,
             ctaText: "View Appointments",
             ctaUrl: appointmentsUrl,
           }),

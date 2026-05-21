@@ -10,6 +10,7 @@ import { formatConsultationFeeFrom } from "@/lib/currency"
 import { BookAppointmentModal } from "@/components/lawyer/book-appointment-modal"
 import { createClient } from "@/lib/supabase/client"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
+import { formatSuccessRateDisplay } from "@/lib/lawyer-success-rate-display"
 import { markLatestDraftLawyerSelection } from "@/lib/case-drafts"
 
 interface LawyerCardProps {
@@ -20,6 +21,7 @@ interface LawyerCardProps {
   specializations: string[]
   average_rating: number
   total_cases: number
+  success_rate?: number
   location: string | null
   hourly_rate: number
   response_time_hours: number
@@ -36,6 +38,7 @@ export function LawyerCard({
   specializations,
   average_rating,
   total_cases,
+  success_rate = 0,
   location,
   hourly_rate,
   response_time_hours,
@@ -44,6 +47,7 @@ export function LawyerCard({
   recommendationReason,
 }: LawyerCardProps) {
   const ratingDisplay = formatLawyerRatingLabel(normalizeLawyerAverageRating(average_rating))
+  const successDisplay = formatSuccessRateDisplay(total_cases, success_rate)
   const [bookingOpen, setBookingOpen] = useState(false)
   const [clientId, setClientId] = useState<string | null>(null)
   const router = useRouter()
@@ -145,8 +149,8 @@ export function LawyerCard({
           <div className="flex items-center gap-2">
             <Briefcase className="h-4 w-4 text-blue-500" />
             <div>
-              <p className="text-xs text-muted-foreground">Cases</p>
-              <p className="text-sm font-semibold">{total_cases || 0}</p>
+              <p className="text-xs text-muted-foreground">Success</p>
+              <p className="text-sm font-semibold">{successDisplay.label}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">

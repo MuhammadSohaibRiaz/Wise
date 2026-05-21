@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Star, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { recomputeLawyerRatingStats } from "@/lib/recompute-lawyer-stats"
+import { markReviewPromptSkipped } from "@/lib/client-review-prompt"
 import { cn } from "@/lib/utils"
 
 export interface PendingReviewCase {
@@ -41,6 +42,7 @@ export function PendingCaseReviewDialog({
   const [comment, setComment] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [submitted, setSubmitted] = useState(false)
 
   const handleSubmit = async () => {
     if (!pending || rating < 1) return
@@ -66,8 +68,9 @@ export function PendingCaseReviewDialog({
       try {
         await recomputeLawyerRatingStats(supabase, pending.lawyerId)
       } catch {
-        // Rating recomputation handled by DB trigger (048); client-side call is a best-effort fallback
+        // Rating recomputation handled by DB trigger (059); client-side call is a best-effort fallback
       }
+      setSubmitted(true)
       setRating(0)
       setComment("")
       onSubmitted()
@@ -80,9 +83,7 @@ export function PendingCaseReviewDialog({
   }
 
   const handleSkip = () => {
-    if (pending && typeof window !== "undefined") {
-      window.localStorage.setItem(`wisecase-review-skipped:${pending.id}`, "true")
-    }
+    if (pending) markReviewPromptSkipped(pending.id)
     setRating(0)
     setComment("")
     setError(null)
@@ -90,8 +91,17 @@ export function PendingCaseReviewDialog({
     onOpenChange(false)
   }
 
+  const handleOpenChange = (next: boolean) => {
+    if (!next && pending && !submitted) {
+      markReviewPromptSkipped(pending.id)
+      onSubmitted()
+    }
+    if (next) setSubmitted(false)
+    onOpenChange(next)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>How was your experience?</DialogTitle>

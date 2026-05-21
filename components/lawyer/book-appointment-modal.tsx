@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { DayPicker } from "react-day-picker"
-import { format, isPast, isSameDay, startOfDay, addHours, setHours, setMinutes } from "date-fns"
+import { format, isPast, startOfDay, addDays, addHours, setHours, setMinutes } from "date-fns"
 import { createClient } from "@/lib/supabase/client"
 import { notifyAppointmentRequest } from "@/lib/notifications"
 import {
@@ -13,6 +13,11 @@ import {
 } from "@/lib/case-drafts"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
+import {
+  getAvailableSlotsForDay,
+  getFullyBookedDateStrings,
+  toLocalDateString,
+} from "@/lib/appointments/slot-availability"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -49,6 +54,7 @@ export function BookAppointmentModal({
   const [caseDescription, setCaseDescription] = useState("")
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
   const [bookedDates, setBookedDates] = useState<string[]>([])
+  const [fullyBookedDates, setFullyBookedDates] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingSlots, setIsLoadingSlots] = useState(false)
   const [bookedAppointmentId, setBookedAppointmentId] = useState<string | null>(null)
@@ -71,24 +77,30 @@ export function BookAppointmentModal({
     router.push(`/auth/client/sign-in?message=sign-in-to-book&next=${encodeURIComponent(next)}`)
   }
 
-  // Fetch dates that have at least one booking (for visual indicator only, NOT disabling)
   useEffect(() => {
     const fetchBookedDates = async () => {
       try {
+        const rangeStart = addDays(new Date(), 0)
+        const rangeEnd = addDays(new Date(), 60)
         const { data, error } = await supabase
           .from("appointments")
-          .select("scheduled_at")
+          .select("scheduled_at, duration_minutes")
           .eq("lawyer_id", lawyerId)
           .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
-          .gte("scheduled_at", new Date().toISOString())
+          .gte("scheduled_at", rangeStart.toISOString())
+          .lte("scheduled_at", rangeEnd.toISOString())
 
         if (error) {
           console.error("[v0] Error fetching booked dates:", error)
           return
         }
 
-        const uniqueDates = [...new Set((data || []).map((apt) => new Date(apt.scheduled_at).toISOString().split("T")[0]))]
+        const booked = data || []
+        const uniqueDates = [...new Set(booked.map((apt) => toLocalDateString(new Date(apt.scheduled_at))))]
         setBookedDates(uniqueDates)
+        setFullyBookedDates(
+          getFullyBookedDateStrings(rangeStart, rangeEnd, duration, booked),
+        )
       } catch (error) {
         console.error("[v0] Unexpected error fetching booked dates:", error)
       }
@@ -154,7 +166,7 @@ export function BookAppointmentModal({
         }
       })()
     }
-  }, [open, lawyerId, supabase, clientId])
+  }, [open, lawyerId, supabase, clientId, duration])
 
   // Fetch available slots when date is selected
   useEffect(() => {
@@ -167,13 +179,8 @@ export function BookAppointmentModal({
     const fetchAvailableSlots = async () => {
       try {
         setIsLoadingSlots(true)
-        const dateStr = selectedDate.toISOString().split("T")[0]
-        const now = new Date()
-        const isToday = isSameDay(selectedDate, now)
+        const dateStr = toLocalDateString(selectedDate)
 
-        // Get booked appointments for this lawyer on selected date. This is a
-        // UX check; the booking submit path repeats conflict detection to catch
-        // races where another user takes a slot after the calendar loaded.
         const { data: booked, error } = await supabase
           .from("appointments")
           .select("scheduled_at, duration_minutes")
@@ -184,47 +191,11 @@ export function BookAppointmentModal({
 
         if (error) throw error
 
-        // Generate 30-minute slots throughout the day (9 AM to 6 PM)
-        const slots: string[] = []
-        const startHour = 9
-        const endHour = 18
-
-        for (let hour = startHour; hour < endHour; hour++) {
-          for (let minute = 0; minute < 60; minute += 30) {
-            const slotTime = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
-            const slotDateTime = new Date(selectedDate)
-            slotDateTime.setHours(hour, minute, 0, 0)
-
-            // Skip past times if it's today
-            if (isToday && slotDateTime <= now) {
-              continue
-            }
-
-            // Check if slot conflicts with booked appointments
-            const isBooked = booked?.some((apt) => {
-              const aptDate = new Date(apt.scheduled_at)
-              const aptHour = aptDate.getHours()
-              const aptMinute = aptDate.getMinutes()
-              const aptEndTime = new Date(aptDate.getTime() + apt.duration_minutes * 60000)
-              const aptEndHour = aptEndTime.getHours()
-              const aptEndMinute = aptEndTime.getMinutes()
-
-              const slotEndTime = new Date(slotDateTime.getTime() + duration * 60000)
-
-              // Check for overlap
-              return !(slotEndTime <= aptDate || slotDateTime >= aptEndTime)
-            })
-
-            const slotEndTime = new Date(slotDateTime.getTime() + duration * 60000)
-            const endOfDay = new Date(selectedDate)
-            endOfDay.setHours(endHour, 0, 0, 0)
-
-            if (!isBooked && slotEndTime <= endOfDay) {
-              slots.push(slotTime)
-            }
-          }
-        }
-
+        const slots = getAvailableSlotsForDay({
+          date: selectedDate,
+          durationMinutes: duration,
+          booked: booked || [],
+        })
         setAvailableSlots(slots)
       } catch (error) {
         console.error("[v0] Failed to fetch slots:", error)
@@ -552,12 +523,13 @@ export function BookAppointmentModal({
   }
 
   const isDateDisabled = (date: Date) => {
-    return isPast(startOfDay(date))
+    const dateStr = toLocalDateString(date)
+    return isPast(startOfDay(date)) || fullyBookedDates.has(dateStr)
   }
 
   const dateModifiers = {
     hasBookings: (date: Date) => {
-      const dateStr = date.toISOString().split("T")[0]
+      const dateStr = toLocalDateString(date)
       return bookedDates.includes(dateStr) && !isPast(startOfDay(date))
     },
     past: (date: Date) => isPast(startOfDay(date)),

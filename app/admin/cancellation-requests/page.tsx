@@ -25,6 +25,7 @@ interface CancellationRequest {
   duration_minutes: number
   reschedule_count: number
   previous_status: string | null
+  cancellation_request_message?: string | null
   case_id: string
   case_title: string
   case_type: string
@@ -228,6 +229,12 @@ export default function AdminCancellationRequestsPage() {
                           {request.case_type && <p className="text-xs text-muted-foreground">{request.case_type}</p>}
                         </div>
                       </div>
+                      {request.cancellation_request_message && (
+                        <div className="rounded-lg border bg-amber-50/50 p-3">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Request message</p>
+                          <p className="text-sm text-gray-800 whitespace-pre-wrap">{request.cancellation_request_message}</p>
+                        </div>
+                      )}
                       <div className="flex gap-6">
                         <div className="flex items-center gap-2">
                           <Calendar className="h-4 w-4 text-muted-foreground" />

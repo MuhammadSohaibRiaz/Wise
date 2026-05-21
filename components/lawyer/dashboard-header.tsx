@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client"
 import { NotificationBell } from "@/components/notifications/notification-bell"
 import { MessageBadge } from "@/components/notifications/message-badge"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
+import { formatSuccessRateDisplay } from "@/lib/lawyer-success-rate-display"
 
 export function LawyerDashboardHeader() {
   const router = useRouter()
@@ -81,6 +82,8 @@ export function LawyerDashboardHeader() {
     : "L"
   const location = profile?.location || "Location not set"
   const successRate = lawyerProfile?.success_rate || 0
+  const completedCases = lawyerProfile?.total_cases || 0
+  const successDisplay = formatSuccessRateDisplay(completedCases, successRate)
   const responseTime = lawyerProfile?.response_time_hours || 24
   const rating = normalizeLawyerAverageRating(lawyerProfile?.average_rating)
   const verified = lawyerProfile?.verified || false
@@ -111,7 +114,7 @@ export function LawyerDashboardHeader() {
               <div className="flex flex-wrap gap-3 md:gap-6 mt-2 md:mt-3">
                 <div>
                   <p className="text-xs text-muted-foreground">Success Rate</p>
-                  <p className="text-xs md:text-sm font-semibold text-primary">{successRate.toFixed(0)}% Cases Won</p>
+                  <p className="text-xs md:text-sm font-semibold text-primary">{successDisplay.label}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Response Time</p>

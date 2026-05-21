@@ -11,6 +11,14 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, AlertCircle, Calendar, Clock, FileText, CreditCard, CheckCircle2, XCircle, CalendarClock, MessageSquare } from "lucide-react"
 import { appointmentStatusLabel, appointmentWorkflowPhase, APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
+import { ConsultationHeldDialog } from "@/components/appointments/consultation-held-dialog"
+import { ScheduledConsultationActions } from "@/components/appointments/scheduled-consultation-actions"
+import { formatRescheduleModalHint } from "@/lib/appointments/reschedule-label"
+import {
+  getAvailableSlotsForDay,
+  getFullyBookedDateStrings,
+  toLocalDateString,
+} from "@/lib/appointments/slot-availability"
 import { PaymentButton } from "@/components/payments/payment-button"
 import { formatConsultationFeeBase, formatCurrency } from "@/lib/currency"
 import {
@@ -70,6 +78,9 @@ export default function ClientAppointmentsPage() {
   const [supportTarget, setSupportTarget] = useState<Appointment | null>(null)
   const [supportMessage, setSupportMessage] = useState("")
   const [supportSubmitting, setSupportSubmitting] = useState(false)
+
+  const [heldTarget, setHeldTarget] = useState<Appointment | null>(null)
+  const [rescheduleBlockedDates, setRescheduleBlockedDates] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const paymentStatus = searchParams.get("payment")
@@ -333,7 +344,41 @@ export default function ClientAppointmentsPage() {
     }
   }, [clientId, toast])
 
-  // Fetch available slots when reschedule date is selected
+  useEffect(() => {
+    if (!rescheduleTarget) {
+      setRescheduleBlockedDates(new Set())
+      return
+    }
+
+    const loadBlockedDates = async () => {
+      try {
+        const supabase = createClient()
+        const rangeStart = addDays(new Date(), 1)
+        const rangeEnd = addDays(new Date(), 60)
+        const { data: booked } = await supabase
+          .from("appointments")
+          .select("scheduled_at, duration_minutes")
+          .eq("lawyer_id", rescheduleTarget.lawyer.id)
+          .gte("scheduled_at", rangeStart.toISOString())
+          .lte("scheduled_at", rangeEnd.toISOString())
+          .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
+          .neq("id", rescheduleTarget.id)
+
+        const blocked = getFullyBookedDateStrings(
+          rangeStart,
+          rangeEnd,
+          rescheduleTarget.duration_minutes || 60,
+          booked || [],
+        )
+        setRescheduleBlockedDates(blocked)
+      } catch {
+        setRescheduleBlockedDates(new Set())
+      }
+    }
+
+    void loadBlockedDates()
+  }, [rescheduleTarget])
+
   useEffect(() => {
     if (!rescheduleDate || !rescheduleTarget) {
       setRescheduleSlots([])
@@ -345,9 +390,7 @@ export default function ClientAppointmentsPage() {
       setRescheduleTime("")
       try {
         const supabase = createClient()
-        const dateStr = rescheduleDate.toISOString().split("T")[0]
-        const now = new Date()
-        const isToday = rescheduleDate.toDateString() === now.toDateString()
+        const dateStr = toLocalDateString(rescheduleDate)
 
         const { data: booked } = await supabase
           .from("appointments")
@@ -358,33 +401,11 @@ export default function ClientAppointmentsPage() {
           .in("status", [...APPOINTMENT_SLOT_BLOCKING_STATUSES])
           .neq("id", rescheduleTarget.id)
 
-        const duration = rescheduleTarget.duration_minutes || 60
-        const startHour = 9
-        const endHour = 18
-        const slots: string[] = []
-
-        for (let hour = startHour; hour < endHour; hour++) {
-          for (let minute = 0; minute < 60; minute += 30) {
-            const slotTime = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
-            const slotDateTime = new Date(rescheduleDate)
-            slotDateTime.setHours(hour, minute, 0, 0)
-            const slotEnd = new Date(slotDateTime.getTime() + duration * 60000)
-            const endOfDay = new Date(rescheduleDate)
-            endOfDay.setHours(endHour, 0, 0, 0)
-
-            if (slotEnd > endOfDay) continue
-            if (isToday && slotDateTime <= now) continue
-
-            const isBooked = booked?.some((apt) => {
-              const aptStart = new Date(apt.scheduled_at)
-              const aptEnd = new Date(aptStart.getTime() + (apt.duration_minutes || 60) * 60000)
-              return !(slotEnd <= aptStart || slotDateTime >= aptEnd)
-            })
-
-            if (!isBooked) slots.push(slotTime)
-          }
-        }
-
+        const slots = getAvailableSlotsForDay({
+          date: rescheduleDate,
+          durationMinutes: rescheduleTarget.duration_minutes || 60,
+          booked: booked || [],
+        })
         setRescheduleSlots(slots)
       } catch {
         setRescheduleSlots([])
@@ -393,30 +414,65 @@ export default function ClientAppointmentsPage() {
       }
     }
 
-    fetchSlots()
+    void fetchSlots()
   }, [rescheduleDate, rescheduleTarget])
 
   // --- Handlers ---
 
-  const handleMarkAttended = async (appointmentId: string) => {
+  const submitMarkHeld = async (proceedWithCase: boolean) => {
+    if (!heldTarget) return
+    try {
+      setProcessingId(heldTarget.id)
+      const res = await fetch("/api/appointments/mark-attended", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appointment_id: heldTarget.id,
+          proceed_with_case: proceedWithCase,
+        }),
+      })
+      const json = (await res.json().catch(() => ({}))) as { error?: string }
+      if (!res.ok) throw new Error(json.error || "Failed to update appointment")
+
+      setAppointments((prev) =>
+        prev.map((apt) => (apt.id === heldTarget.id ? { ...apt, status: "attended" as const } : apt)),
+      )
+      setHeldTarget(null)
+      toast({
+        title: proceedWithCase ? "Consultation marked as held" : "Case closed",
+        description: proceedWithCase
+          ? "The lawyer can request case completion when work is done. You'll confirm from the Case page."
+          : "The consultation was recorded and the case was closed.",
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Could not mark consultation as held"
+      toast({ title: "Error", description: message, variant: "destructive" })
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
+  const handleNoShow = async (appointmentId: string) => {
     try {
       setProcessingId(appointmentId)
-      const res = await fetch("/api/appointments/mark-attended", {
+      const res = await fetch("/api/appointments/mark-no-show", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ appointment_id: appointmentId }),
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string }
-      if (!res.ok) throw new Error(json.error || "Failed to update appointment")
+      if (!res.ok) throw new Error(json.error || "Failed to record no-show")
       setAppointments((prev) =>
-        prev.map((apt) => (apt.id === appointmentId ? { ...apt, status: "attended" as const } : apt)),
+        prev.map((apt) =>
+          apt.id === appointmentId ? { ...apt, status: "cancelled" as const } : apt,
+        ),
       )
       toast({
-        title: "Consultation marked as held",
-        description: "The lawyer can now request case completion when the case work is done. You'll confirm it from the Case page.",
+        title: "No-show recorded",
+        description: "The appointment was cancelled and the linked case was closed.",
       })
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Could not mark consultation as held"
+      const message = error instanceof Error ? error.message : "Could not record no-show"
       toast({ title: "Error", description: message, variant: "destructive" })
     } finally {
       setProcessingId(null)
@@ -533,10 +589,6 @@ export default function ClientAppointmentsPage() {
     (apt.status === "scheduled" || apt.status === "rescheduled") &&
     apt.reschedule_count < 3 &&
     new Date(apt.scheduled_at).getTime() - Date.now() > 2 * 60 * 60 * 1000
-
-  const canMarkHeld = (apt: Appointment) =>
-    (apt.status === "scheduled" || apt.status === "rescheduled") &&
-    Date.now() >= new Date(apt.scheduled_at).getTime() - 7 * 24 * 60 * 60 * 1000
 
   // --- Render helpers ---
 
@@ -756,59 +808,29 @@ export default function ClientAppointmentsPage() {
                         <CheckCircle2 className="h-4 w-4" />
                         <span className="font-medium">Paid & Confirmed</span>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={processingId === appointment.id || !canMarkHeld(appointment)}
-                        onClick={() => void handleMarkAttended(appointment.id)}
-                        title={!canMarkHeld(appointment) ? "Available within 7 days of the consultation" : undefined}
-                      >
-                        {processingId === appointment.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark Consultation Held"}
-                      </Button>
-                      {canReschedule(appointment) ? (
-                        <Button size="sm" variant="outline" onClick={() => { setRescheduleTarget(appointment); setRescheduleError("") }}>
-                          <CalendarClock className="h-4 w-4 mr-1" />
-                          Reschedule ({3 - appointment.reschedule_count} left)
-                        </Button>
-                      ) : appointment.reschedule_count >= 3 ? (
-                        <p className="text-xs text-muted-foreground text-right max-w-[200px]">
-                          Maximum reschedules reached.{" "}
-                          <button className="text-primary underline" onClick={() => { setSupportTarget(appointment); setSupportMessage("") }}>Contact Support</button>
-                        </p>
-                      ) : null}
-                      <button className="text-xs text-muted-foreground hover:text-primary underline" onClick={() => { setSupportTarget(appointment); setSupportMessage("") }}>
-                        Need to cancel? Contact Support
-                      </button>
+                      <ScheduledConsultationActions
+                        appointment={appointment}
+                        processingId={processingId}
+                        canReschedule={canReschedule(appointment)}
+                        onMarkHeld={() => setHeldTarget(appointment)}
+                        onReschedule={() => { setRescheduleTarget(appointment); setRescheduleError("") }}
+                        onSupport={() => { setSupportTarget(appointment); setSupportMessage("") }}
+                        onNoShow={() => void handleNoShow(appointment.id)}
+                      />
                     </div>
                   )}
 
                   {/* Rescheduled */}
                   {appointment.status === "rescheduled" && (
-                    <div className="flex flex-col items-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={processingId === appointment.id || !canMarkHeld(appointment)}
-                        onClick={() => void handleMarkAttended(appointment.id)}
-                        title={!canMarkHeld(appointment) ? "Available within 7 days of the consultation" : undefined}
-                      >
-                        {processingId === appointment.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark Consultation Held"}
-                      </Button>
-                      {canReschedule(appointment) ? (
-                        <Button size="sm" variant="outline" onClick={() => { setRescheduleTarget(appointment); setRescheduleError("") }}>
-                          <CalendarClock className="h-4 w-4 mr-1" />
-                          Reschedule ({3 - appointment.reschedule_count} left)
-                        </Button>
-                      ) : appointment.reschedule_count >= 3 ? (
-                        <p className="text-xs text-muted-foreground text-right max-w-[200px]">
-                          Maximum reschedules reached.{" "}
-                          <button className="text-primary underline" onClick={() => { setSupportTarget(appointment); setSupportMessage("") }}>Contact Support</button>
-                        </p>
-                      ) : null}
-                      <button className="text-xs text-muted-foreground hover:text-primary underline" onClick={() => { setSupportTarget(appointment); setSupportMessage("") }}>
-                        Need to cancel? Contact Support
-                      </button>
-                    </div>
+                    <ScheduledConsultationActions
+                      appointment={appointment}
+                      processingId={processingId}
+                      canReschedule={canReschedule(appointment)}
+                      onMarkHeld={() => setHeldTarget(appointment)}
+                      onReschedule={() => { setRescheduleTarget(appointment); setRescheduleError("") }}
+                      onSupport={() => { setSupportTarget(appointment); setSupportMessage("") }}
+                      onNoShow={() => void handleNoShow(appointment.id)}
+                    />
                   )}
 
                   {/* Cancellation Requested */}
@@ -870,7 +892,7 @@ export default function ClientAppointmentsPage() {
             <DialogDescription>
               Select a new date and time for your consultation
               {rescheduleTarget ? ` with ${rescheduleTarget.lawyer.first_name} ${rescheduleTarget.lawyer.last_name}` : ""}.
-              {rescheduleTarget && ` (${3 - rescheduleTarget.reschedule_count} reschedule${3 - rescheduleTarget.reschedule_count === 1 ? "" : "s"} remaining)`}
+              {rescheduleTarget ? formatRescheduleModalHint(rescheduleTarget.reschedule_count) : ""}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -879,7 +901,15 @@ export default function ClientAppointmentsPage() {
                 mode="single"
                 selected={rescheduleDate}
                 onSelect={(d) => { setRescheduleDate(d ?? undefined); setRescheduleError("") }}
-                disabled={(date) => isPast(startOfDay(date)) || date < addDays(new Date(), 1) || date > addDays(new Date(), 60)}
+                disabled={(date) => {
+                  const dateStr = toLocalDateString(date)
+                  return (
+                    isPast(startOfDay(date)) ||
+                    date < addDays(new Date(), 1) ||
+                    date > addDays(new Date(), 60) ||
+                    rescheduleBlockedDates.has(dateStr)
+                  )
+                }}
                 className="rounded-md border"
               />
             </div>
@@ -950,6 +980,14 @@ export default function ClientAppointmentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConsultationHeldDialog
+        open={!!heldTarget}
+        onOpenChange={(open) => { if (!open) setHeldTarget(null) }}
+        onProceed={() => void submitMarkHeld(true)}
+        onCloseCase={() => void submitMarkHeld(false)}
+        isSubmitting={!!heldTarget && processingId === heldTarget.id}
+      />
 
       {/* Support Ticket Dialog */}
       <Dialog open={!!supportTarget} onOpenChange={(open) => { if (!open) { setSupportTarget(null); setSupportMessage("") } }}>

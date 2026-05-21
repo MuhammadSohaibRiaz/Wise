@@ -20,6 +20,7 @@ export const CaseTimelineEventType = {
   CONSULTATION_RESCHEDULED: "CONSULTATION_RESCHEDULED",
   CANCELLATION_REQUESTED: "CANCELLATION_REQUESTED",
   CANCELLATION_RESOLVED: "CANCELLATION_RESOLVED",
+  CONSULTATION_NO_SHOW: "CONSULTATION_NO_SHOW",
 } as const
 
 export type CaseTimelineEventTypeKey = (typeof CaseTimelineEventType)[keyof typeof CaseTimelineEventType]
@@ -43,6 +44,7 @@ const TIMELINE_LABELS: Record<string, string> = {
   [CaseTimelineEventType.CONSULTATION_RESCHEDULED]: "Consultation rescheduled",
   [CaseTimelineEventType.CANCELLATION_REQUESTED]: "Cancellation requested",
   [CaseTimelineEventType.CANCELLATION_RESOLVED]: "Cancellation resolved",
+  [CaseTimelineEventType.CONSULTATION_NO_SHOW]: "Consultation marked as no-show",
 }
 
 /** Human-readable title for a timeline row (stable across GPT-style lifecycle wording). */

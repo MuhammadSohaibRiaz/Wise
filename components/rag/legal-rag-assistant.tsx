@@ -1,6 +1,7 @@
 "use client"
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { getLoadingPhraseCategory, getLoadingPhrases } from "@/lib/rag/loading-phrases"
 import { BookOpen, FileText, Loader2, Mic, MicOff, Navigation, Send, Trash2, Upload, Volume2, VolumeX, X } from "lucide-react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import ReactMarkdown from "react-markdown"
@@ -8,6 +9,7 @@ import remarkGfm from "remark-gfm"
 
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { toUserFacingAnalysisError } from "@/lib/ai/capacity-messages"
 import { createClient } from "@/lib/supabase/client"
 import { normalizeChatNavigationPath, type ChatRole } from "@/lib/chat-routes"
 import { cn } from "@/lib/utils"
@@ -54,29 +56,6 @@ function localGreetingResponse(role: ChatRole) {
     "",
     "Disclaimer: This is general legal information only and is not legal advice.",
   ].join("\n")
-}
-
-function isLikelyPlatformQuery(text: string) {
-  // UI-only heuristic used for the searching indicator. The API still performs
-  // authoritative classification before deciding platform tools vs legal RAG.
-  const normalized = text.toLowerCase()
-  return (
-    /\b(review|reviews|rating|profile|appointment|appointments|dashboard|settings|sign in|sign up|register|fees|refund|privacy|verification|upload|analyze document|analyse document)\b/.test(normalized) ||
-    /\b(lawyer|lawyers|advocate|advocates|wisecase)\b/.test(normalized) ||
-    /(?:\u0648\u06A9\u06CC\u0644|\u0648\u06A9\u0644\u0627\u0621|\u0644\u0627\u0626\u0631|\u0644\u0627\u0626\u06CC\u0631|\u0627\u067E\u0648\u0627\u0626\u0646\u0679\u0645\u0646\u0679|\u0627\u067E\u0627\u0626\u0646\u0679\u0645\u0646\u0679|\u067E\u0631\u0648\u0641\u0627\u0626\u0644|\u0641\u06CC\u0633|\u0645\u0639\u0627\u0648\u0636\u06C1|\u0631\u06CC\u0641\u0646\u0688|\u06A9\u06CC\u0633\s+\u062F\u06A9\u06BE\u0627\u0624|\u0645\u06CC\u0631\u06D2\s+\u06A9\u06CC\u0633)/.test(text)
-  )
-}
-
-function isLikelyLegalSearchQuery(text: string) {
-  const normalized = text.toLowerCase().replace(/\s+/g, " ").trim()
-  if (isLocalGreeting(normalized)) return false
-  if (normalized.length < 4) return false
-
-  return (
-    /\b(pakistan|pakistani|ppc|penal code|law|legal|court|case|suit|petition|fir|bail|trial|appeal|offence|offense|crime|punishment|sentence|section|act|ordinance|rules|evidence|witness|divorce|khula|custody|maintenance|guardian|tax|labou?r|employment|immigration|emigration|contract|agreement|property|land|registration|transfer|mortgage|lease|theft|murder|fraud|forgery|defamation)\b/.test(normalized) ||
-    /\b\d{2,3}[a-z]?\b/.test(normalized) ||
-    /(?:\u062F\u0641\u0639\u06C1|\u0642\u0627\u0646\u0648\u0646|\u067E\u0627\u06A9\u0633\u062A\u0627\u0646\u06CC|\u0633\u0632\u0627|\u062C\u0631\u0645|\u0636\u0645\u0627\u0646\u062A|\u0686\u0648\u0631\u06CC|\u0642\u062A\u0644|\u0639\u062F\u0627\u0644\u062A|\u0641\u0648\u062C\u062F\u0627\u0631\u06CC|\u0634\u06C1\u0627\u062F\u062A|\u0637\u0644\u0627\u0642|\u062E\u0644\u0639|\u062D\u0636\u0627\u0646\u062A|\u0646\u0641\u0642\u06C1)/.test(text)
-  )
 }
 
 function createId() {
@@ -225,6 +204,8 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
   const [input, setInput] = useState("")
   const [isSending, setIsSending] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
+  const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0)
+  const [loadingMessage, setLoadingMessage] = useState("")
   const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [chatRole, setChatRole] = useState<ChatRole>("guest")
@@ -244,6 +225,24 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
   const [isRoutePending, startRouteTransition] = useTransition()
   const scrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    if (!isSearching || !loadingMessage) {
+      setLoadingPhraseIndex(0)
+      return
+    }
+
+    const phrases = getLoadingPhrases(getLoadingPhraseCategory(loadingMessage))
+    setLoadingPhraseIndex(0)
+
+    const t1 = window.setTimeout(() => setLoadingPhraseIndex(1), 1000)
+    const t2 = window.setTimeout(() => setLoadingPhraseIndex(2), 2500)
+
+    return () => {
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+    }
+  }, [isSearching, loadingMessage])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<any>(null)
@@ -615,8 +614,6 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
     const userMessage: RagMessage = { id: createId(), role: "user", content: trimmed, status: "done" }
     const assistantId = createId()
     const nextMessages = [...messages, userMessage]
-    const shouldShowLegalSearchStatus = !isLikelyPlatformQuery(trimmed) && isLikelyLegalSearchQuery(trimmed)
-
     if (isLocalGreeting(trimmed)) {
       const response = localGreetingResponse(chatRole)
       setMessages([...nextMessages, { id: assistantId, role: "assistant", content: response, status: "done" }])
@@ -635,7 +632,9 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
     window.setTimeout(() => inputRef.current?.focus(), 0)
     setError(null)
     setIsSending(true)
-    setIsSearching(shouldShowLegalSearchStatus)
+    setLoadingMessage(trimmed)
+    setLoadingPhraseIndex(0)
+    setIsSearching(true)
 
     // One AbortController per request lets closing/clearing the panel stop the
     // active stream cleanly without affecting future messages.
@@ -899,10 +898,10 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
           content: analysisContent,
         }),
       ])
-    } catch (caught: any) {
-      const message = caught?.message || "Document upload or analysis failed."
+    } catch (caught: unknown) {
+      const message = toUserFacingAnalysisError(caught, "Document upload or analysis could not be completed. Please try again.")
       setError(message)
-      setMessages((current) => [...current, { id: createId(), role: "assistant", content: `Sorry, I encountered an error: ${message}`, status: "error" }])
+      setMessages((current) => [...current, { id: createId(), role: "assistant", content: message, status: "error" }])
     } finally {
       setIsUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ""
@@ -1123,7 +1122,7 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
         <div className="border-t px-4 py-2 text-xs italic text-muted-foreground">
           <span className="inline-flex animate-pulse items-center gap-2">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Searching Pakistani legal knowledge base...
+            {getLoadingPhrases(getLoadingPhraseCategory(loadingMessage))[loadingPhraseIndex]}
           </span>
         </div>
       ) : null}

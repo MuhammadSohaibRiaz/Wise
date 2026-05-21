@@ -36,12 +36,14 @@ import { CaseActivityFeed } from "@/components/cases/case-activity-feed"
 import { AiCaseSummary } from "@/components/cases/ai-case-summary"
 import { CaseDocumentsPanel } from "@/components/cases/case-documents-panel"
 import { formatCurrency, formatHourlyRate } from "@/lib/currency"
+import { CASE_OUTCOME_LABELS } from "@/lib/lawyer-success-rate-display"
 
 interface CaseDetail {
   id: string
   title: string
   description: string | null
   status: "open" | "in_progress" | "pending_completion" | "completed" | "closed"
+  case_outcome?: string | null
   case_type: string | null
   hourly_rate: number | null
   budget_min: number | null
@@ -152,6 +154,7 @@ export default function LawyerCaseDetailPage() {
           title,
           description,
           status,
+          case_outcome,
           case_type,
           hourly_rate,
           budget_min,
@@ -174,6 +177,7 @@ export default function LawyerCaseDetailPage() {
           title,
           description,
           status,
+          case_outcome,
           case_type,
           hourly_rate,
           budget_min,
@@ -220,6 +224,7 @@ export default function LawyerCaseDetailPage() {
         title: caseData.title,
         description: caseData.description,
         status: caseData.status,
+        case_outcome: (caseData as { case_outcome?: string | null }).case_outcome ?? null,
         case_type: caseData.case_type,
         hourly_rate: caseData.hourly_rate,
         budget_min: caseData.budget_min,
@@ -773,6 +778,11 @@ export default function LawyerCaseDetailPage() {
                             <p className="text-sm text-muted-foreground">
                               Case completed. You can archive it to move it out of your active view.
                             </p>
+                            {caseDetail.case_outcome && (
+                              <p className="text-sm text-muted-foreground">
+                                Client outcome: {CASE_OUTCOME_LABELS[caseDetail.case_outcome] ?? caseDetail.case_outcome}
+                              </p>
+                            )}
                             <Button
                               variant="outline"
                               onClick={() => { setSelectedStatus("closed"); handleStatusUpdate("closed"); }}
