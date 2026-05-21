@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { DayPicker } from "react-day-picker"
 import { format, isPast, startOfDay, addDays } from "date-fns"
@@ -81,58 +81,14 @@ export default function ClientAppointmentsPage() {
 
   const [heldTarget, setHeldTarget] = useState<Appointment | null>(null)
   const [rescheduleBlockedDates, setRescheduleBlockedDates] = useState<Set<string>>(new Set())
+  const appointmentsRef = useRef<Appointment[]>([])
 
-  useEffect(() => {
-    const paymentStatus = searchParams.get("payment")
-    const sessionId = searchParams.get("session_id")
-
-    if (paymentStatus === "success" && sessionId) {
-      const verifyPayment = async () => {
-        try {
-          const response = await fetch("/api/stripe/verify-payment", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId }),
-          })
-
-          if (response.ok) {
-            toast({
-              title: "Payment Successful",
-              description: "Your appointment has been confirmed. Refreshing...",
-            })
-            setTimeout(() => {
-              window.location.href = "/client/appointments"
-            }, 2000)
-          } else {
-            toast({
-              title: "Payment Processing",
-              description: "Your payment is being processed. The page will refresh shortly.",
-            })
-            setTimeout(() => {
-              window.location.href = "/client/appointments"
-            }, 3000)
-          }
-        } catch {
-          setTimeout(() => {
-            window.location.href = "/client/appointments"
-          }, 2000)
-        }
-      }
-
-      verifyPayment()
-      return
-    } else if (paymentStatus === "cancelled") {
-      toast({
-        title: "Payment Cancelled",
-        description: "Your appointment is still awaiting payment.",
-        variant: "default",
-      })
-      window.history.replaceState({}, "", "/client/appointments")
-    }
-
-    const fetchAppointments = async (retryCount = 0) => {
+  const loadAppointments = useCallback(
+    async (options?: { silent?: boolean; retryCount?: number }) => {
+      const silent = options?.silent === true
+      const retryCount = options?.retryCount ?? 0
       try {
-        setIsLoading(true)
+        if (!silent) setIsLoading(true)
         const supabase = createClient()
 
         const { data: sessionData } = await supabase.auth.getSession()
@@ -174,65 +130,194 @@ export default function ClientAppointmentsPage() {
         if (fetchError) {
           if (retryCount < 2) {
             await new Promise((r) => setTimeout(r, 1500))
-            return fetchAppointments(retryCount + 1)
+            return loadAppointments({ silent, retryCount: retryCount + 1 })
           }
           throw fetchError
         }
 
-        const appointmentIds = (data || []).map((apt: any) => apt.id)
-        let paymentStatuses: Record<string, string> = {}
-
-        if (appointmentIds.length > 0) {
+        const paymentStatuses: Record<string, string> = {}
+        if ((data || []).length > 0) {
           const { data: paymentsData } = await supabase
             .from("payments")
             .select("case_id, status")
-            .in("case_id", (data || []).map((apt: any) => apt.case_id))
+            .in("case_id", (data || []).map((apt: { case_id: string }) => apt.case_id))
 
-          if (paymentsData) {
-            paymentsData.forEach((payment) => {
-              paymentStatuses[payment.case_id] = payment.status
-            })
-          }
+          paymentsData?.forEach((payment) => {
+            paymentStatuses[payment.case_id] = payment.status
+          })
         }
 
-        const mappedAppointments = (data || []).map((apt: any) => ({
-          id: apt.id,
-          scheduled_at: apt.scheduled_at,
-          duration_minutes: apt.duration_minutes,
-          status: apt.status || "pending",
-          payment_status: paymentStatuses[apt.case_id] || null,
-          reschedule_count: apt.reschedule_count || 0,
-          case: apt.cases || { id: "", title: "", case_type: "", hourly_rate: null, status: "" },
-          lawyer: apt.profiles || {},
+        const mappedAppointments: Appointment[] = (data || []).map((apt: Record<string, unknown>) => ({
+          id: apt.id as string,
+          scheduled_at: apt.scheduled_at as string,
+          duration_minutes: apt.duration_minutes as number,
+          status: (apt.status as Appointment["status"]) || "pending",
+          payment_status: (paymentStatuses[apt.case_id as string] as Appointment["payment_status"]) || null,
+          reschedule_count: (apt.reschedule_count as number) || 0,
+          case: (apt.cases as Appointment["case"]) || { id: "", title: "", case_type: "", hourly_rate: null, status: "" },
+          lawyer: (apt.profiles as Appointment["lawyer"]) || {
+            id: "",
+            first_name: "",
+            last_name: "",
+            avatar_url: null,
+          },
         }))
 
+        appointmentsRef.current = mappedAppointments
         setAppointments(mappedAppointments)
+        setError(null)
       } catch (error) {
         console.error("[Client Appointments] Fetch error:", error)
-        setError("Failed to load appointments")
-        toast({
-          title: "Error",
-          description: "Failed to load your appointments.",
-          variant: "destructive",
-        })
+        if (!silent) {
+          setError("Failed to load appointments")
+          toast({
+            title: "Error",
+            description: "Failed to load your appointments.",
+            variant: "destructive",
+          })
+        }
       } finally {
-        setIsLoading(false)
+        if (!silent) setIsLoading(false)
       }
+    },
+    [toast],
+  )
+
+  useEffect(() => {
+    const paymentStatus = searchParams.get("payment")
+    const sessionId = searchParams.get("session_id")
+
+    if (paymentStatus === "success" && sessionId) {
+      const verifyPayment = async () => {
+        try {
+          const response = await fetch("/api/stripe/verify-payment", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId }),
+          })
+
+          if (response.ok) {
+            toast({
+              title: "Payment Successful",
+              description: "Your appointment has been confirmed. Refreshing...",
+            })
+            setTimeout(() => {
+              window.location.href = "/client/appointments"
+            }, 2000)
+          } else {
+            toast({
+              title: "Payment Processing",
+              description: "Your payment is being processed. The page will refresh shortly.",
+            })
+            setTimeout(() => {
+              window.location.href = "/client/appointments"
+            }, 3000)
+          }
+        } catch {
+          setTimeout(() => {
+            window.location.href = "/client/appointments"
+          }, 2000)
+        }
+      }
+
+      void verifyPayment()
+      return
+    }
+    if (paymentStatus === "cancelled") {
+      toast({
+        title: "Payment Cancelled",
+        description: "Your appointment is still awaiting payment.",
+        variant: "default",
+      })
+      window.history.replaceState({}, "", "/client/appointments")
     }
 
-    fetchAppointments()
-  }, [toast, searchParams])
+    void loadAppointments()
+  }, [loadAppointments, searchParams, toast])
+
+  const showAppointmentStatusToast = useCallback(
+    (updated: { id?: string; status?: string }, old?: { status?: string }) => {
+      const status = updated.status
+      if (!status) return
+
+      if (status === "awaiting_payment" && old?.status === "pending") {
+        toast({
+          title: "Payment Required",
+          description: "Your appointment has been approved. Please complete payment to confirm your booking.",
+        })
+        return
+      }
+      if (status === "scheduled") {
+        if (old?.status === "cancellation_requested") {
+          toast({
+            title: "Cancellation Denied",
+            description: "Your cancellation request was reviewed and denied by admin. The appointment remains active.",
+            variant: "destructive",
+          })
+        } else {
+          toast({
+            title: "Appointment Confirmed",
+            description: "Your payment was successful and your appointment is now confirmed.",
+          })
+        }
+        return
+      }
+      if (status === "rescheduled") {
+        if (old?.status === "cancellation_requested") {
+          toast({
+            title: "Cancellation Denied",
+            description: "Your cancellation request was reviewed and denied by admin. The appointment remains active.",
+            variant: "destructive",
+          })
+        } else {
+          toast({
+            title: "Appointment Rescheduled",
+            description: "Your appointment has been rescheduled. Check the new time.",
+          })
+        }
+        return
+      }
+      if (status === "cancelled") {
+        if (old?.status === "cancellation_requested") {
+          toast({
+            title: "Cancellation Approved",
+            description: "Your cancellation request has been approved. The appointment has been cancelled.",
+          })
+        } else {
+          toast({
+            title: "Appointment Cancelled",
+            description: "Your appointment has been cancelled.",
+          })
+        }
+        return
+      }
+      if (status === "cancellation_requested") {
+        toast({
+          title: "Cancellation Under Review",
+          description: "A cancellation request has been submitted and is under admin review.",
+        })
+      }
+      if (status === "rejected" && old?.status === "pending") {
+        toast({
+          title: "Request Declined",
+          description: "The lawyer declined your appointment request.",
+          variant: "destructive",
+        })
+      }
+    },
+    [toast],
+  )
 
   useEffect(() => {
     if (!clientId) return
 
     const supabase = createClient()
     let refetchTimeout: ReturnType<typeof setTimeout> | null = null
-    const debouncedRefetch = () => {
+    const debouncedSilentReload = () => {
       if (refetchTimeout) clearTimeout(refetchTimeout)
       refetchTimeout = setTimeout(() => {
-        window.location.reload()
-      }, 500)
+        void loadAppointments({ silent: true })
+      }, 250)
     }
 
     const channel = supabase
@@ -246,103 +331,72 @@ export default function ClientAppointmentsPage() {
           filter: `client_id=eq.${clientId}`,
         },
         (payload) => {
-          const updated = payload.new as any
-          setAppointments((prev) =>
-            prev.map((apt) =>
-              apt.id === updated.id
-                ? { ...apt, status: updated.status, scheduled_at: updated.scheduled_at || apt.scheduled_at, reschedule_count: updated.reschedule_count ?? apt.reschedule_count }
-                : apt,
-            ),
-          )
-          const old = payload.old as any
-          if (updated.status === "awaiting_payment") {
-            toast({
-              title: "Payment Required",
-              description: "Your appointment has been approved. Please complete payment to confirm your booking.",
-            })
-          } else if (updated.status === "scheduled") {
-            if (old?.status === "cancellation_requested") {
-              toast({
-                title: "Cancellation Denied",
-                description: "Your cancellation request was reviewed and denied by admin. The appointment remains active.",
-                variant: "destructive",
-              })
-            } else {
-              toast({
-                title: "Appointment Confirmed",
-                description: "Your payment was successful and your appointment is now confirmed.",
-              })
-            }
-          } else if (updated.status === "rescheduled") {
-            if (old?.status === "cancellation_requested") {
-              toast({
-                title: "Cancellation Denied",
-                description: "Your cancellation request was reviewed and denied by admin. The appointment remains active.",
-                variant: "destructive",
-              })
-            } else {
-              toast({
-                title: "Appointment Rescheduled",
-                description: "Your appointment has been rescheduled. Check the new time.",
-              })
-            }
-          } else if (updated.status === "cancelled") {
-            if (old?.status === "cancellation_requested") {
-              toast({
-                title: "Cancellation Approved",
-                description: "Your cancellation request has been approved. The appointment has been cancelled.",
-              })
-            } else {
-              toast({
-                title: "Appointment Cancelled",
-                description: "Your appointment has been cancelled.",
-              })
-            }
-          } else if (updated.status === "cancellation_requested") {
-            toast({
-              title: "Cancellation Under Review",
-              description: "A cancellation request has been submitted and is under admin review.",
-            })
-          }
+          const updated = payload.new as { id?: string; status?: string }
+          const old = payload.old as { status?: string }
+          showAppointmentStatusToast(updated, old)
+          debouncedSilentReload()
         },
       )
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "appointments", filter: `client_id=eq.${clientId}` },
-        () => debouncedRefetch(),
+        () => debouncedSilentReload(),
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "payments", filter: `client_id=eq.${clientId}` },
-        () => debouncedRefetch(),
+        () => debouncedSilentReload(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${clientId}` },
+        (payload) => {
+          const row = payload.new as { type?: string }
+          if (row.type === "appointment_update" || row.type === "appointment_request") {
+            debouncedSilentReload()
+          }
+        },
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "cases", filter: `client_id=eq.${clientId}` },
         (payload) => {
-          const updatedCase = payload.new as any
-          setAppointments((prev) =>
-            prev.map((apt) =>
-              apt.case.id === updatedCase.id
-                ? { ...apt, case: { ...apt.case, status: updatedCase.status } }
-                : apt,
-            ),
-          )
+          const updatedCase = payload.new as { id?: string; status?: string }
+          if (updatedCase.id && updatedCase.status) {
+            setAppointments((prev) =>
+              prev.map((apt) =>
+                apt.case.id === updatedCase.id
+                  ? { ...apt, case: { ...apt.case, status: updatedCase.status as string } }
+                  : apt,
+              ),
+            )
+          }
           if (updatedCase.status === "pending_completion") {
             toast({
               title: "Completion Requested",
               description: "Your lawyer has requested case completion. Please review from My Cases.",
             })
           }
+          debouncedSilentReload()
         },
       )
       .subscribe()
 
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadAppointments({ silent: true })
+      }
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    window.addEventListener("focus", onVisible)
+
     return () => {
       if (refetchTimeout) clearTimeout(refetchTimeout)
+      document.removeEventListener("visibilitychange", onVisible)
+      window.removeEventListener("focus", onVisible)
       supabase.removeChannel(channel)
     }
-  }, [clientId, toast])
+  }, [clientId, toast, loadAppointments, showAppointmentStatusToast])
 
   useEffect(() => {
     if (!rescheduleTarget) {
@@ -768,7 +822,7 @@ export default function ClientAppointmentsPage() {
                             <PaymentButton
                               appointmentId={appointment.id}
                               amount={((appointment.case.hourly_rate || 0) * appointment.duration_minutes) / 60}
-                              onPaymentSuccess={() => window.location.reload()}
+                              onPaymentSuccess={() => void loadAppointments({ silent: true })}
                             />
                           </div>
                         </DialogContent>
