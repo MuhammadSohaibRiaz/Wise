@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
+import { getAuthCallbackUrl } from "@/lib/auth/redirect-urls"
 import { ArrowLeft } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
@@ -27,13 +28,8 @@ export default function ForgotPasswordPage() {
       const supabase = createClient()
 
       const normalizedEmail = email.trim().toLowerCase()
-      const redirectTo = new URL(
-        process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/auth/callback`
-      )
-      redirectTo.searchParams.set("next", "/auth/reset-password")
-
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: redirectTo.toString(),
+        redirectTo: getAuthCallbackUrl("/auth/reset-password"),
       })
 
       if (resetError) {

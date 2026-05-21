@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
+import { getAuthCallbackUrl } from "@/lib/auth/redirect-urls"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { LAW_SPECIALIZATIONS } from "@/lib/specializations"
 import { FileUpload } from "@/components/auth/file-upload"
@@ -29,8 +30,10 @@ export default function LawyerRegisterPage() {
   const [registrationComplete, setRegistrationComplete] = useState(false)
   const submitButtonRef = useRef<HTMLButtonElement>(null)
 
-  const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
-  const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
+  const showError = (msg: string) =>
+    toast({ variant: "destructive", title: "Error", description: msg, duration: 5000 })
+  const showSuccess = (msg: string) =>
+    toast({ variant: "success", title: "Success", description: msg, duration: 5000 })
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -61,7 +64,7 @@ export default function LawyerRegisterPage() {
     }
 
     if (!licenseFile) {
-      showError("Please upload your bar license document for admin verification")
+      showError("Please upload your bar license document before creating your account.")
       return
     }
 
@@ -70,10 +73,7 @@ export default function LawyerRegisterPage() {
     try {
       const supabase = createClient()
       const normalizedEmail = email.trim().toLowerCase()
-      const emailRedirectTo = new URL(
-        process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/auth/callback`
-      )
-      emailRedirectTo.searchParams.set("next", "/auth/lawyer/sign-in")
+      const emailRedirectTo = getAuthCallbackUrl("/auth/lawyer/sign-in")
 
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: normalizedEmail,
@@ -86,7 +86,7 @@ export default function LawyerRegisterPage() {
             bar_license: barLicense,
             practice_area: practiceArea,
           },
-          emailRedirectTo: emailRedirectTo.toString(),
+          emailRedirectTo,
         },
       })
 
@@ -107,7 +107,7 @@ export default function LawyerRegisterPage() {
 
         if (uploadError) {
           console.error("Storage upload error:", uploadError)
-          showSuccess("Account created, but license upload failed. Please confirm your email, then upload it from your profile.")
+          showError("Account created, but license upload failed. Verify your email, then upload your license from your profile.")
         } else {
           const { data: { publicUrl } } = supabase.storage
             .from("verifications")
@@ -127,6 +127,22 @@ export default function LawyerRegisterPage() {
         }
 
         await supabase.auth.signOut()
+
+        const verifyRes = await fetch("/api/auth/send-verification-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: normalizedEmail, userType: "lawyer" }),
+        })
+        if (!verifyRes.ok) {
+          const payload = await verifyRes.json().catch(() => ({}))
+          showError(
+            (payload as { error?: string }).error ||
+              "Account created but we could not send the verification email. Try again from the sign-in page.",
+          )
+        } else {
+          showSuccess("Account created! Please verify your email address. Check your inbox for a verification link.")
+        }
+
         setRegistrationComplete(true)
       }
     } catch (err: any) {
@@ -157,10 +173,10 @@ export default function LawyerRegisterPage() {
               <MailCheck className="h-10 w-10 text-primary" />
             </div>
             <Alert>
-              <AlertTitle>Account created</AlertTitle>
+              <AlertTitle>Account created!</AlertTitle>
               <AlertDescription>
-                Please check your email and click the verification link before signing in. Your bar license is pending
-                admin review after you verify your email.
+                Please verify your email address. Check your inbox for a verification link. Your bar license will be
+                reviewed by admin after your email is verified.
               </AlertDescription>
             </Alert>
             <Button className="w-full" onClick={() => router.push("/auth/lawyer/sign-in")}>
@@ -243,7 +259,10 @@ export default function LawyerRegisterPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="licenseFile">Bar License Document</Label>
+            <Label htmlFor="licenseFile">
+              Bar License Document <span className="text-destructive">*</span>
+              <span className="ml-1 text-xs font-normal text-muted-foreground">(Required)</span>
+            </Label>
             <FileUpload
               onFileSelect={(file) => {
                 setLicenseFile(file)

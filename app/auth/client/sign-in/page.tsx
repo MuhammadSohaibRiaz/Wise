@@ -19,6 +19,10 @@ export default function ClientSignInPage() {
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [bannerMessage, setBannerMessage] = useState<string | null>(null)
+  const [successBanner, setSuccessBanner] = useState(false)
+  const [resendEmail, setResendEmail] = useState("")
+  const [isResending, setIsResending] = useState(false)
+  const [showResendVerification, setShowResendVerification] = useState(false)
 
   const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
   const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
@@ -26,12 +30,16 @@ export default function ClientSignInPage() {
   useEffect(() => {
     if (typeof window === "undefined") return
     const params = new URLSearchParams(window.location.search)
-    if (params.get("confirmed") === "1") {
-      setBannerMessage("Email confirmed. You can now sign in.")
+    if (params.get("message") === "email-confirmed" || params.get("confirmed") === "1") {
+      const msg = "Email verified successfully! You can now sign in."
+      setSuccessBanner(true)
+      setBannerMessage(msg)
+      showSuccess(msg)
       window.history.replaceState(null, "", window.location.pathname)
       return
     }
     if (params.get("error") === "unverified") {
+      setShowResendVerification(true)
       setBannerMessage(
         "Please verify your email address before signing in. Check your inbox for the verification link.",
       )
@@ -41,6 +49,30 @@ export default function ClientSignInPage() {
       setBannerMessage("Sign in as a client to book a consultation with this lawyer.")
     }
   }, [])
+
+  const handleResendVerification = async () => {
+    const targetEmail = resendEmail.trim().toLowerCase() || email.trim().toLowerCase()
+    if (!targetEmail) {
+      showError("Enter your email address to resend the verification link.")
+      return
+    }
+    setIsResending(true)
+    try {
+      const res = await fetch("/api/auth/send-verification-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: targetEmail, userType: "client" }),
+      })
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}))
+        showError((payload as { error?: string }).error || "Could not resend verification email.")
+        return
+      }
+      showSuccess("If an unverified account exists for that email, we sent a new verification link.")
+    } finally {
+      setIsResending(false)
+    }
+  }
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -74,18 +106,9 @@ export default function ClientSignInPage() {
         return
       }
 
-      if (!user.email_confirmed_at) {
-        await supabase.auth.signOut()
-        showError(
-          "Please verify your email address before signing in. Check your inbox for the verification link.",
-        )
-        setIsLoading(false)
-        return
-      }
-
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("user_type")
+        .select("user_type, email_verified_at")
         .eq("id", user.id)
         .single()
 
@@ -94,6 +117,33 @@ export default function ClientSignInPage() {
         await supabase.auth.signOut()
         setIsLoading(false)
         return
+      }
+
+      if (!profile.email_verified_at) {
+        if (user.email_confirmed_at) {
+          await fetch("/api/auth/mark-email-verified", { method: "POST" })
+          const { data: refreshed } = await supabase
+            .from("profiles")
+            .select("email_verified_at, user_type")
+            .eq("id", user.id)
+            .single()
+          if (!refreshed?.email_verified_at) {
+            await supabase.auth.signOut()
+            showError(
+              "Please verify your email address before signing in. Check your inbox for the verification link.",
+            )
+            setIsLoading(false)
+            return
+          }
+          Object.assign(profile, refreshed)
+        } else {
+          await supabase.auth.signOut()
+          showError(
+            "Please verify your email address before signing in. Check your inbox for the verification link.",
+          )
+          setIsLoading(false)
+          return
+        }
       }
 
       if (profile.user_type !== "client") {
@@ -136,11 +186,36 @@ export default function ClientSignInPage() {
         </div>
 
         {bannerMessage && (
-          <Alert>
-            <AlertTitle>Notice</AlertTitle>
+          <Alert
+            className={
+              successBanner
+                ? "border-green-500/50 bg-green-50 text-green-950 dark:bg-green-950/30 dark:text-green-100"
+                : undefined
+            }
+          >
+            <AlertTitle>{successBanner ? "Email verified" : "Notice"}</AlertTitle>
             <AlertDescription>{bannerMessage}</AlertDescription>
           </Alert>
         )}
+
+        {showResendVerification && (
+            <div className="space-y-2 rounded-lg border p-4">
+              <p className="text-sm text-muted-foreground">
+                Did not receive the email? Enter your address and resend the verification link.
+              </p>
+              <Input
+                type="email"
+                placeholder="you@example.com"
+                value={resendEmail}
+                onChange={(e) => setResendEmail(e.target.value)}
+                disabled={isResending}
+              />
+              <Button type="button" variant="outline" className="w-full" onClick={handleResendVerification} disabled={isResending}>
+                {isResending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Resend verification email
+              </Button>
+            </div>
+          )}
 
         <form onSubmit={handleSignIn} className="space-y-4">
           <div className="space-y-2">

@@ -8,7 +8,17 @@ export async function updateSession(request: NextRequest) {
   // Public routes still get a Supabase session refresh below. The RAG endpoint
   // is public for legal KB questions, but it applies stricter guest behavior in
   // the route itself.
-  const publicRoutes = ["/", "/auth", "/match", "/terms", "/privacy", "/client/lawyer", "/api/chat", "/api/legal-rag-chat"]
+  const publicRoutes = [
+    "/",
+    "/auth",
+    "/match",
+    "/terms",
+    "/privacy",
+    "/client/lawyer",
+    "/api/chat",
+    "/api/legal-rag-chat",
+    "/api/auth",
+  ]
   const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route + "/"))
 
   const supabase = createServerClient(
@@ -56,14 +66,25 @@ export async function updateSession(request: NextRequest) {
     return createRedirect(dest)
   }
 
-  if (user && !user.email_confirmed_at && !isPublicRoute) {
-    await supabase.auth.signOut()
-    const dest = pathname.startsWith("/lawyer/")
-      ? "/auth/lawyer/sign-in?error=unverified"
-      : pathname.startsWith("/admin")
-        ? "/auth/admin/sign-in?error=unverified"
-        : "/auth/client/sign-in?error=unverified"
-    return createRedirect(dest)
+  if (user && !isPublicRoute) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("email_verified_at, user_type")
+      .eq("id", user.id)
+      .maybeSingle()
+
+    const needsEmailVerification =
+      profile?.user_type !== "admin" && !profile?.email_verified_at
+
+    if (needsEmailVerification) {
+      await supabase.auth.signOut()
+      const dest = pathname.startsWith("/lawyer/")
+        ? "/auth/lawyer/sign-in?error=unverified"
+        : pathname.startsWith("/admin")
+          ? "/auth/admin/sign-in?error=unverified"
+          : "/auth/client/sign-in?error=unverified"
+      return createRedirect(dest)
+    }
   }
 
   if (user && needsRoleCheck) {

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
+import { getAuthCallbackUrl } from "@/lib/auth/redirect-urls"
 import { Loader2, ArrowLeft, MailCheck } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -50,10 +51,7 @@ export default function ClientRegisterPage() {
     try {
       const supabase = createClient()
       const normalizedEmail = email.trim().toLowerCase()
-      const emailRedirectTo = new URL(
-        process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/auth/callback`
-      )
-      emailRedirectTo.searchParams.set("next", "/auth/client/sign-in")
+      const emailRedirectTo = getAuthCallbackUrl("/auth/client/sign-in")
 
       const { error: connectionError } = await supabase.from("profiles").select("id").limit(1)
 
@@ -88,7 +86,7 @@ export default function ClientRegisterPage() {
             last_name: lastName,
             user_type: "client",
           },
-          emailRedirectTo: emailRedirectTo.toString(),
+          emailRedirectTo,
         },
       })
 
@@ -111,6 +109,20 @@ export default function ClientRegisterPage() {
 
       if (data.user) {
         await supabase.auth.signOut()
+
+        const verifyRes = await fetch("/api/auth/send-verification-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: normalizedEmail, userType: "client" }),
+        })
+        if (!verifyRes.ok) {
+          const payload = await verifyRes.json().catch(() => ({}))
+          showError(
+            (payload as { error?: string }).error ||
+              "Account created but we could not send the verification email. Use Resend on the sign-in page or contact support.",
+          )
+        }
+
         setRegistrationComplete(true)
       }
     } catch (err: any) {

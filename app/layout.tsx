@@ -10,6 +10,7 @@ import { LegalRagLauncher } from "@/components/rag/legal-rag-launcher"
 import { Toaster } from "@/components/ui/toaster"
 import { NotificationToastListener } from "@/components/notifications/notification-toast-listener"
 import { RootProgressBar } from "@/components/root-progress"
+import { OAuthCallbackHashRedirect } from "@/components/auth/oauth-callback-hash-redirect"
 
 export const metadata: Metadata = {
   title: {
@@ -93,6 +94,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable} antialiased`}>
         <ThemeProvider defaultTheme="system" enableSystem>
+          <OAuthCallbackHashRedirect />
           <RootProgressBar />
           {children}
           <LegalRagLauncher />

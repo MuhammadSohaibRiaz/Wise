@@ -9,7 +9,8 @@ function getResend(): Resend {
   return _resend
 }
 
-const FROM_ADDRESS = "WiseCase <noreply@rapidnextech.com>"
+const FROM_ADDRESS =
+  process.env.RESEND_FROM_EMAIL?.trim() || "WiseCase <noreply@rapidnextech.com>"
 
 interface SendEmailParams {
   to: string
@@ -22,22 +23,25 @@ interface SendEmailParams {
  * Safe to call without `await` from any server-side context.
  */
 export async function sendEmail({ to, subject, html }: SendEmailParams): Promise<boolean> {
-  try {
-    const { error } = await getResend().emails.send({
-      from: FROM_ADDRESS,
-      to,
-      subject,
-      html,
-    })
-    if (error) {
-      console.error("[Email] Resend API error:", error.message)
-      return false
+  const maxAttempts = 3
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const { error } = await getResend().emails.send({
+        from: FROM_ADDRESS,
+        to,
+        subject,
+        html,
+      })
+      if (!error) return true
+      console.error(`[Email] Resend API error (attempt ${attempt}/${maxAttempts}):`, error.message, error.name)
+    } catch (err) {
+      console.error(`[Email] Unexpected send error (attempt ${attempt}/${maxAttempts}):`, err)
     }
-    return true
-  } catch (err) {
-    console.error("[Email] Unexpected send error:", err)
-    return false
+    if (attempt < maxAttempts) {
+      await new Promise((r) => setTimeout(r, 800 * attempt))
+    }
   }
+  return false
 }
 
 export function escapeHtml(str: string): string {

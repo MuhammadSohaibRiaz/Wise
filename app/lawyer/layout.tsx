@@ -3,8 +3,10 @@
 import type React from "react"
 import { useState, useEffect, useMemo, useRef } from "react"
 import { useRouter, usePathname } from "next/navigation"
-import { Menu, X, ShieldAlert, Clock, LogOut, Upload, Loader2, XCircle, CheckCircle2 } from "lucide-react"
+import { Menu, X, ShieldAlert, Clock, LogOut, Upload, Loader2, XCircle, CheckCircle2, MailCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { LawyerSidebar } from "@/components/lawyer/sidebar"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,6 +19,8 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
   const [isLoading, setIsLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isVerified, setIsVerified] = useState(false)
+  const [isEmailVerified, setIsEmailVerified] = useState(false)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
   const [verificationStatus, setVerificationStatus] = useState<string | null>(null)
 
   // All hooks must be called before any conditional returns
@@ -36,8 +40,15 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
 
       if (!user) {
         setIsLoading(false)
+        router.replace("/auth/lawyer/sign-in")
         return
       }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("email_verified_at, email")
+        .eq("id", user.id)
+        .single()
 
       const { data: lawyerProfile } = await supabase
         .from("lawyer_profiles")
@@ -46,6 +57,8 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
         .single()
 
       setIsAuthenticated(true)
+      setUserEmail(profile?.email ?? user.email ?? null)
+      setIsEmailVerified(Boolean(profile?.email_verified_at))
       setIsVerified(lawyerProfile?.verified || false)
       setVerificationStatus(lawyerProfile?.verification_status || "pending")
 
@@ -64,7 +77,7 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
     }
 
     init()
-  }, [])
+  }, [router])
 
   if (isLoading) {
     return (
@@ -77,7 +90,13 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
     )
   }
 
-  // Verification Pending / Rejected Screen
+  if (isAuthenticated && !isEmailVerified) {
+    return (
+      <LawyerEmailVerificationScreen userEmail={userEmail} onSignOut={handleSignOut} />
+    )
+  }
+
+  // License verification pending / rejected (only after email is verified)
   if (!isVerified) {
     const isRejected = verificationStatus === "rejected"
     return (
@@ -129,6 +148,91 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
         <main key={pathname} className="w-full md:pl-64">{children}</main>
       </div>
     </>
+  )
+}
+
+function LawyerEmailVerificationScreen({
+  userEmail,
+  onSignOut,
+}: {
+  userEmail: string | null
+  onSignOut: () => void
+}) {
+  const { toast } = useToast()
+  const [isResending, setIsResending] = useState(false)
+  const [resendEmail, setResendEmail] = useState(userEmail ?? "")
+
+  const handleResend = async () => {
+    const target = resendEmail.trim().toLowerCase()
+    if (!target) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Enter your email address to resend the verification link.",
+      })
+      return
+    }
+    setIsResending(true)
+    try {
+      const res = await fetch("/api/auth/send-verification-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: target, userType: "lawyer" }),
+      })
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}))
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: (payload as { error?: string }).error || "Could not resend verification email.",
+        })
+        return
+      }
+      toast({
+        variant: "success",
+        title: "Email sent",
+        description: "If your account is unverified, we sent a new verification link.",
+      })
+    } finally {
+      setIsResending(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-muted/30 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md shadow-xl border-t-4 border-t-primary">
+        <CardHeader className="text-center">
+          <div className="mx-auto p-3 rounded-full w-fit mb-4 bg-primary/10">
+            <MailCheck className="h-8 w-8 text-primary" />
+          </div>
+          <CardTitle className="text-2xl">Verify Your Email Address</CardTitle>
+          <CardDescription>
+            Please check your inbox and click the verification link before accessing your account.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="lawyer-resend-email">Email address</Label>
+            <Input
+              id="lawyer-resend-email"
+              type="email"
+              value={resendEmail}
+              onChange={(e) => setResendEmail(e.target.value)}
+              disabled={isResending}
+              placeholder="you@example.com"
+            />
+          </div>
+          <Button className="w-full" onClick={handleResend} disabled={isResending}>
+            {isResending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Resend verification email
+          </Button>
+          <Button variant="outline" className="w-full gap-2" onClick={onSignOut}>
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 
