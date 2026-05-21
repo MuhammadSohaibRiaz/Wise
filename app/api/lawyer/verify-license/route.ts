@@ -6,34 +6,83 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 })
 
-export async function POST(req: NextRequest) {
-  console.log("[Verify License] API Hit")
+function isAllowedLicenseUrl(url: string): boolean {
   try {
-    const formData = await req.formData()
-    const licenseNumber = formData.get("licenseNumber") as string
-    const userId = formData.get("userId") as string
-    const licenseUrl = formData.get("licenseUrl") as string
-    const file = formData.get("file") as File | null
-    
+    const parsed = new URL(url)
+    const supabaseHost = process.env.NEXT_PUBLIC_SUPABASE_URL
+      ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).host
+      : null
+    if (supabaseHost && parsed.host === supabaseHost) {
+      return parsed.pathname.includes("/verifications/") || parsed.pathname.includes("/storage/")
+    }
+    return parsed.protocol === "https:" || parsed.protocol === "http:"
+  } catch {
+    return false
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("user_type")
+      .eq("id", user.id)
+      .maybeSingle()
+
+    if (profile?.user_type !== "lawyer") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
+    const contentType = req.headers.get("content-type") || ""
+    let licenseNumber = ""
+    let licenseUrl = ""
+    let file: File | null = null
+
+    if (contentType.includes("application/json")) {
+      const body = await req.json().catch(() => ({}))
+      licenseNumber = String(body.licenseNumber || "").trim()
+      licenseUrl = String(body.licenseUrl || "").trim()
+    } else {
+      const formData = await req.formData()
+      licenseNumber = String(formData.get("licenseNumber") || "").trim()
+      licenseUrl = String(formData.get("licenseUrl") || "").trim()
+      const rawFile = formData.get("file")
+      file = rawFile instanceof File ? rawFile : null
+    }
+
     if (!licenseNumber || (!licenseUrl && !file)) {
-      return NextResponse.json({ error: "License number and either a file or URL are required" }, { status: 400 })
+      return NextResponse.json(
+        { error: "License number and either a file or URL are required" },
+        { status: 400 },
+      )
     }
 
     let dataUrl = ""
 
     if (file) {
-      console.log("[Verify License] Processing uploaded file:", file.name)
       const buffer = Buffer.from(await file.arrayBuffer())
-      const b64 = buffer.toString("base64")
-      dataUrl = `data:${file.type || "image/jpeg"};base64,${b64}`
+      dataUrl = `data:${file.type || "image/jpeg"};base64,${buffer.toString("base64")}`
     } else if (licenseUrl) {
-      console.log("[Verify License] Fetching from URL:", licenseUrl)
+      if (!isAllowedLicenseUrl(licenseUrl)) {
+        return NextResponse.json({ error: "Invalid license document URL" }, { status: 400 })
+      }
       const res = await fetch(licenseUrl)
+      if (!res.ok) {
+        return NextResponse.json({ error: "Could not fetch license document" }, { status: 400 })
+      }
       const buffer = Buffer.from(await res.arrayBuffer())
       dataUrl = `data:${res.headers.get("content-type") || "image/jpeg"};base64,${buffer.toString("base64")}`
     }
 
-    console.log("[Verify License] Sending to Groq Vision...")
     const prompt = `
       You are an AI tasked with extracting a Bar License Number from a scan or photo of a lawyer's license document.
       The user claims their license number is: "${licenseNumber}".
@@ -52,38 +101,39 @@ export async function POST(req: NextRequest) {
           role: "user",
           content: [
             { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: dataUrl } }
-          ]
-        }
+            { type: "image_url", image_url: { url: dataUrl } },
+          ],
+        },
       ],
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
       temperature: 0,
     })
 
     const responseText = completion.choices[0].message.content || "{}"
-    const cleanedText = responseText.replace(/```json\n?|```\n?/g, '').trim()
-    const result = JSON.parse(cleanedText)
-
-    // Update database if userId is provided
-    if (userId) {
-      const supabase = await createClient()
-      await supabase
-        .from("lawyer_profiles")
-        .update({
-          ai_license_match: result.match === true,
-          ai_extracted_license: result.extractedLicense || "Not found"
-        })
-        .eq("id", userId)
+    const cleanedText = responseText.replace(/```json\n?|```\n?/g, "").trim()
+    let result: { extractedLicense?: string; match?: boolean }
+    try {
+      result = JSON.parse(cleanedText)
+    } catch {
+      return NextResponse.json({ error: "AI returned invalid response" }, { status: 502 })
     }
+
+    await supabase
+      .from("lawyer_profiles")
+      .update({
+        ai_license_match: result.match === true,
+        ai_extracted_license: result.extractedLicense || "Not found",
+      })
+      .eq("id", user.id)
 
     return NextResponse.json({
       success: true,
       match: result.match === true,
-      extractedLicense: result.extractedLicense || "Not found"
+      extractedLicense: result.extractedLicense || "Not found",
     })
-
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Verification failed"
     console.error("[Verify License] API Error:", error)
-    return NextResponse.json({ error: error.message || "Verification failed" }, { status: 500 })
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

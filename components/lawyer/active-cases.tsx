@@ -209,7 +209,7 @@ export function ActiveCases({ hideTitle = false }: ActiveCasesProps) {
 
       <div className="space-y-3">
         {cases.map((caseItem) => {
-          const statusInfo = statusConfig[caseItem.status]
+          const statusInfo = statusConfig[caseItem.status] ?? statusConfig.in_progress
           const clientName = caseItem.client
             ? `${caseItem.client.first_name || ""} ${caseItem.client.last_name || ""}`.trim() || "Unknown Client"
             : "No client assigned"

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { matchLawyersWithCategory } from "@/lib/ai/lawyer-matching"
 import { isAiCapacityLimitError, toUserFacingAnalysisError } from "@/lib/ai/capacity-messages"
 import { runDocumentAnalysis } from "@/lib/analysis/run-document-analysis"
@@ -26,25 +27,6 @@ export async function POST(req: NextRequest) {
     } = await supabase.auth.getUser()
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    // Used by the UI when an analysis already exists: return stored results
-    // instead of spending another Groq call and duplicating DB rows.
-    if (skipAnalysis) {
-      const { data: analysis } = await supabase
-        .from("document_analysis")
-        .select("*")
-        .eq("document_id", documentId)
-        .single()
-
-      if (analysis) {
-        const recommendedLawyers = await matchLawyersWithCategory(supabase, analysis.summary || "")
-        return NextResponse.json({
-          success: true,
-          analysis,
-          recommendedLawyers,
-        })
-      }
     }
 
     const { data: document, error: docError } = await supabase
@@ -74,6 +56,25 @@ export async function POST(req: NextRequest) {
     }
     if (!allowed) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
+    // Used by the UI when an analysis already exists: return stored results
+    // instead of spending another Groq call and duplicating DB rows.
+    if (skipAnalysis) {
+      const { data: analysis } = await supabase
+        .from("document_analysis")
+        .select("*")
+        .eq("document_id", documentId)
+        .single()
+
+      if (analysis) {
+        const recommendedLawyers = await matchLawyersWithCategory(supabase, analysis.summary || "")
+        return NextResponse.json({
+          success: true,
+          analysis,
+          recommendedLawyers,
+        })
+      }
     }
 
     // Long analyses are queued so Vercel/API timeouts do not cut off the user
@@ -129,8 +130,8 @@ export async function POST(req: NextRequest) {
 
     if (failureDocumentId) {
       try {
-        const supabase = await createClient()
-        await supabase.from("documents").update({ status: "failed" }).eq("id", failureDocumentId)
+        const admin = createAdminClient()
+        await admin.from("documents").update({ status: "failed" }).eq("id", failureDocumentId)
       } catch {
         /* ignore */
       }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { Suspense, useState, useEffect, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -24,7 +24,7 @@ interface Certification {
 
 const SPECIALIZATIONS = [...LAW_SPECIALIZATIONS]
 
-export default function LawyerProfilePage() {
+function LawyerProfileContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { toast } = useToast()
@@ -1097,5 +1097,19 @@ export default function LawyerProfilePage() {
         </TabsContent>
       </Tabs>
     </main>
+  )
+}
+
+export default function LawyerProfilePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-[40vh] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </main>
+      }
+    >
+      <LawyerProfileContent />
+    </Suspense>
   )
 }

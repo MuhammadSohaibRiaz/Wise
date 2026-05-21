@@ -49,7 +49,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { error: updErr } = await supabase
+    const admin = createAdminClient()
+
+    const { error: updErr } = await admin
       .from("appointments")
       .update({ status: "cancelled", updated_at: new Date().toISOString() })
       .eq("id", appointmentId)
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (row.case_id) {
-      const { error: caseErr } = await supabase
+      const { error: caseErr } = await admin
         .from("cases")
         .update({ status: "closed", updated_at: new Date().toISOString() })
         .eq("id", row.case_id)
@@ -70,15 +72,13 @@ export async function POST(req: NextRequest) {
         console.warn("[mark-no-show] case close:", caseErr.message)
       }
 
-      await appendCaseTimelineEvent(supabase, {
+      await appendCaseTimelineEvent(admin, {
         caseId: row.case_id,
         actorId: user.id,
         eventType: CaseTimelineEventType.CONSULTATION_NO_SHOW,
         metadata: { appointment_id: appointmentId, source: "mark_no_show" },
       })
     }
-
-    const admin = createAdminClient()
     const { data: adminProfiles } = await admin
       .from("profiles")
       .select("id")

@@ -211,16 +211,27 @@ function AICaseAnalysisContent() {
       const response = await fetch("/api/analyze-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentId }),
+        body: JSON.stringify({ documentId, async: true }),
       })
 
       const data = await response.json()
 
       if (!response.ok) throw new Error(data.error || "Analysis failed")
 
-      const analysisPayload = (data.analysis || {}) as Record<string, unknown>
-      const recommended = data.recommendedLawyers || []
-      const isLegalDocument = data.isLegalDocument !== false
+      let analysisPayload: Record<string, unknown> = (data.analysis || {}) as Record<string, unknown>
+      let recommended = (data.recommendedLawyers || []) as unknown[]
+      let isLegalDocument = data.isLegalDocument !== false
+
+      if (data.queued && data.jobId) {
+        const job = await pollAnalysisJob(data.jobId as string)
+        if (job.status === "failed") {
+          throw new Error(job.error_message || "Analysis did not complete successfully.")
+        }
+        const payload = job.result_payload
+        analysisPayload = (payload?.analysis || {}) as Record<string, unknown>
+        recommended = (payload?.recommendedLawyers || []) as unknown[]
+        isLegalDocument = payload?.isLegalDocument !== false
+      }
 
       if (isLegalDocument === false) {
         toast({

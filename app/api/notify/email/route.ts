@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
+import type { User } from "@supabase/supabase-js"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
+import { authorizeNotifyEmailRequest } from "@/lib/api/authorize-notify-email"
 import { sendEmail, buildEmailHtml, escapeHtml } from "@/lib/email"
 
 type EmailTemplate =
@@ -23,12 +25,16 @@ export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-cron-secret")
   const hasValidSecret = secret && secret === process.env.CRON_SECRET
 
+  let sessionUser: User | null = null
   if (!hasValidSecret) {
     const userSupabase = await createClient()
-    const { data: { user } } = await userSupabase.auth.getUser()
+    const {
+      data: { user },
+    } = await userSupabase.auth.getUser()
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+    sessionUser = user
   }
 
   let body: RequestBody
@@ -41,6 +47,13 @@ export async function POST(req: NextRequest) {
   const { template, data } = body
   if (!template || !data) {
     return NextResponse.json({ error: "Missing template or data" }, { status: 400 })
+  }
+
+  if (sessionUser) {
+    const authz = await authorizeNotifyEmailRequest(sessionUser, template, data)
+    if (!authz.ok) {
+      return NextResponse.json({ error: authz.error }, { status: authz.status })
+    }
   }
 
   const siteUrl = (

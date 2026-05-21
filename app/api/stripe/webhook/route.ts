@@ -12,6 +12,14 @@ if (!webhookSecret) {
 }
 
 export async function POST(request: NextRequest) {
+  const isProduction =
+    process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production"
+
+  if (isProduction && !webhookSecret) {
+    console.error("[Stripe] STRIPE_WEBHOOK_SECRET is required in production")
+    return NextResponse.json({ error: "Webhook not configured" }, { status: 503 })
+  }
+
   const body = await request.text()
   const signature = request.headers.get("stripe-signature")
 
@@ -25,7 +33,7 @@ export async function POST(request: NextRequest) {
     if (webhookSecret) {
       event = stripe.webhooks.constructEvent(body, signature, webhookSecret)
     } else {
-      // For development, parse without verification
+      // Local development only — parse without verification
       event = JSON.parse(body) as Stripe.Event
     }
   } catch (error: any) {
