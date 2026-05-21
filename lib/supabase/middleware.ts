@@ -3,6 +3,11 @@ import { NextResponse, type NextRequest } from "next/server"
 
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
+
+  if (pathname === "/admin/dshboard") {
+    return NextResponse.redirect(new URL("/admin/dashboard", request.url))
+  }
+
   let response = NextResponse.next({ request })
 
   // Public routes still get a Supabase session refresh below. The RAG endpoint
@@ -55,7 +60,12 @@ export async function updateSession(request: NextRequest) {
 
   // Middleware is the first RBAC layer for page navigation. API routes still
   // repeat ownership checks because direct HTTP calls bypass page components.
-  const needsRoleCheck = !isPublicRoute && (pathname.startsWith("/admin") || pathname.startsWith("/client/") || pathname.startsWith("/lawyer/"))
+  const needsRoleCheck =
+    !isPublicRoute &&
+    (pathname.startsWith("/admin") ||
+      pathname.startsWith("/api/admin") ||
+      pathname.startsWith("/client/") ||
+      pathname.startsWith("/lawyer/"))
 
   if (!user && !isPublicRoute) {
     const dest = pathname.startsWith("/admin")
@@ -96,7 +106,16 @@ export async function updateSession(request: NextRequest) {
 
     const userType = profile?.user_type
 
-    if (pathname.startsWith("/admin") && userType !== "admin") {
+    if (
+      (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) &&
+      userType !== "admin"
+    ) {
+      if (userType === "lawyer") {
+        return createRedirect("/lawyer/dashboard")
+      }
+      if (userType === "client") {
+        return createRedirect("/client/dashboard")
+      }
       return createRedirect("/auth/admin/sign-in")
     }
 
