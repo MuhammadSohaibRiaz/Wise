@@ -76,7 +76,7 @@ export async function updateSession(request: NextRequest) {
     return createRedirect(dest)
   }
 
-  if (user && !isPublicRoute) {
+    if (user && !isPublicRoute) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("email_verified_at, user_type")

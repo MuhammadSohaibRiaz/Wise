@@ -13,6 +13,11 @@ import { Loader2, ArrowLeft } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { useEmailVerificationUrl } from "@/hooks/use-email-verification-url"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  cacheLawyerLicenseGate,
+  lawyerSignInToast,
+  resolveLawyerLicenseGate,
+} from "@/lib/lawyer-license-verification"
 
 export default function LawyerSignInPage() {
   const router = useRouter()
@@ -28,6 +33,8 @@ export default function LawyerSignInPage() {
 
   const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
   const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
+  const showInfo = (title: string, description: string) =>
+    toast({ title, description })
 
   useEffect(() => {
     if (verification.status === "verified") {
@@ -168,8 +175,29 @@ export default function LawyerSignInPage() {
         return
       }
 
-      showSuccess("Sign in successful! Redirecting...")
-      router.push("/lawyer/dashboard")
+      const { data: lawyerProfile, error: lawyerProfileError } = await supabase
+        .from("lawyer_profiles")
+        .select("verified, verification_status, license_file_url")
+        .eq("id", user.id)
+        .maybeSingle()
+
+      if (lawyerProfileError) {
+        showError("Could not load your verification status. Please try again.")
+        await supabase.auth.signOut()
+        setIsLoading(false)
+        return
+      }
+
+      const gate = resolveLawyerLicenseGate(lawyerProfile)
+      cacheLawyerLicenseGate(gate)
+      const signInToast = lawyerSignInToast(gate)
+      if (signInToast.variant === "success") {
+        showSuccess(signInToast.description)
+      } else {
+        showInfo(signInToast.title, signInToast.description)
+      }
+
+      router.replace(gate === "approved" ? "/lawyer/dashboard" : "/lawyer/verification")
     } catch (err) {
       showError("An unexpected error occurred. Please try again.")
     } finally {

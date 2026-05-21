@@ -11,17 +11,39 @@ import { LawyerSidebar } from "@/components/lawyer/sidebar"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
+import {
+  cacheLawyerLicenseGate,
+  clearCachedLawyerLicenseGate,
+  readCachedLawyerLicenseGate,
+  resolveLawyerLicenseGate,
+} from "@/lib/lawyer-license-verification"
+
+function readGateBootstrap() {
+  if (typeof window === "undefined") return null
+  const gate = readCachedLawyerLicenseGate()
+  if (!gate || gate === "approved") return null
+  return {
+    gate,
+    isAuthenticated: true,
+    isVerified: false,
+    isEmailVerified: true,
+    verificationStatus: gate === "rejected" ? "rejected" : "pending",
+  }
+}
 
 export default function LawyerLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
-  const [isLoading, setIsLoading] = useState(true)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isLoading, setIsLoading] = useState(() => !readGateBootstrap())
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(readGateBootstrap()))
   const [isVerified, setIsVerified] = useState(false)
-  const [isEmailVerified, setIsEmailVerified] = useState(false)
+  const [isEmailVerified, setIsEmailVerified] = useState(() => Boolean(readGateBootstrap()))
   const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [verificationStatus, setVerificationStatus] = useState<string | null>(null)
+  const [verificationStatus, setVerificationStatus] = useState<string | null>(() => {
+    const boot = readGateBootstrap()
+    return boot?.verificationStatus ?? null
+  })
 
   // All hooks must be called before any conditional returns
   const toggleSidebar = useMemo(() => () => setSidebarOpen((prev) => !prev), [])
@@ -29,55 +51,85 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
 
   const handleSignOut = async () => {
     const supabase = createClient()
+    clearCachedLawyerLicenseGate()
     await supabase.auth.signOut()
     router.push("/auth/lawyer/sign-in")
   }
 
   useEffect(() => {
+    const onResize = () => {
+      setSidebarOpen(window.innerWidth >= 768)
+    }
+    onResize()
+    window.addEventListener("resize", onResize)
+    return () => window.removeEventListener("resize", onResize)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
     const init = async () => {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const user = session?.user
 
       if (!user) {
-        setIsLoading(false)
-        router.replace("/auth/lawyer/sign-in")
+        if (!cancelled) {
+          clearCachedLawyerLicenseGate()
+          setIsLoading(false)
+          router.replace("/auth/lawyer/sign-in")
+        }
         return
       }
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("email_verified_at, email")
-        .eq("id", user.id)
-        .single()
+      const [{ data: profile }, { data: lawyerProfile }] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("email_verified_at, email")
+          .eq("id", user.id)
+          .single(),
+        supabase
+          .from("lawyer_profiles")
+          .select("verified, verification_status, license_file_url")
+          .eq("id", user.id)
+          .single(),
+      ])
 
-      const { data: lawyerProfile } = await supabase
-        .from("lawyer_profiles")
-        .select("verified, verification_status")
-        .eq("id", user.id)
-        .single()
+      if (cancelled) return
+
+      const gate = resolveLawyerLicenseGate(lawyerProfile)
+      const licenseApproved = gate === "approved"
+
+      if (licenseApproved) {
+        clearCachedLawyerLicenseGate()
+        if (pathname === "/lawyer/verification") {
+          router.replace("/lawyer/dashboard")
+        }
+      } else {
+        cacheLawyerLicenseGate(gate)
+        if (pathname !== "/lawyer/verification" && !pathname.startsWith("/lawyer/profile")) {
+          router.replace("/lawyer/verification")
+        }
+      }
 
       setIsAuthenticated(true)
       setUserEmail(profile?.email ?? user.email ?? null)
       setIsEmailVerified(Boolean(profile?.email_verified_at))
-      setIsVerified(lawyerProfile?.verified || false)
-      setVerificationStatus(lawyerProfile?.verification_status || "pending")
-
-      const handleResize = () => {
-        if (window.innerWidth >= 768) {
-          setSidebarOpen(true)
-        } else {
-          setSidebarOpen(false)
-        }
-      }
-
-      handleResize()
-      window.addEventListener("resize", handleResize)
+      setIsVerified(licenseApproved)
+      setVerificationStatus(
+        lawyerProfile?.verification_status ||
+          (gate === "rejected" ? "rejected" : "pending"),
+      )
       setIsLoading(false)
-      return () => window.removeEventListener("resize", handleResize)
     }
 
-    init()
-  }, [router])
+    void init()
+    return () => {
+      cancelled = true
+    }
+  }, [router, pathname])
 
   if (isLoading) {
     return (

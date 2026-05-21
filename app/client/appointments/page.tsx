@@ -1,7 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
-import { useSearchParams } from "next/navigation"
+import { Suspense, useCallback, useEffect, useRef, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { DayPicker } from "react-day-picker"
 import { format, isPast, startOfDay, addDays } from "date-fns"
 import { createClient } from "@/lib/supabase/client"
@@ -55,14 +55,56 @@ interface Appointment {
   }
 }
 
-export default function ClientAppointmentsPage() {
+function normalizeCaseRelation(raw: unknown): Appointment["case"] {
+  const fallback: Appointment["case"] = {
+    id: "",
+    title: "",
+    case_type: "",
+    hourly_rate: null,
+    status: "",
+  }
+  if (!raw) return fallback
+  const row = Array.isArray(raw) ? raw[0] : raw
+  if (!row || typeof row !== "object") return fallback
+  const o = row as Record<string, unknown>
+  return {
+    id: String(o.id ?? ""),
+    title: String(o.title ?? ""),
+    case_type: String(o.case_type ?? ""),
+    hourly_rate: typeof o.hourly_rate === "number" ? o.hourly_rate : null,
+    status: typeof o.status === "string" ? o.status : "",
+  }
+}
+
+function normalizeLawyerRelation(raw: unknown): Appointment["lawyer"] {
+  const fallback: Appointment["lawyer"] = {
+    id: "",
+    first_name: "",
+    last_name: "",
+    avatar_url: null,
+  }
+  if (!raw) return fallback
+  const row = Array.isArray(raw) ? raw[0] : raw
+  if (!row || typeof row !== "object") return fallback
+  const o = row as Record<string, unknown>
+  return {
+    id: String(o.id ?? ""),
+    first_name: String(o.first_name ?? ""),
+    last_name: String(o.last_name ?? ""),
+    avatar_url: typeof o.avatar_url === "string" ? o.avatar_url : null,
+  }
+}
+
+function ClientAppointmentsContent() {
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [clientId, setClientId] = useState<string | null>(null)
   const [processingId, setProcessingId] = useState<string | null>(null)
   const { toast } = useToast()
+  const router = useRouter()
   const searchParams = useSearchParams()
+  const paymentVerifyRef = useRef<string | null>(null)
 
   // Reschedule state
   const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null)
@@ -155,13 +197,8 @@ export default function ClientAppointmentsPage() {
           status: (apt.status as Appointment["status"]) || "pending",
           payment_status: (paymentStatuses[apt.case_id as string] as Appointment["payment_status"]) || null,
           reschedule_count: (apt.reschedule_count as number) || 0,
-          case: (apt.cases as Appointment["case"]) || { id: "", title: "", case_type: "", hourly_rate: null, status: "" },
-          lawyer: (apt.profiles as Appointment["lawyer"]) || {
-            id: "",
-            first_name: "",
-            last_name: "",
-            avatar_url: null,
-          },
+          case: normalizeCaseRelation(apt.cases),
+          lawyer: normalizeLawyerRelation(apt.profiles),
         }))
 
         appointmentsRef.current = mappedAppointments
@@ -189,52 +226,62 @@ export default function ClientAppointmentsPage() {
     const sessionId = searchParams.get("session_id")
 
     if (paymentStatus === "success" && sessionId) {
+      if (paymentVerifyRef.current === sessionId) return
+      paymentVerifyRef.current = sessionId
+
       const verifyPayment = async () => {
         try {
+          setIsLoading(true)
           const response = await fetch("/api/stripe/verify-payment", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sessionId }),
           })
 
+          router.replace("/client/appointments", { scroll: false })
+
           if (response.ok) {
             toast({
               title: "Payment Successful",
-              description: "Your appointment has been confirmed. Refreshing...",
+              description: "Your appointment has been confirmed.",
             })
-            setTimeout(() => {
-              window.location.href = "/client/appointments"
-            }, 2000)
           } else {
             toast({
               title: "Payment Processing",
-              description: "Your payment is being processed. The page will refresh shortly.",
+              description: "Your payment is being processed. This page will update shortly.",
             })
-            setTimeout(() => {
-              window.location.href = "/client/appointments"
-            }, 3000)
           }
+          await loadAppointments({ silent: true })
         } catch {
-          setTimeout(() => {
-            window.location.href = "/client/appointments"
-          }, 2000)
+          router.replace("/client/appointments", { scroll: false })
+          toast({
+            title: "Payment Verification",
+            description: "We could not verify payment yet. Your appointments list will refresh.",
+            variant: "destructive",
+          })
+          await loadAppointments({ silent: true })
+        } finally {
+          setIsLoading(false)
         }
       }
 
       void verifyPayment()
       return
     }
+
     if (paymentStatus === "cancelled") {
+      router.replace("/client/appointments", { scroll: false })
       toast({
         title: "Payment Cancelled",
         description: "Your appointment is still awaiting payment.",
         variant: "default",
       })
-      window.history.replaceState({}, "", "/client/appointments")
+      void loadAppointments()
+      return
     }
 
     void loadAppointments()
-  }, [loadAppointments, searchParams, toast])
+  }, [loadAppointments, router, searchParams, toast])
 
   const showAppointmentStatusToast = useCallback(
     (updated: { id?: string; status?: string }, old?: { status?: string }) => {
@@ -367,7 +414,10 @@ export default function ClientAppointmentsPage() {
             setAppointments((prev) =>
               prev.map((apt) =>
                 apt.case.id === updatedCase.id
-                  ? { ...apt, case: { ...apt.case, status: updatedCase.status as string } }
+                  ? {
+                      ...apt,
+                      case: { ...normalizeCaseRelation(apt.case), status: updatedCase.status as string },
+                    }
                   : apt,
               ),
             )
@@ -1113,5 +1163,21 @@ export default function ClientAppointmentsPage() {
         </DialogContent>
       </Dialog>
     </main>
+  )
+}
+
+export default function ClientAppointmentsPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-4xl px-4 py-10">
+          <div className="flex justify-center py-16">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        </main>
+      }
+    >
+      <ClientAppointmentsContent />
+    </Suspense>
   )
 }
