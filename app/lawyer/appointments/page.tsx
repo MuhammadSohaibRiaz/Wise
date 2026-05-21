@@ -12,8 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, AlertCircle, Calendar, Clock, FileText, User, Check, X, CalendarClock, MessageSquare, XCircle } from "lucide-react"
 import { LawyerDashboardHeader } from "@/components/lawyer/dashboard-header"
 import { appointmentStatusLabel, appointmentWorkflowPhase, APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
-import { ConsultationHeldDialog } from "@/components/appointments/consultation-held-dialog"
 import { ScheduledConsultationActions } from "@/components/appointments/scheduled-consultation-actions"
+import { notifyCaseDetailChanged } from "@/lib/case-detail-events"
 import { formatRescheduleModalHint } from "@/lib/appointments/reschedule-label"
 import {
   getAvailableSlotsForDay,
@@ -70,7 +70,6 @@ export default function LawyerAppointmentsPage() {
   const [rescheduleSlots, setRescheduleSlots] = useState<string[]>([])
   const [isLoadingSlots, setIsLoadingSlots] = useState(false)
   const [rescheduleBlockedDates, setRescheduleBlockedDates] = useState<Set<string>>(new Set())
-  const [heldTarget, setHeldTarget] = useState<Appointment | null>(null)
 
   // Cancel state
   const [cancelTarget, setCancelTarget] = useState<Appointment | null>(null)
@@ -340,38 +339,6 @@ export default function LawyerAppointmentsPage() {
     }
   }
 
-  const submitMarkHeld = async (proceedWithCase: boolean) => {
-    if (!heldTarget) return
-    try {
-      setProcessingId(heldTarget.id)
-      const res = await fetch("/api/appointments/mark-attended", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          appointment_id: heldTarget.id,
-          proceed_with_case: proceedWithCase,
-        }),
-      })
-      const json = (await res.json().catch(() => ({}))) as { error?: string }
-      if (!res.ok) throw new Error(json.error || "Failed to update appointment")
-      setAppointments((prev) =>
-        prev.map((apt) => (apt.id === heldTarget.id ? { ...apt, status: "attended" as const } : apt)),
-      )
-      setHeldTarget(null)
-      toast({
-        title: proceedWithCase ? "Consultation marked as held" : "Case closed",
-        description: proceedWithCase
-          ? "Next step: go to the Case Detail page and click 'Request Case Completion' when case work is done."
-          : "The consultation was recorded and the case was closed.",
-      })
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Could not mark consultation as held"
-      toast({ title: "Error", description: message, variant: "destructive" })
-    } finally {
-      setProcessingId(null)
-    }
-  }
-
   const handleNoShow = async (appointmentId: string) => {
     try {
       setProcessingId(appointmentId)
@@ -382,11 +349,13 @@ export default function LawyerAppointmentsPage() {
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) throw new Error(json.error || "Failed to record no-show")
+      const linkedCaseId = appointments.find((apt) => apt.id === appointmentId)?.case.id
       setAppointments((prev) =>
         prev.map((apt) =>
           apt.id === appointmentId ? { ...apt, status: "cancelled" as const } : apt,
         ),
       )
+      if (linkedCaseId) notifyCaseDetailChanged(linkedCaseId)
       toast({
         title: "No-show recorded",
         description: "The appointment was cancelled and the linked case was closed.",
@@ -827,9 +796,13 @@ export default function LawyerAppointmentsPage() {
                       {appointment.status === "attended" && (
                         <div className="mt-1 text-right">
                           <p className="text-xs text-green-700 dark:text-green-400 font-medium">Consultation held</p>
-                          <a href={`/lawyer/cases/${appointment.case.id}`} className="text-xs text-primary hover:underline">
-                            Go to Case &rarr; Request Case Completion
-                          </a>
+                          {appointment.case.status === "closed" ? (
+                            <p className="text-xs text-muted-foreground">Case closed by client</p>
+                          ) : (
+                            <a href={`/lawyer/cases/${appointment.case.id}`} className="text-xs text-primary hover:underline">
+                              Go to Case &rarr; Request Case Completion
+                            </a>
+                          )}
                         </div>
                       )}
 
@@ -840,7 +813,6 @@ export default function LawyerAppointmentsPage() {
                             appointment={appointment}
                             processingId={processingId}
                             canReschedule={canReschedule(appointment)}
-                            onMarkHeld={() => setHeldTarget(appointment)}
                             onReschedule={() => { setRescheduleTarget(appointment); setRescheduleError("") }}
                             onSupport={() => { setSupportTarget(appointment); setSupportMessage("") }}
                             onNoShow={() => void handleNoShow(appointment.id)}
@@ -955,14 +927,6 @@ export default function LawyerAppointmentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <ConsultationHeldDialog
-        open={!!heldTarget}
-        onOpenChange={(open) => { if (!open) setHeldTarget(null) }}
-        onProceed={() => void submitMarkHeld(true)}
-        onCloseCase={() => void submitMarkHeld(false)}
-        isSubmitting={!!heldTarget && processingId === heldTarget.id}
-      />
 
       {/* Cancel Confirm Dialog */}
       <Dialog open={!!cancelTarget} onOpenChange={(open) => { if (!open) setCancelTarget(null) }}>

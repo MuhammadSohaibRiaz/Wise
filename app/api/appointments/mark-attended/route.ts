@@ -35,8 +35,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Appointment not found" }, { status: 404 })
     }
 
-    if (row.client_id !== user.id && row.lawyer_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    if (row.client_id !== user.id) {
+      return NextResponse.json(
+        { error: "Only the client can confirm whether the consultation was held and if the case continues" },
+        { status: 403 },
+      )
     }
 
     if (row.status !== "scheduled" && row.status !== "rescheduled") {

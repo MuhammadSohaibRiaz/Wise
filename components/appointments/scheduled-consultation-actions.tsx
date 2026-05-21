@@ -20,7 +20,9 @@ type ScheduledConsultationActionsProps = {
   appointment: ConsultationAppointment
   processingId: string | null
   canReschedule: boolean
-  onMarkHeld: () => void
+  /** Client-only: confirm consultation held and proceed or close case */
+  allowMarkHeld?: boolean
+  onMarkHeld?: () => void
   onReschedule: () => void
   onSupport: () => void
   onNoShow: () => void
@@ -50,15 +52,17 @@ export function ScheduledConsultationActions({
 
   return (
     <div className="flex flex-col items-end gap-2">
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={isProcessing || !markHeldEnabled}
-        onClick={onMarkHeld}
-        title={!markHeldEnabled ? "Available within 7 days of the consultation" : undefined}
-      >
-        {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark Consultation Held"}
-      </Button>
+      {allowMarkHeld && onMarkHeld ? (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isProcessing || !markHeldEnabled}
+          onClick={onMarkHeld}
+          title={!markHeldEnabled ? "Available within 7 days of the consultation" : undefined}
+        >
+          {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark Consultation Held"}
+        </Button>
+      ) : null}
       {canReschedule && rescheduleLabel ? (
         <Button size="sm" variant="outline" onClick={onReschedule}>
           <CalendarClock className="h-4 w-4 mr-1" />

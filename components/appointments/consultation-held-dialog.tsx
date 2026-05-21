@@ -32,7 +32,8 @@ export function ConsultationHeldDialog({
         <DialogHeader>
           <DialogTitle>Consultation Complete?</DialogTitle>
           <DialogDescription>
-            Did you and the other party agree to proceed with this case?
+            After your consultation, choose whether to continue this case with your lawyer or close it
+            here. Only you (the client) can make this decision.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex-col gap-2 sm:flex-col">

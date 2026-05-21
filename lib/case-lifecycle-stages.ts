@@ -136,10 +136,12 @@ function getNextAction(currentStageKey: LifecycleStageKey, input: DerivationInpu
     case "payment":
       return "Payment done — consultation will be scheduled"
     case "consultation_scheduled":
-      return "Attend the consultation, then mark it as held"
+      return "Attend the consultation; the client will confirm if the case continues"
     case "consultation_held":
+      if (input.caseStatus === "closed") return "Case closed after consultation"
       return "Case work continues — lawyer will request completion when done"
     case "case_in_progress":
+      if (input.caseStatus === "closed") return undefined
       return "Lawyer will request case completion when work is finished"
     case "pending_completion":
       return "Client to confirm completion and leave a review"

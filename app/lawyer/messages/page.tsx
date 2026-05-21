@@ -14,23 +14,25 @@ export default function LawyerMessagesPage() {
     <div className="min-h-screen bg-background">
       <LawyerDashboardHeader />
 
-      <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8 space-y-6">
-        <div>
+      <div className="mx-auto flex h-[calc(100dvh-14rem)] max-w-7xl min-h-0 flex-col gap-4 px-4 py-6 md:px-6 lg:px-8">
+        <div className="shrink-0">
           <h1 className="text-3xl font-bold">Messages</h1>
-          <p className="text-muted-foreground mt-2">
+          <p className="mt-2 text-muted-foreground">
             Stay connected with your clients and respond to important updates instantly.
           </p>
         </div>
 
-        <Suspense
-          fallback={
-            <div className="flex h-[40vh] items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          }
-        >
-          <MessagesShell userType="lawyer" />
-        </Suspense>
+        <div className="min-h-0 flex-1">
+          <Suspense
+            fallback={
+              <div className="flex h-[40vh] items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            }
+          >
+            <MessagesShell userType="lawyer" className="h-full min-h-[28rem]" />
+          </Suspense>
+        </div>
       </div>
     </div>
   )

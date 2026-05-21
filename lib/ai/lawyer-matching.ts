@@ -129,10 +129,9 @@ export function generateRecommendationReason(params: {
   specializations: string[]
   rating: number
   caseType?: string | null
-  verified?: boolean
   totalCases?: number
 }): string {
-  const { specializations: rawSpecs, rating, caseType, verified, totalCases } = params
+  const { specializations: rawSpecs, rating, caseType, totalCases } = params
   const specializations = rawSpecs || []
   const topSpec = specializations[0] || "General Practice"
   const ratingStr = rating > 0 ? `${rating.toFixed(1)}★` : null
@@ -145,7 +144,6 @@ export function generateRecommendationReason(params: {
     if (matchingSpec) {
       let r = `Matched for your ${caseType} case`
       if (ratingStr) r += ` · ${ratingStr} rated`
-      if (verified) r += " · Verified"
       return r.length > 120 ? r.slice(0, 117) + "…" : r
     }
   }
@@ -153,6 +151,5 @@ export function generateRecommendationReason(params: {
   let r = `Specializes in ${topSpec}`
   if (ratingStr) r += ` · ${ratingStr} rated`
   if (totalCases && totalCases > 0) r += ` · ${totalCases} cases`
-  else if (verified) r += " · Verified"
   return r.length > 120 ? r.slice(0, 117) + "…" : r
 }

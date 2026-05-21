@@ -405,7 +405,6 @@ function AICaseAnalysisContent() {
                           specializations: lawyer.specializations ?? [],
                           rating: Number(lawyer.rating) || 0,
                           caseType: analysisResult?.category ?? null,
-                          verified: lawyer.verified,
                         })}
                       />
                     ))}

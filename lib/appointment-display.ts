@@ -13,6 +13,12 @@ export function appointmentDisplayLabel(
   const caseClosed = caseStatus === "completed" || caseStatus === "closed"
 
   if (row.status === "attended") {
+    if (caseStatus === "closed") {
+      return {
+        label: appointmentStatusLabel("attended"),
+        hint: "Consultation recorded; the client chose to close this case.",
+      }
+    }
     return {
       label: appointmentStatusLabel("attended"),
       hint: "Consultation session recorded; case may still be in progress until formally closed.",

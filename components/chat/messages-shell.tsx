@@ -9,9 +9,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Loader2, MessageSquare, Paperclip, Send, CheckCircle2, ArrowLeft } from "lucide-react"
+import { Loader2, MessageSquare, Paperclip, Send, CheckCircle2, ArrowLeft, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { notifyMessage } from "@/lib/notifications"
+import { MessageContent } from "@/components/chat/message-content"
 
 type MessageStatus = "pending" | "scheduled" | "completed" | "cancelled" | "rescheduled" | "rejected"
 
@@ -50,6 +51,8 @@ interface ChatMessage {
 
 interface MessagesShellProps {
   userType: "client" | "lawyer"
+  /** When set (e.g. h-full), shell fills the parent flex area instead of a viewport calc height */
+  className?: string
 }
 
 const MESSAGE_LIMIT = 150
@@ -92,7 +95,7 @@ function groupMessagesByDate(messages: ChatMessage[]) {
   return groups
 }
 
-export function MessagesShell({ userType }: MessagesShellProps) {
+export function MessagesShell({ userType, className }: MessagesShellProps) {
   const supabase = useMemo(() => createClient(), [])
   const searchParams = useSearchParams()
   const { toast } = useToast()
@@ -103,6 +106,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState("")
+  const [pendingAttachment, setPendingAttachment] = useState<File | null>(null)
   const [isLoadingConversations, setIsLoadingConversations] = useState(true)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isSending, setIsSending] = useState(false)
@@ -111,6 +115,9 @@ export function MessagesShell({ userType }: MessagesShellProps) {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const messagesContainerRef = useRef<HTMLDivElement | null>(null)
+  const isSendingRef = useRef(false)
+  const conversationsRef = useRef(conversations)
+  conversationsRef.current = conversations
 
   const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     const el = messagesContainerRef.current
@@ -392,11 +399,16 @@ export function MessagesShell({ userType }: MessagesShellProps) {
 
   useEffect(() => {
     if (!currentUserId || !activeCaseId) return
-    loadMessages(activeCaseId, currentUserId)
+    void loadMessages(activeCaseId, currentUserId)
 
     const t = setTimeout(() => scrollMessagesToBottom("auto"), 200)
     return () => clearTimeout(t)
-  }, [activeCaseId, currentUserId, loadMessages, scrollMessagesToBottom])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only refetch when case/user changes
+  }, [activeCaseId, currentUserId])
+
+  useEffect(() => {
+    setPendingAttachment(null)
+  }, [activeCaseId])
 
   useEffect(() => {
     if (!currentUserId || !activeCaseId) return
@@ -419,27 +431,22 @@ export function MessagesShell({ userType }: MessagesShellProps) {
               markMessagesRead([newMessage.id], activeCaseId)
             }
             setMessages((prev) => {
-            // Check if message already exists (prevent duplicates)
-            if (prev.find((msg) => msg.id === newMessage.id)) {
-              return prev
+              if (prev.find((msg) => msg.id === newMessage.id)) {
+                return prev
+              }
+              return [...prev, newMessage].sort(
+                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+              )
+            })
+
+            if (newMessage.recipient_id === currentUserId && !newMessage.is_read) {
+              void markMessagesRead([newMessage.id], activeCaseId)
             }
-            // Sort messages by created_at to maintain order
-            const updated = [...prev, newMessage].sort((a, b) =>
-              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-            )
 
             setTimeout(() => scrollMessagesToBottom("smooth"), 100)
-
-            return updated
-          })
-
-          // Mark as read if recipient is current user
-          if (newMessage.recipient_id === currentUserId && !newMessage.is_read) {
-            markMessagesRead([newMessage.id], activeCaseId)
           }
-        }
-      }
-    )
+        },
+      )
       .on(
         "postgres_changes",
         {
@@ -457,7 +464,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
       )
       .on("broadcast", { event: "typing" }, (payload) => {
         if (payload.payload.userId !== currentUserId) {
-          const conversation = conversations.find(c => c.id === activeCaseId)
+          const conversation = conversationsRef.current.find((c) => c.id === activeCaseId)
           const name = conversation?.participant?.first_name || "Partner"
           setTypingParticipant(payload.payload.isTyping ? name : null)
         }
@@ -473,7 +480,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [supabase, currentUserId, activeCaseId, markMessagesRead, conversations, scrollMessagesToBottom])
+  }, [supabase, currentUserId, activeCaseId, markMessagesRead, scrollMessagesToBottom])
 
   const handleTyping = useCallback(() => {
     if (!activeCaseId || !currentUserId) return
@@ -530,7 +537,9 @@ export function MessagesShell({ userType }: MessagesShellProps) {
   }, [supabase, currentUserId, activeCaseId])
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !currentUserId || !activeCaseId) return
+    const hasText = Boolean(newMessage.trim())
+    const hasAttachment = Boolean(pendingAttachment)
+    if ((!hasText && !hasAttachment) || !currentUserId || !activeCaseId || isSendingRef.current) return
     const conversation = conversations.find((conv) => conv.id === activeCaseId)
 
     if (
@@ -566,57 +575,85 @@ export function MessagesShell({ userType }: MessagesShellProps) {
       return
     }
 
+    const content = newMessage.trim()
+    const fileToSend = pendingAttachment
+    isSendingRef.current = true
+    setIsSending(true)
+
     try {
-      setIsSending(true)
-      const content = newMessage.trim()
+      if (fileToSend) {
+        const body = new FormData()
+        body.append("caseId", activeCaseId)
+        body.append("recipientId", recipientId)
+        body.append("file", fileToSend)
+        if (content) body.append("caption", content)
 
-      const { error, data } = await supabase
-        .from("messages")
-        .insert({
-          case_id: activeCaseId,
-          sender_id: currentUserId,
-          recipient_id: recipientId,
-          content,
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-
-      // Optimistically add message immediately
-      const optimisticMessage = {
-        ...data,
-        created_at: data.created_at || new Date().toISOString(),
-      }
-      setMessages((prev) => {
-        // Check if message already exists (from real-time)
-        if (prev.find((msg) => msg.id === data.id)) {
-          return prev
+        const res = await fetch("/api/messages/attachment", { method: "POST", body })
+        const payload = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(typeof payload.error === "string" ? payload.error : "Upload failed.")
         }
-        // Sort messages by created_at to maintain order
-        const updated = [...prev, optimisticMessage].sort((a, b) =>
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        )
-        return updated
-      })
-      setNewMessage("")
 
-      setTimeout(() => scrollMessagesToBottom("smooth"), 100)
+        const data = payload.message as ChatMessage
+        if (!data?.id) throw new Error("Message was not saved.")
 
-      try {
-        await notifyMessage(
-          supabase,
-          {
-            recipientId,
-            senderId: currentUserId,
-            caseId: activeCaseId,
-            caseTitle: conversation?.title,
-            contentPreview: content.slice(0, 120),
-          }
-        )
-      } catch (notifyErr) {
-        console.warn("[Messages] notifyMessage skipped:", notifyErr)
+        setMessages((prev) => {
+          if (prev.find((msg) => msg.id === data.id)) return prev
+          return [...prev, data].sort(
+            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+          )
+        })
+
+        const preview = content || `Attachment: ${fileToSend.name}`
+        void notifyMessage(supabase, {
+          recipientId,
+          senderId: currentUserId,
+          caseId: activeCaseId,
+          caseTitle: conversation?.title,
+          contentPreview: preview.slice(0, 120),
+        }).catch((notifyErr) => {
+          console.warn("[Messages] notifyMessage skipped:", notifyErr)
+        })
+      } else {
+        const { error, data } = await supabase
+          .from("messages")
+          .insert({
+            case_id: activeCaseId,
+            sender_id: currentUserId,
+            recipient_id: recipientId,
+            content,
+          })
+          .select()
+          .single()
+
+        if (error) throw error
+        if (!data) throw new Error("Message was not saved. Please try again.")
+
+        setMessages((prev) => {
+          if (prev.find((msg) => msg.id === data.id)) return prev
+          const row = {
+            ...data,
+            created_at: data.created_at || new Date().toISOString(),
+          } as ChatMessage
+          return [...prev, row].sort(
+            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+          )
+        })
+
+        void notifyMessage(supabase, {
+          recipientId,
+          senderId: currentUserId,
+          caseId: activeCaseId,
+          caseTitle: conversation?.title,
+          contentPreview: content.slice(0, 120),
+        }).catch((notifyErr) => {
+          console.warn("[Messages] notifyMessage skipped:", notifyErr)
+        })
       }
+
+      setNewMessage("")
+      setPendingAttachment(null)
+      setTimeout(() => scrollMessagesToBottom("smooth"), 50)
     } catch (error) {
       console.error("[v0] Send message error:", error)
       toast({
@@ -626,11 +663,12 @@ export function MessagesShell({ userType }: MessagesShellProps) {
         duration: 12_000,
       })
     } finally {
+      isSendingRef.current = false
       setIsSending(false)
     }
   }
 
-  const handleAttachmentSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+  const handleAttachmentSelected = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ""
     if (!file || !currentUserId || !activeCaseId) return
@@ -650,70 +688,18 @@ export function MessagesShell({ userType }: MessagesShellProps) {
       return
     }
 
-    const recipientId =
-      conversation?.participant?.id ||
-      conversation?.participantId ||
-      (conversation?.clientId === currentUserId ? conversation?.lawyerId : conversation?.clientId) ||
-      null
-
-    if (!recipientId) {
+    const maxBytes = 15 * 1024 * 1024
+    if (file.size > maxBytes) {
       toast({
-        title: "Cannot attach file",
-        description: "This conversation does not have an active recipient yet.",
+        title: "File too large",
+        description: "Please choose a file under 15 MB.",
         variant: "destructive",
         duration: 10_000,
       })
       return
     }
 
-    try {
-      setIsSending(true)
-      const safeName = file.name.replace(/[^\w.\-]+/g, "_").slice(0, 120)
-      const path = `attachments/${activeCaseId}/${Date.now()}_${safeName}`
-      const { error: upErr } = await supabase.storage.from("avatars").upload(path, file, {
-        cacheControl: "3600",
-        upsert: false,
-      })
-      if (upErr) throw upErr
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("avatars").getPublicUrl(path)
-
-      const content = `📎 ${file.name}\n${publicUrl}`
-
-      const { error, data } = await supabase
-        .from("messages")
-        .insert({
-          case_id: activeCaseId,
-          sender_id: currentUserId,
-          recipient_id: recipientId,
-          content,
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-
-      setMessages((prev) => {
-        if (prev.find((msg) => msg.id === data.id)) return prev
-        return [...prev, data].sort(
-          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-        )
-      })
-
-      toast({ title: "File sent", description: file.name })
-    } catch (error) {
-      console.error("[Messages] Attachment error:", error)
-      toast({
-        title: "Upload failed",
-        description: formatSendError(error),
-        variant: "destructive",
-        duration: 12_000,
-      })
-    } finally {
-      setIsSending(false)
-    }
+    setPendingAttachment(file)
   }
 
   const activeConversation = conversations.find((conv) => conv.id === activeCaseId) || null
@@ -748,10 +734,15 @@ export function MessagesShell({ userType }: MessagesShellProps) {
   }
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 h-[calc(100vh-180px)] w-full overflow-hidden bg-background/50 backdrop-blur-sm rounded-3xl border border-border/50 shadow-2xl relative">
+    <div
+      className={cn(
+        "relative flex w-full min-h-0 flex-col overflow-hidden rounded-3xl border border-border/50 bg-background/50 shadow-2xl backdrop-blur-sm md:flex-row",
+        className ?? "h-[calc(100dvh-12rem)] min-h-[28rem]",
+      )}
+    >
       {/* Sidebar */}
       <Card className={cn(
-        "w-full md:w-80 lg:w-96 flex flex-col h-full border-none bg-card/40 backdrop-blur-md rounded-none border-r border-border/30",
+        "flex h-full min-h-0 w-full flex-col overflow-hidden border-none bg-card/40 backdrop-blur-md rounded-none border-r border-border/30 md:w-80 lg:w-96",
         activeCaseId ? "hidden md:flex" : "flex"
       )}>
         <CardHeader className="px-6 py-8">
@@ -810,13 +801,13 @@ export function MessagesShell({ userType }: MessagesShellProps) {
 
       {/* Chat Area */}
       <div className={cn(
-        "flex-1 flex flex-col h-full bg-card/10 overflow-hidden relative",
+        "relative flex min-h-0 flex-1 flex-col overflow-hidden bg-card/10",
         !activeCaseId ? "hidden md:flex" : "flex"
       )}>
         {activeConversation ? (
           <>
-            {/* Glass Header */}
-            <div className="z-10 flex items-center justify-between px-8 py-6 border-b border-border/30 bg-background/60 backdrop-blur-xl sticky top-0">
+            {/* Chat header */}
+            <div className="z-10 flex shrink-0 items-center justify-between border-b border-border/30 bg-background/60 px-6 py-4 backdrop-blur-xl md:px-8 md:py-5">
               <div className="flex items-center gap-4">
                 {activeCaseId && (
                   <Button 
@@ -854,10 +845,10 @@ export function MessagesShell({ userType }: MessagesShellProps) {
               </div>
             </div>
 
-            {/* Messages container */}
+            {/* Messages — grows to fill space; input stays at bottom */}
             <div
               ref={messagesContainerRef}
-              className="flex-1 overflow-y-auto overflow-x-hidden p-8 scroll-smooth overscroll-contain"
+              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden scroll-smooth overscroll-contain px-4 py-6 pb-8 md:px-8 md:py-6"
               id="messages-container"
             >
               {isLoadingMessages ? (
@@ -904,7 +895,11 @@ export function MessagesShell({ userType }: MessagesShellProps) {
                                     : "bg-card/80 backdrop-blur-sm text-foreground rounded-tl-none border border-border/50 shadow-lg shadow-black/5"
                                 )}
                               >
-                                <p className="text-[15px] leading-relaxed font-medium">{message.content}</p>
+                                <MessageContent
+                                  content={message.content}
+                                  caseId={message.case_id}
+                                  isOwnMessage={isOwnMessage}
+                                />
                                 <div className={cn(
                                   "flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity absolute -bottom-6",
                                   isOwnMessage ? "right-2" : "left-2"
@@ -928,8 +923,8 @@ export function MessagesShell({ userType }: MessagesShellProps) {
               )}
             </div>
 
-            {/* Input Area */}
-            <div className="px-8 pb-8 pt-4 pr-4 md:pr-28">
+            {/* Input — pinned to bottom; compose bar stops before RAG FAB */}
+            <div className="shrink-0 border-t border-border/30 bg-background/80 px-4 py-4 md:px-6 md:py-5">
               {messagingBlocked && (
                 <p className="mb-2 text-xs text-muted-foreground">
                   Messaging unlocks after your lawyer accepts this consultation request.
@@ -938,9 +933,27 @@ export function MessagesShell({ userType }: MessagesShellProps) {
               <input
                 ref={fileInputRef}
                 type="file"
-                className="hidden"
+                className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
+                tabIndex={-1}
+                aria-hidden
                 onChange={handleAttachmentSelected}
               />
+              {pendingAttachment && (
+                <div className="mb-2 flex items-center gap-2 rounded-xl border border-border/50 bg-muted/40 px-3 py-2">
+                  <Paperclip className="h-4 w-4 shrink-0 text-primary" />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{pendingAttachment.name}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    title="Remove attachment"
+                    onClick={() => setPendingAttachment(null)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
               {typingParticipant && (
                   <div className="mb-2 px-2">
                       <p className="text-[11px] text-primary font-bold italic animate-pulse flex items-center gap-2">
@@ -954,11 +967,11 @@ export function MessagesShell({ userType }: MessagesShellProps) {
                   </div>
               )}
 
-              <div className="relative group">
-                <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 to-primary/5 rounded-[2.5rem] blur opacity-25 group-focus-within:opacity-100 transition duration-1000 group-focus-within:duration-200"></div>
-                <div className="relative flex items-center gap-3 bg-card/60 backdrop-blur-2xl border border-border/50 rounded-[2.5rem] p-2 pl-6 shadow-2xl transition-all duration-300 group-focus-within:border-primary/30">
+              <div className="relative group mr-0 max-w-[calc(100%-3.25rem)] sm:max-w-[calc(100%-3.75rem)]">
+                <div className="absolute -inset-1 rounded-[2rem] bg-gradient-to-r from-primary/20 to-primary/5 opacity-25 blur transition duration-1000 group-focus-within:opacity-100 group-focus-within:duration-200" />
+                <div className="relative flex items-center gap-2 rounded-[2rem] border border-border/50 bg-card/60 p-2 pl-4 shadow-lg backdrop-blur-2xl transition-all duration-300 group-focus-within:border-primary/30 sm:gap-3 sm:pl-5">
                   <textarea
-                    placeholder="Type a message..."
+                    placeholder={pendingAttachment ? "Add a message (optional)…" : "Type a message..."}
                     rows={1}
                     className="flex-1 bg-transparent border-none focus:ring-0 text-base py-3 resize-none max-h-32 min-h-[24px] overflow-hidden"
                     value={newMessage}
@@ -992,7 +1005,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
                     <Button 
                       size="icon" 
                       onClick={handleSendMessage} 
-                      disabled={isSending || messagingBlocked || !newMessage.trim()} 
+                      disabled={isSending || messagingBlocked || (!newMessage.trim() && !pendingAttachment)}
                       className="h-12 w-12 rounded-full shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95"
                     >
                       {isSending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}

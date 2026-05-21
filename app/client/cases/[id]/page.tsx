@@ -32,6 +32,8 @@ import { createNotification } from "@/lib/notifications"
 import { appointmentDisplayLabel } from "@/lib/appointment-display"
 import { deriveCaseLifecycleStages } from "@/lib/case-lifecycle-stages"
 import { CaseProgressStepper } from "@/components/cases/case-progress-stepper"
+import { notifyCaseDetailChanged } from "@/lib/case-detail-events"
+import { useCaseDetailRealtimeSync } from "@/lib/hooks/use-case-detail-realtime-sync"
 import { CaseActivityFeed } from "@/components/cases/case-activity-feed"
 import { AiCaseSummary } from "@/components/cases/ai-case-summary"
 import { CaseDocumentsPanel } from "@/components/cases/case-documents-panel"
@@ -271,39 +273,7 @@ export default function ClientCaseDetailPage() {
     }
   }, [caseId, fetchCaseDetail])
 
-  useEffect(() => {
-    if (!caseId) return
-    const supabase = createClient()
-    const topic = `client-case-detail-${caseId}-${Date.now()}`
-    // Client and lawyer often keep the same case open in separate browser
-    // windows during demos. These subscriptions keep status, documents,
-    // appointments, and activity synchronized across both views.
-    const channel = supabase
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "cases", filter: `id=eq.${caseId}` },
-        () => { void fetchCaseDetail({ silent: true }) },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "appointments", filter: `case_id=eq.${caseId}` },
-        () => { void fetchCaseDetail({ silent: true }) },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "documents", filter: `case_id=eq.${caseId}` },
-        () => { void fetchCaseDetail({ silent: true }) },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "case_timeline_events", filter: `case_id=eq.${caseId}` },
-        () => { void fetchCaseDetail({ silent: true }) },
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [caseId, fetchCaseDetail])
+  useCaseDetailRealtimeSync(caseId, fetchCaseDetail)
 
   const handleConfirmCompletion = async (outcome: CaseOutcomeValue) => {
     if (!caseDetail) return
@@ -319,12 +289,8 @@ export default function ClientCaseDetailPage() {
       if (!res.ok) throw new Error(json.error || "Failed to confirm completion")
 
       setShowOutcomeDialog(false)
-      setCaseDetail({
-        ...caseDetail,
-        status: "completed",
-        case_outcome: outcome,
-        updated_at: new Date().toISOString(),
-      })
+      await fetchCaseDetail({ silent: true })
+      notifyCaseDetailChanged(caseId)
 
       toast({
         title: "Case Completed",
@@ -381,7 +347,8 @@ export default function ClientCaseDetailPage() {
         })
       }
 
-      setCaseDetail({ ...caseDetail, status: "in_progress", updated_at: new Date().toISOString() })
+      await fetchCaseDetail({ silent: true })
+      notifyCaseDetailChanged(caseId)
 
       toast({
         title: "Request declined",

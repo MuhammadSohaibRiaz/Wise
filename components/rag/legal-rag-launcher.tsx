@@ -4,7 +4,6 @@ import { Suspense, useState } from "react"
 import { motion } from "framer-motion"
 import { BookOpen, X } from "lucide-react"
 import { usePathname } from "next/navigation"
-
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { LegalRagAssistant } from "./legal-rag-assistant"
@@ -17,22 +16,15 @@ export function LegalRagLauncher() {
     return null
   }
 
-  const isMessagesPage = pathname?.includes("/messages")
-
   return (
-    <div
-      className={cn(
-        "fixed right-4 z-50 md:right-6",
-        isMessagesPage ? "bottom-[5.5rem] md:bottom-[6.5rem]" : "bottom-4 md:bottom-6",
-      )}
-    >
+    <div className="fixed bottom-5 right-5 z-40 md:bottom-6 md:right-6">
       <motion.div
         initial={false}
         animate={isOpen ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 18, scale: 0.96 }}
         transition={{ duration: 0.18, ease: "easeOut" }}
         aria-hidden={!isOpen}
         className={cn(
-          "absolute bottom-16 right-0 shadow-2xl",
+          "absolute bottom-12 right-0 shadow-2xl",
           !isOpen && "pointer-events-none invisible",
         )}
       >
@@ -44,10 +36,11 @@ export function LegalRagLauncher() {
       <Button
         type="button"
         onClick={() => setIsOpen((current) => !current)}
-        className="h-14 gap-2 rounded-full bg-emerald-700 px-5 text-white shadow-lg hover:bg-emerald-800"
+        title="Legal RAG Assistant"
+        aria-label="Legal RAG Assistant"
+        className="h-11 w-11 rounded-full bg-emerald-700 p-0 text-white shadow-lg hover:bg-emerald-800"
       >
         {isOpen ? <X className="h-5 w-5" /> : <BookOpen className="h-5 w-5" />}
-        <span className="hidden text-sm font-semibold sm:inline">Legal RAG Assistant</span>
       </Button>
     </div>
   )

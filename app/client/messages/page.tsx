@@ -10,23 +10,25 @@ export const metadata: Metadata = {
 
 export default function ClientMessagesPage() {
   return (
-    <main className="space-y-6">
-      <div>
+    <div className="flex h-[calc(100dvh-10.5rem)] min-h-0 flex-col gap-4">
+      <div className="shrink-0">
         <h1 className="text-3xl font-bold">Messages</h1>
-        <p className="text-muted-foreground mt-2">
+        <p className="mt-2 text-muted-foreground">
           Communicate with your lawyers in real-time
         </p>
       </div>
 
-      <Suspense
-        fallback={
-          <div className="flex h-[40vh] items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        }
-      >
-        <MessagesShell userType="client" />
-      </Suspense>
-    </main>
+      <div className="min-h-0 flex-1">
+        <Suspense
+          fallback={
+            <div className="flex h-[40vh] items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          }
+        >
+          <MessagesShell userType="client" className="h-full min-h-[28rem]" />
+        </Suspense>
+      </div>
+    </div>
   )
 }

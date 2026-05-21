@@ -488,7 +488,6 @@ export default function ClientDashboardPage() {
                 specializations: lawyer.specializations ?? [],
                 rating: Number(lawyer.rating) || 0,
                 caseType: matchHint,
-                verified: lawyer.verified,
               })
               return (
                 <Card key={lawyer.id}>

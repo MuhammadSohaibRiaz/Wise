@@ -1,61 +1,65 @@
 "use client"
 
 import { useState } from "react"
-import { loadStripe } from "@stripe/stripe-js"
 import { Button } from "@/components/ui/button"
 import { Loader2, CreditCard } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { createClient } from "@/lib/supabase/client"
 import { APP_CURRENCY, APP_CURRENCY_CODE, formatCurrency } from "@/lib/currency"
-
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "")
 
 interface PaymentButtonProps {
   appointmentId: string
   amount: number
+  /** When set, reuses an existing pending payment row instead of creating a duplicate */
+  paymentId?: string
   currency?: string
+  size?: "default" | "sm" | "lg" | "icon"
+  returnTo?: "appointments" | "payments"
   onPaymentSuccess?: () => void
 }
 
-export function PaymentButton({ appointmentId, amount, currency = APP_CURRENCY, onPaymentSuccess }: PaymentButtonProps) {
+export function PaymentButton({
+  appointmentId,
+  amount,
+  paymentId: existingPaymentId,
+  currency = APP_CURRENCY,
+  size = "default",
+  returnTo = "appointments",
+  onPaymentSuccess,
+}: PaymentButtonProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const { toast } = useToast()
-  const supabase = createClient()
 
   const handlePayment = async () => {
     try {
       setIsProcessing(true)
 
-      // Create payment intent
-      const response = await fetch("/api/stripe/create-payment-intent", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          appointmentId,
-          amount,
-          currency: (currency || APP_CURRENCY_CODE).toLowerCase(),
-        }),
-      })
+      let paymentId = existingPaymentId
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to create payment")
+      if (!paymentId) {
+        const response = await fetch("/api/stripe/create-payment-intent", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            appointmentId,
+            amount,
+            currency: (currency || APP_CURRENCY_CODE).toLowerCase(),
+          }),
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || "Failed to create payment")
+        }
+
+        const payload = await response.json()
+        paymentId = payload.paymentId
+        if (!paymentId) {
+          throw new Error("No payment id returned")
+        }
       }
 
-      const { clientSecret, paymentId } = await response.json()
-
-      if (!clientSecret) {
-        throw new Error("No client secret returned")
-      }
-
-      const stripe = await stripePromise
-      if (!stripe) {
-        throw new Error("Stripe failed to load")
-      }
-
-      // Redirect to Stripe hosted payment page
       const checkoutSession = await fetch("/api/stripe/create-checkout-session", {
         method: "POST",
         headers: {
@@ -66,6 +70,7 @@ export function PaymentButton({ appointmentId, amount, currency = APP_CURRENCY, 
           amount,
           currency: (currency || APP_CURRENCY_CODE).toLowerCase(),
           paymentId,
+          returnTo,
         }),
       })
 
@@ -77,7 +82,7 @@ export function PaymentButton({ appointmentId, amount, currency = APP_CURRENCY, 
       const { url } = await checkoutSession.json()
       if (url) {
         // Redirect to Stripe Checkout
-        // After payment, user will be redirected back to /client/appointments?payment=success
+        // After payment, user returns to appointments or payments based on returnTo
         window.location.href = url
         return
       }
@@ -96,7 +101,7 @@ export function PaymentButton({ appointmentId, amount, currency = APP_CURRENCY, 
   }
 
   return (
-    <Button onClick={handlePayment} disabled={isProcessing} className="gap-2">
+    <Button onClick={handlePayment} disabled={isProcessing} size={size} className="gap-2">
       {isProcessing ? (
         <>
           <Loader2 className="h-4 w-4 animate-spin" />

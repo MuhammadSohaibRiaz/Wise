@@ -332,7 +332,6 @@ function MatchPageInner() {
                           specializations: lawyer.specializations,
                           rating: lawyer.average_rating,
                           caseType: filters.specializations[0] ?? null,
-                          verified: lawyer.verified,
                           totalCases: lawyer.total_cases,
                         })}
                       />

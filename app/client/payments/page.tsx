@@ -9,6 +9,8 @@ import { formatCurrency } from "@/lib/currency"
 import { Download, CreditCard, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
+import { PaymentButton } from "@/components/payments/payment-button"
+import Link from "next/link"
 
 interface Payment {
   id: string
@@ -84,6 +86,11 @@ export default function PaymentsPage() {
           status,
           payment_method,
           created_at,
+          appointment_id,
+          appointment:appointments!payments_appointment_id_fkey (
+            id,
+            status
+          ),
           case:cases!payments_case_id_fkey (
             id,
             title
@@ -251,6 +258,24 @@ export default function PaymentsPage() {
                     <div className="text-right">
                       <p className="text-lg font-bold">{formatCurrency(payment.amount)}</p>
                     </div>
+                    {payment.status === "pending" &&
+                      payment.appointment_id &&
+                      payment.appointment?.status === "awaiting_payment" && (
+                        <PaymentButton
+                          appointmentId={payment.appointment_id}
+                          paymentId={payment.id}
+                          amount={payment.amount}
+                          size="sm"
+                          returnTo="payments"
+                          onPaymentSuccess={() => void fetchPayments()}
+                        />
+                      )}
+                    {payment.status === "pending" &&
+                      (!payment.appointment_id || payment.appointment?.status !== "awaiting_payment") && (
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href="/client/appointments">View appointment</Link>
+                        </Button>
+                      )}
                     {payment.status === "completed" && (
                       <Button variant="outline" size="sm" className="gap-2">
                         <Download className="h-4 w-4" />

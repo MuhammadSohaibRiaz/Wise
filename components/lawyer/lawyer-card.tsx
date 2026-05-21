@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Star, MapPin, Briefcase, Clock, Badge, Sparkles } from "lucide-react"
+import { Star, MapPin, Briefcase, Clock, Sparkles, ShieldCheck } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { formatConsultationFeeFrom } from "@/lib/currency"
 import { BookAppointmentModal } from "@/components/lawyer/book-appointment-modal"
 import { createClient } from "@/lib/supabase/client"
@@ -92,13 +93,21 @@ export function LawyerCard({
                   <span className="text-2xl font-semibold text-muted-foreground">{name.charAt(0).toUpperCase()}</span>
                 </div>
               )}
+              {verified && (
+                <span
+                  className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-green-600 text-white ring-2 ring-card"
+                  title="Verified lawyer"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                </span>
+              )}
             </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-lg font-semibold text-foreground">{name}</h3>
                 {verified && (
-                  <Badge variant="secondary" className="flex items-center gap-1">
-                    <Badge className="h-4 w-4" />
+                  <Badge className="shrink-0 gap-1 border-green-600/40 bg-green-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white hover:bg-green-600">
+                    <ShieldCheck className="h-3.5 w-3.5" />
                     Verified
                   </Badge>
                 )}

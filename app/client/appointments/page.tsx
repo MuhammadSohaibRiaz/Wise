@@ -20,6 +20,7 @@ import {
   toLocalDateString,
 } from "@/lib/appointments/slot-availability"
 import { PaymentButton } from "@/components/payments/payment-button"
+import { notifyCaseDetailChanged } from "@/lib/case-detail-events"
 import { formatConsultationFeeBase, formatCurrency } from "@/lib/currency"
 import {
   Dialog,
@@ -485,13 +486,25 @@ export default function ClientAppointmentsPage() {
           proceed_with_case: proceedWithCase,
         }),
       })
-      const json = (await res.json().catch(() => ({}))) as { error?: string }
+      const json = (await res.json().catch(() => ({}))) as { error?: string; case_status?: string }
       if (!res.ok) throw new Error(json.error || "Failed to update appointment")
 
+      const nextCaseStatus =
+        json.case_status ?? (proceedWithCase ? "in_progress" : "closed")
+
       setAppointments((prev) =>
-        prev.map((apt) => (apt.id === heldTarget.id ? { ...apt, status: "attended" as const } : apt)),
+        prev.map((apt) =>
+          apt.id === heldTarget.id
+            ? {
+                ...apt,
+                status: "attended" as const,
+                case: { ...apt.case, status: nextCaseStatus },
+              }
+            : apt,
+        ),
       )
       setHeldTarget(null)
+      notifyCaseDetailChanged(heldTarget.case.id)
       toast({
         title: proceedWithCase ? "Consultation marked as held" : "Case closed",
         description: proceedWithCase
@@ -516,11 +529,13 @@ export default function ClientAppointmentsPage() {
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) throw new Error(json.error || "Failed to record no-show")
+      const linkedCaseId = appointments.find((apt) => apt.id === appointmentId)?.case.id
       setAppointments((prev) =>
         prev.map((apt) =>
           apt.id === appointmentId ? { ...apt, status: "cancelled" as const } : apt,
         ),
       )
+      if (linkedCaseId) notifyCaseDetailChanged(linkedCaseId)
       toast({
         title: "No-show recorded",
         description: "The appointment was cancelled and the linked case was closed.",
@@ -866,6 +881,7 @@ export default function ClientAppointmentsPage() {
                         appointment={appointment}
                         processingId={processingId}
                         canReschedule={canReschedule(appointment)}
+                        allowMarkHeld
                         onMarkHeld={() => setHeldTarget(appointment)}
                         onReschedule={() => { setRescheduleTarget(appointment); setRescheduleError("") }}
                         onSupport={() => { setSupportTarget(appointment); setSupportMessage("") }}
@@ -880,6 +896,7 @@ export default function ClientAppointmentsPage() {
                       appointment={appointment}
                       processingId={processingId}
                       canReschedule={canReschedule(appointment)}
+                      allowMarkHeld
                       onMarkHeld={() => setHeldTarget(appointment)}
                       onReschedule={() => { setRescheduleTarget(appointment); setRescheduleError("") }}
                       onSupport={() => { setSupportTarget(appointment); setSupportMessage("") }}
@@ -896,7 +913,9 @@ export default function ClientAppointmentsPage() {
                   {appointment.status === "attended" && (
                     <div className="text-right">
                       <p className="text-xs text-green-700 dark:text-green-400 font-medium">Consultation held</p>
-                      {appointment.case.status === "pending_completion" ? (
+                      {appointment.case.status === "closed" ? (
+                        <p className="mt-1 text-xs font-medium text-muted-foreground">Case closed</p>
+                      ) : appointment.case.status === "pending_completion" ? (
                         <a href={`/client/cases/${appointment.case.id}`} className="block mt-1">
                           <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 dark:bg-purple-900/30 px-2.5 py-1 text-xs font-semibold text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-200 transition-colors">
                             <CheckCircle2 className="h-3 w-3" />
@@ -922,7 +941,9 @@ export default function ClientAppointmentsPage() {
                   {/* Completed */}
                   {appointment.status === "completed" && (
                     <div className="text-right">
-                      <p className="text-xs text-green-700 dark:text-green-400 font-medium">Case completed</p>
+                      <p className="text-xs text-green-700 dark:text-green-400 font-medium">
+                        {appointment.case.status === "closed" ? "Case closed" : "Case completed"}
+                      </p>
                       <a href={`/client/cases/${appointment.case.id}`} className="text-xs text-primary hover:underline mt-1 inline-block">View case details &rarr;</a>
                     </div>
                   )}

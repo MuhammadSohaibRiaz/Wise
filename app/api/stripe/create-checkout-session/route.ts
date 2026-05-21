@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { appointmentId, amount, currency = APP_CURRENCY_CODE, paymentId } = body
+    const { appointmentId, amount, currency = APP_CURRENCY_CODE, paymentId, returnTo } = body
 
     if (!appointmentId || !amount || !paymentId) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
@@ -39,6 +39,22 @@ export async function POST(request: NextRequest) {
 
     if (appointmentError || !appointment) {
       return NextResponse.json({ error: "Appointment not found or invalid" }, { status: 404 })
+    }
+
+    const { data: paymentRow, error: paymentError } = await supabase
+      .from("payments")
+      .select("id, client_id, appointment_id, amount, status")
+      .eq("id", paymentId)
+      .eq("client_id", user.id)
+      .eq("status", "pending")
+      .maybeSingle()
+
+    if (paymentError || !paymentRow) {
+      return NextResponse.json({ error: "Payment not found or already completed" }, { status: 404 })
+    }
+
+    if (paymentRow.appointment_id && paymentRow.appointment_id !== appointmentId) {
+      return NextResponse.json({ error: "Payment does not match this appointment" }, { status: 400 })
     }
 
     // Prefer the configured production URL; fall back to the request origin for
@@ -69,8 +85,14 @@ export async function POST(request: NextRequest) {
         },
       ],
       mode: "payment",
-      success_url: `${siteUrl}/client/appointments?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${siteUrl}/client/appointments?payment=cancelled`,
+      success_url:
+        returnTo === "payments"
+          ? `${siteUrl}/client/payments?payment=success&session_id={CHECKOUT_SESSION_ID}`
+          : `${siteUrl}/client/appointments?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url:
+        returnTo === "payments"
+          ? `${siteUrl}/client/payments?payment=cancelled`
+          : `${siteUrl}/client/appointments?payment=cancelled`,
       metadata: {
         appointment_id: appointmentId,
         payment_id: paymentId,

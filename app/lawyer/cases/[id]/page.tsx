@@ -32,6 +32,8 @@ import { appointmentDisplayLabel } from "@/lib/appointment-display"
 import { isAppointmentBillable } from "@/lib/appointments-status"
 import { deriveCaseLifecycleStages } from "@/lib/case-lifecycle-stages"
 import { CaseProgressStepper } from "@/components/cases/case-progress-stepper"
+import { notifyCaseDetailChanged } from "@/lib/case-detail-events"
+import { useCaseDetailRealtimeSync } from "@/lib/hooks/use-case-detail-realtime-sync"
 import { CaseActivityFeed } from "@/components/cases/case-activity-feed"
 import { AiCaseSummary } from "@/components/cases/ai-case-summary"
 import { CaseDocumentsPanel } from "@/components/cases/case-documents-panel"
@@ -319,38 +321,7 @@ export default function LawyerCaseDetailPage() {
     }
   }, [caseId, fetchCaseDetail])
 
-  useEffect(() => {
-    if (!caseId) return
-    const supabase = createClient()
-    const topic = `lawyer-case-detail-${caseId}-${Date.now()}`
-    // Real-time refresh mirrors the client page so both sides see status,
-    // document, appointment, and timeline changes without manual reloads.
-    const channel = supabase
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "cases", filter: `id=eq.${caseId}` },
-        () => { void fetchCaseDetail({ silent: true }) },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "appointments", filter: `case_id=eq.${caseId}` },
-        () => { void fetchCaseDetail({ silent: true }) },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "documents", filter: `case_id=eq.${caseId}` },
-        () => { void fetchCaseDetail({ silent: true }) },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "case_timeline_events", filter: `case_id=eq.${caseId}` },
-        () => { void fetchCaseDetail({ silent: true }) },
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [caseId, fetchCaseDetail])
+  useCaseDetailRealtimeSync(caseId, fetchCaseDetail)
 
   const fetchAnalysis = async (analysisId: string) => {
     try {
@@ -458,7 +429,8 @@ export default function LawyerCaseDetailPage() {
         )
       }
 
-      setCaseDetail({ ...caseDetail, status: statusToApply, updated_at: new Date().toISOString() })
+      await fetchCaseDetail({ silent: true })
+      notifyCaseDetailChanged(caseId)
 
       if (statusToApply === "pending_completion") {
         // Email notification sent to client — see /api/notify/email
