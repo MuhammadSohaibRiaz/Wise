@@ -2,6 +2,7 @@
 
 import type React from "react"
 
+import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ThemeToggle } from "./theme-provider"
@@ -28,8 +29,15 @@ export function SiteHeader() {
       <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-8">
           <Link href="/" className="font-bold text-xl sm:text-2xl tracking-tighter text-primary flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-white text-xs font-bold">WC</span>
+            <div className="relative h-8 w-8 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-border">
+              <Image
+                src="/wisecase-logo.png"
+                alt="WiseCase"
+                fill
+                sizes="32px"
+                className="object-contain p-0.5"
+                priority
+              />
             </div>
             <span className="hidden sm:inline">WiseCase</span>
           </Link>

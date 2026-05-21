@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ClientSidebar } from "@/components/client/sidebar"
@@ -67,7 +68,17 @@ export default function ClientLayout({
         <div className="min-h-screen bg-background">
           <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
             <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-              <Link href="/" className="text-lg font-bold text-foreground">
+              <Link href="/" className="flex items-center gap-2 text-lg font-bold text-foreground">
+                <span className="relative h-8 w-8 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-border">
+                  <Image
+                    src="/wisecase-logo.png"
+                    alt="WiseCase"
+                    fill
+                    sizes="32px"
+                    className="object-contain p-0.5"
+                    priority
+                  />
+                </span>
                 WiseCase
               </Link>
               <Link
@@ -107,5 +118,4 @@ export default function ClientLayout({
     </>
   )
 }
-
 

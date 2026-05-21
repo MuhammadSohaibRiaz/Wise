@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,6 +25,7 @@ export default function LawyerRegisterPage() {
   const [practiceArea, setPracticeArea] = useState("")
   const [licenseFile, setLicenseFile] = useState<File | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const submitButtonRef = useRef<HTMLButtonElement>(null)
 
   const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
   const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
@@ -221,7 +222,13 @@ export default function LawyerRegisterPage() {
 
           <div className="space-y-2">
             <Label htmlFor="licenseFile">Bar License Document</Label>
-            <FileUpload onFileSelect={setLicenseFile} accept="image/*,.pdf" />
+            <FileUpload
+              onFileSelect={(file) => {
+                setLicenseFile(file)
+                window.setTimeout(() => submitButtonRef.current?.focus(), 0)
+              }}
+              accept="image/*,.pdf"
+            />
           </div>
 
           <div className="space-y-2">
@@ -248,7 +255,7 @@ export default function LawyerRegisterPage() {
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button ref={submitButtonRef} type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? <Loader2 className="animate-spin" /> : "Create Account"}
           </Button>
         </form>

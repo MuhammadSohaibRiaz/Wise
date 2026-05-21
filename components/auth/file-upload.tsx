@@ -82,6 +82,7 @@ export function FileUpload({
           <div className="relative w-32 h-32 mx-auto">
             <Image src={previewUrl || "/placeholder.svg"} alt="Preview" fill className="object-cover rounded" />
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation()
                 handleClear()
@@ -109,6 +110,7 @@ export function FileUpload({
               </a>
             )}
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation()
                 handleClear()

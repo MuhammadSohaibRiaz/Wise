@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -53,8 +54,18 @@ export function ClientSidebar({ open, onToggle }: ClientSidebarProps) {
           {/* Logo */}
           <div className="p-4 border-b border-sidebar-border flex items-center justify-between">
             {open && (
-              <Link href="/client/dashboard" className="font-bold text-lg text-sidebar-foreground">
-                SmartLaw
+              <Link href="/client/dashboard" className="flex items-center gap-2 font-bold text-lg text-sidebar-foreground">
+                <span className="relative h-8 w-8 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-sidebar-border">
+                  <Image
+                    src="/wisecase-logo.png"
+                    alt="WiseCase"
+                    fill
+                    sizes="32px"
+                    className="object-contain p-0.5"
+                    priority
+                  />
+                </span>
+                WiseCase
               </Link>
             )}
             <Button

@@ -169,7 +169,7 @@ Expected:
 - Admin cannot accidentally be redirected to client/lawyer dashboards.
 
 ## AUTH-004: Wrong Role URL Access
-
+    
 Windows: A, B, C
 
 Steps:

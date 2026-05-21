@@ -13,7 +13,7 @@ import { RootProgressBar } from "@/components/root-progress"
 
 export const metadata: Metadata = {
   title: {
-    default: "WiseCase — Smart Lawyer Booking System",
+    default: "WiseCase - Smart Lawyer Booking System",
     template: "%s | WiseCase",
   },
   description:
@@ -38,18 +38,32 @@ export const metadata: Metadata = {
     telephone: false,
   },
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
+  icons: {
+    icon: [{ url: "/wisecase-logo.png", type: "image/png" }],
+    shortcut: "/wisecase-logo.png",
+    apple: "/wisecase-logo.png",
+  },
   openGraph: {
     type: "website",
     locale: "en_US",
     url: "/",
-    title: "WiseCase — Smart Lawyer Booking System",
+    title: "WiseCase - Smart Lawyer Booking System",
     description: "AI-driven web-based platform to search lawyers, book appointments, analyze case documents with OCR/NLP, and pay securely.",
     siteName: "WiseCase",
+    images: [
+      {
+        url: "/wisecase-logo.png",
+        width: 1200,
+        height: 1200,
+        alt: "WiseCase logo",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "WiseCase — Smart Lawyer Booking System",
+    title: "WiseCase - Smart Lawyer Booking System",
     description: "AI-driven web-based platform to search lawyers, book appointments, analyze case documents with OCR/NLP, and pay securely.",
+    images: ["/wisecase-logo.png"],
   },
   robots: {
     index: true,
@@ -89,4 +103,3 @@ export default function RootLayout({
     </html>
   )
 }
-

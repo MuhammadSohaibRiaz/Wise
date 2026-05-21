@@ -6,18 +6,21 @@ const workflow = [
     title: "Analyze the matter",
     description: "Upload a legal document and get a structured summary, risk signals, citations, and recommended next steps.",
     image: "/legal-documents-analysis.jpg",
+    imagePosition: "center center",
     icon: FileSearch,
   },
   {
     title: "Choose the right lawyer",
     description: "Compare verified lawyers by specialization, rating, hourly rate, and match reason before booking.",
     image: "/lawyers-team-portrait.jpg",
+    imagePosition: "center top",
     icon: Users,
   },
   {
     title: "Manage the case",
     description: "Book, pay, share documents, comment, track status, and use the Legal RAG Assistant from one workspace.",
     image: "/lawyer-meeting-courtroom-gavel.jpg",
+    imagePosition: "center center",
     icon: CalendarCheck,
   },
 ]
@@ -56,6 +59,7 @@ export function ImageCarousel() {
                     src={item.image}
                     alt=""
                     className="h-full w-full object-cover"
+                    style={{ objectPosition: item.imagePosition }}
                     loading={index === 0 ? "eager" : "lazy"}
                   />
                   <div className="absolute left-3 top-3 flex h-9 w-9 items-center justify-center rounded-md bg-background/90 shadow-sm backdrop-blur">

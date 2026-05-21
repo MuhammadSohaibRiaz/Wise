@@ -46,7 +46,7 @@ export function Hero() {
         </div>
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <li className="rounded-lg border p-4">
-            <h3 className="font-semibold">AI‑Powered Lawyer Suggestion</h3>
+            <h3 className="font-semibold">AI-Powered Lawyer Suggestion</h3>
             <p className="mt-2 text-sm text-muted-foreground">
               Recommendations based on case information, document analysis, and lawyer specialization.
             </p>
