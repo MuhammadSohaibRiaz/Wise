@@ -1,7 +1,7 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
-import { useSearchParams } from "next/navigation"
+import { Suspense, useEffect, useRef, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { LawyerCard } from "@/components/lawyer/lawyer-card"
 import { generateRecommendationReason } from "@/lib/ai/lawyer-matching"
@@ -11,6 +11,9 @@ import { Loader2, LayoutDashboard } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
+import { BOOK_LAWYER_QUERY } from "@/lib/auth/client-booking-return"
+import { BookAppointmentModal } from "@/components/lawyer/book-appointment-modal"
+import { markLatestDraftLawyerSelection } from "@/lib/case-drafts"
 
 interface LawyerProfile {
   id: string
@@ -55,12 +58,18 @@ function filtersFromSearchParams(searchParams: URLSearchParams): Partial<FilterS
 
 function MatchPageInner() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const urlFilters = filtersFromSearchParams(searchParams)
+  const bookLawyerId = searchParams.get(BOOK_LAWYER_QUERY)
+  const autoBookHandled = useRef(false)
 
   const [lawyers, setLawyers] = useState<LawyerProfile[]>([])
   const [filteredLawyers, setFilteredLawyers] = useState<LawyerProfile[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [clientId, setClientId] = useState<string | null>(null)
+  const [bookingOpen, setBookingOpen] = useState(false)
+  const [bookingLawyer, setBookingLawyer] = useState<LawyerProfile | null>(null)
   const [filters, setFilters] = useState<FilterState>({
     search: urlFilters.search ?? "",
     specializations: urlFilters.specializations ?? [],
@@ -91,10 +100,31 @@ function MatchPageInner() {
       const {
         data: { session },
       } = await supabase.auth.getSession()
-      setIsAuthenticated(!!session)
+      const uid = session?.user?.id ?? null
+      setClientId(uid)
+      setIsAuthenticated(!!uid)
     }
-    checkAuth()
+    void checkAuth()
   }, [])
+
+  useEffect(() => {
+    if (!bookLawyerId || !clientId || isLoading || autoBookHandled.current) return
+
+    const target = lawyers.find((l) => l.id === bookLawyerId)
+    if (!target) return
+
+    autoBookHandled.current = true
+    const supabase = createClient()
+    void markLatestDraftLawyerSelection(supabase, clientId, target.id).then(() => {
+      setBookingLawyer(target)
+      setBookingOpen(true)
+
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete(BOOK_LAWYER_QUERY)
+      const q = params.toString()
+      router.replace(q ? `/match?${q}` : "/match", { scroll: false })
+    })
+  }, [bookLawyerId, clientId, isLoading, lawyers, searchParams, router])
 
   useEffect(() => {
     const fetchLawyers = async () => {
@@ -343,6 +373,20 @@ function MatchPageInner() {
           </div>
         </div>
       </main>
+
+      {bookingLawyer && clientId && (
+        <BookAppointmentModal
+          open={bookingOpen}
+          onOpenChange={setBookingOpen}
+          lawyerId={bookingLawyer.id}
+          lawyerName={`${bookingLawyer.first_name} ${bookingLawyer.last_name}`}
+          hourlyRate={Number(bookingLawyer.hourly_rate) || 0}
+          clientId={clientId}
+          onBookingSuccess={() => {
+            window.location.href = "/client/appointments"
+          }}
+        />
+      )}
     </>
   )
 }

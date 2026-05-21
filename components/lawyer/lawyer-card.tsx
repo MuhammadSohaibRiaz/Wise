@@ -12,6 +12,11 @@ import { BookAppointmentModal } from "@/components/lawyer/book-appointment-modal
 import { createClient } from "@/lib/supabase/client"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
 import { formatSuccessRateDisplay } from "@/lib/lawyer-success-rate-display"
+import {
+  buildClientSignInToBookUrl,
+  buildMatchBookReturnUrl,
+  buildProfileBookReturnUrl,
+} from "@/lib/auth/client-booking-return"
 import { markLatestDraftLawyerSelection } from "@/lib/case-drafts"
 
 interface LawyerCardProps {
@@ -67,11 +72,11 @@ export function LawyerCard({
   const handleBookNow = async (e: React.MouseEvent) => {
     e.preventDefault()
     if (!clientId) {
-      const next =
+      const returnPath =
         typeof window !== "undefined"
-          ? `${window.location.pathname}${window.location.search}`
-          : "/match"
-      router.push(`/auth/client/sign-in?message=sign-in-to-book&next=${encodeURIComponent(next)}`)
+          ? buildMatchBookReturnUrl(id, window.location.search)
+          : buildMatchBookReturnUrl(id)
+      router.push(buildClientSignInToBookUrl(returnPath))
       return
     }
     const supabase = createClient()
@@ -196,11 +201,24 @@ export function LawyerCard({
 
         {/* Action Buttons */}
         <div className="flex gap-2 mt-auto">
-          <Link href={`/client/lawyer/${id}`} className="flex-1">
-            <Button variant="outline" className="w-full bg-transparent">
+          {clientId ? (
+            <Link href={`/client/lawyer/${id}`} className="flex-1">
+              <Button variant="outline" className="w-full bg-transparent">
+                View Profile
+              </Button>
+            </Link>
+          ) : (
+            <Button
+              variant="outline"
+              className="flex-1 w-full bg-transparent"
+              onClick={(e) => {
+                e.preventDefault()
+                router.push(buildClientSignInToBookUrl(buildProfileBookReturnUrl(id)))
+              }}
+            >
               View Profile
             </Button>
-          </Link>
+          )}
           <Button onClick={handleBookNow} className="flex-1 w-full">
             {clientId ? "Book Consultation" : "Sign in to Book"}
           </Button>

@@ -11,6 +11,11 @@ import { createClient } from "@/lib/supabase/client"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
 import { formatConsultationFeeBase, formatCurrency } from "@/lib/currency"
 import { formatSuccessRateDisplay } from "@/lib/lawyer-success-rate-display"
+import {
+  BOOK_ON_PROFILE_QUERY,
+  buildClientSignInToBookUrl,
+  buildProfileBookReturnUrl,
+} from "@/lib/auth/client-booking-return"
 
 interface LawyerProfileHeaderProps {
   id: string
@@ -114,14 +119,19 @@ export function LawyerProfileHeader({
     }
   }, [id])
 
-  const handleBookClick = () => {
-    const next =
-      typeof window !== "undefined"
-        ? `${window.location.pathname}${window.location.search}`
-        : `/client/lawyer/${id}`
+  useEffect(() => {
+    if (!userId || !isClient || typeof window === "undefined") return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get(BOOK_ON_PROFILE_QUERY) !== "1") return
+    setBookingOpen(true)
+    params.delete(BOOK_ON_PROFILE_QUERY)
+    const q = params.toString()
+    router.replace(q ? `/client/lawyer/${id}?${q}` : `/client/lawyer/${id}`, { scroll: false })
+  }, [userId, isClient, id, router])
 
+  const handleBookClick = () => {
     if (!userId || !isClient) {
-      router.push(`/auth/client/sign-in?message=sign-in-to-book&next=${encodeURIComponent(next)}`)
+      router.push(buildClientSignInToBookUrl(buildProfileBookReturnUrl(id)))
       return
     }
     setBookingOpen(true)

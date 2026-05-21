@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { formatAppointmentDateTime } from "@/lib/datetime"
 import { sendEmail, buildEmailHtml, escapeHtml } from "@/lib/email"
+import { resolveCancellationRequester } from "@/lib/appointments/cancellation-request"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 
 const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || "support@wisecaseapp.com"
@@ -54,19 +55,31 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { error: updErr } = await supabase
+    const requestedBy = resolveCancellationRequester(user.id, row.client_id, row.lawyer_id)
+    const otherPartyId = user.id === row.client_id ? row.lawyer_id : row.client_id
+
+    const admin = createAdminClient()
+    const { data: updatedRows, error: updErr } = await admin
       .from("appointments")
       .update({
         status: "cancellation_requested",
         previous_status: row.status,
         cancellation_request_message: message,
+        cancellation_requested_by: requestedBy,
         updated_at: new Date().toISOString(),
       })
       .eq("id", appointmentId)
       .in("status", ["scheduled", "rescheduled"])
+      .select("id")
 
     if (updErr) {
       return NextResponse.json({ error: updErr.message }, { status: 400 })
+    }
+    if (!updatedRows?.length) {
+      return NextResponse.json(
+        { error: "Appointment status changed before your request could be saved. Please refresh and try again." },
+        { status: 409 },
+      )
     }
 
     // Fetch user profile for the support email
@@ -101,12 +114,13 @@ export async function POST(req: NextRequest) {
         metadata: {
           appointment_id: appointmentId,
           requested_by: user.id,
+          requested_by_role: requestedBy,
           message,
         },
       })
     }
 
-    const admin = createAdminClient()
+    const requesterLabel = requestedBy === "client" ? "Client" : "Lawyer"
     const { data: adminProfiles } = await admin
       .from("profiles")
       .select("id")
@@ -119,16 +133,32 @@ export async function POST(req: NextRequest) {
           created_by: user.id,
           type: "appointment_update",
           title: "Cancellation request needs review",
-          description: `${caseTitle || "Appointment"} cancellation request is waiting for admin review.`,
+          description: `${requesterLabel} requested cancellation for "${caseTitle || "Appointment"}".`,
           data: {
             appointment_id: appointmentId,
             case_id: row.case_id,
             status: "cancellation_requested",
+            cancellation_requested_by: requestedBy,
             action: "review_cancellation_request",
           },
         })),
       )
     }
+
+    await admin.from("notifications").insert({
+      user_id: otherPartyId,
+      created_by: user.id,
+      type: "appointment_update",
+      title:
+        requestedBy === "client" ? "Client requested cancellation" : "Lawyer requested cancellation",
+      description: `${requesterLabel} submitted a cancellation request for "${caseTitle || "your appointment"}". Admin will review it.`,
+      data: {
+        appointment_id: appointmentId,
+        case_id: row.case_id,
+        status: "cancellation_requested",
+        cancellation_requested_by: requestedBy,
+      },
+    })
 
     // Send email to support
     const scheduledAtFormatted = formatAppointmentDateTime(row.scheduled_at)
@@ -144,6 +174,7 @@ export async function POST(req: NextRequest) {
       html: buildEmailHtml({
         title: "Appointment Cancellation Request",
         body: `
+          <strong>Requested by:</strong> ${requesterLabel}<br>
           <strong>User:</strong> ${safeUserName} (${safeUserEmail})<br>
           <strong>Appointment ID:</strong> ${appointmentId}<br>
           <strong>Case:</strong> ${safeCaseTitle}<br>

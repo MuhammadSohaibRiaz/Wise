@@ -15,6 +15,7 @@ type EmailTemplate =
   | "appointment_rescheduled"
   | "appointment_cancelled"
   | "appointment_cancellation_resolved"
+  | "appointment_cancellation_refunded"
 
 interface RequestBody {
   template: EmailTemplate
@@ -291,7 +292,7 @@ export async function POST(req: NextRequest) {
       }
 
       case "appointment_cancellation_resolved": {
-        const { recipient_id, case_title, resolution, reason, recipient_role } = data
+        const { recipient_id, case_title, resolution, reason, recipient_role, requested_by } = data
         if (!recipient_id) return NextResponse.json({ error: "Missing recipient_id" }, { status: 400 })
 
         const { data: profile } = await supabase
@@ -310,26 +311,67 @@ export async function POST(req: NextRequest) {
         const safeReason = reason ? escapeHtml(reason) : ""
 
         const isLawyer = recipient_role === "lawyer"
-        const approvedBody = isLawyer
-          ? `A client's cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} has been approved by WiseCase admin. The appointment has been cancelled.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""}`
-          : `Your cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} has been approved by WiseCase admin. The appointment has been cancelled.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""}`
-        const rejectedBody = isLawyer
-          ? `A client's cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} was rejected by WiseCase admin. The appointment remains scheduled.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""}`
-          : `Your cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} was rejected by WiseCase admin. The appointment remains scheduled.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""} Please attend your appointment as planned.`
+        const requester = requested_by === "client" || requested_by === "lawyer" ? requested_by : null
+        const isOwnRequest =
+          (isLawyer && requester === "lawyer") || (!isLawyer && requester === "client")
+        const requesterPhrase = requester
+          ? requester === "client"
+            ? "The client's cancellation request"
+            : "The lawyer's cancellation request"
+          : "A cancellation request"
+
+        const approvedBody = isOwnRequest
+          ? `Your cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} has been approved by WiseCase admin. The appointment has been cancelled.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""}`
+          : `${requesterPhrase}${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} has been approved by WiseCase admin. The appointment has been cancelled.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""}`
+        const rejectedBody = isOwnRequest
+          ? `Your cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} was rejected by WiseCase admin. The appointment remains active.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""} Please attend your appointment as planned.`
+          : `${requesterPhrase}${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} was rejected by WiseCase admin. The appointment remains active.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""}`
 
         await sendEmail({
           to: profile.email,
-          subject: isApproved
-            ? isLawyer
-              ? "Client Cancellation Request Approved"
-              : "Appointment Cancellation Approved"
-            : isLawyer
-              ? "Client Cancellation Request Rejected"
-              : "Appointment Cancellation Rejected",
+          subject: isApproved ? "Cancellation Approved" : "Cancellation Rejected",
           html: buildEmailHtml({
             title: isApproved ? "Cancellation Approved" : "Cancellation Request Rejected",
             body: isApproved ? approvedBody : rejectedBody,
             ctaText: "View Appointments",
+            ctaUrl: appointmentsUrl,
+          }),
+        })
+        break
+      }
+
+      case "appointment_cancellation_refunded": {
+        const { recipient_id, case_title, amount, currency, recipient_role } = data
+        if (!recipient_id) return NextResponse.json({ error: "Missing recipient_id" }, { status: 400 })
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("email, first_name")
+          .eq("id", recipient_id)
+          .single()
+
+        if (!profile?.email) {
+          return NextResponse.json({ error: "Recipient email not found" }, { status: 404 })
+        }
+
+        const appointmentsUrl =
+          recipient_role === "lawyer" ? `${siteUrl}/lawyer/appointments` : `${siteUrl}/client/payments`
+        const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
+        const safeAmount = amount ? escapeHtml(amount) : ""
+        const safeCurrency = currency ? escapeHtml(currency) : "PKR"
+        const isLawyer = recipient_role === "lawyer"
+
+        const body = isLawyer
+          ? `The client's payment${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} (${safeCurrency} ${safeAmount}) has been refunded to their original payment method after the cancelled consultation.`
+          : `Your payment${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} of <strong>${safeCurrency} ${safeAmount}</strong> has been refunded to your original payment method. It may take a few business days to appear on your statement.`
+
+        await sendEmail({
+          to: profile.email,
+          subject: isLawyer ? "Client payment refunded" : "Your refund has been issued",
+          html: buildEmailHtml({
+            title: "Refund processed",
+            body,
+            ctaText: isLawyer ? "View Appointments" : "View Payments",
             ctaUrl: appointmentsUrl,
           }),
         })

@@ -12,6 +12,7 @@ import {
   markLatestDraftLawyerSelection,
 } from "@/lib/case-drafts"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
+import { buildClientSignInToBookUrl, buildProfileBookReturnUrl } from "@/lib/auth/client-booking-return"
 import { APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 import {
   getAvailableSlotsForDay,
@@ -70,11 +71,7 @@ export function BookAppointmentModal({
   const supabase = createClient()
 
   const redirectToSignIn = () => {
-    const next =
-      typeof window !== "undefined"
-        ? `${window.location.pathname}${window.location.search}`
-        : "/match"
-    router.push(`/auth/client/sign-in?message=sign-in-to-book&next=${encodeURIComponent(next)}`)
+    router.push(buildClientSignInToBookUrl(buildProfileBookReturnUrl(lawyerId)))
   }
 
   useEffect(() => {

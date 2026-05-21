@@ -11,6 +11,11 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, AlertCircle, Calendar, Clock, FileText, CreditCard, CheckCircle2, XCircle, CalendarClock, MessageSquare } from "lucide-react"
+import {
+  cancellationRequestBannerText,
+  cancellationRequestStatusHint,
+  type CancellationRequester,
+} from "@/lib/appointments/cancellation-request"
 import { appointmentStatusLabel, appointmentWorkflowPhase, APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 import { ConsultationHeldDialog } from "@/components/appointments/consultation-held-dialog"
 import { ScheduledConsultationActions } from "@/components/appointments/scheduled-consultation-actions"
@@ -43,6 +48,7 @@ interface Appointment {
   status: "pending" | "awaiting_payment" | "scheduled" | "attended" | "completed" | "cancelled" | "rescheduled" | "rejected" | "cancellation_requested"
   payment_status?: "pending" | "completed" | "failed" | null
   reschedule_count: number
+  cancellation_requested_by?: CancellationRequester | null
   case: {
     id: string
     title: string
@@ -155,6 +161,7 @@ function ClientAppointmentsContent() {
             created_at,
             case_id,
             reschedule_count,
+            cancellation_requested_by,
             cases (
               id,
               title,
@@ -200,6 +207,7 @@ function ClientAppointmentsContent() {
           status: (apt.status as Appointment["status"]) || "pending",
           payment_status: (paymentStatuses[apt.case_id as string] as Appointment["payment_status"]) || null,
           reschedule_count: (apt.reschedule_count as number) || 0,
+          cancellation_requested_by: (apt.cancellation_requested_by as CancellationRequester | null) || null,
           case: normalizeCaseRelation(apt.cases),
           lawyer: normalizeLawyerRelation(apt.profiles),
         }))
@@ -287,7 +295,10 @@ function ClientAppointmentsContent() {
   }, [loadAppointments, router, searchParams, toast])
 
   const showAppointmentStatusToast = useCallback(
-    (updated: { id?: string; status?: string }, old?: { status?: string }) => {
+    (
+      updated: { id?: string; status?: string; cancellation_requested_by?: CancellationRequester },
+      old?: { status?: string },
+    ) => {
       const status = updated.status
       if (!status) return
 
@@ -343,9 +354,15 @@ function ClientAppointmentsContent() {
         return
       }
       if (status === "cancellation_requested") {
+        const by = updated.cancellation_requested_by
         toast({
           title: "Cancellation Under Review",
-          description: "A cancellation request has been submitted and is under admin review.",
+          description:
+            by === "lawyer"
+              ? "Your lawyer submitted a cancellation request. Admin will review it."
+              : by === "client"
+                ? "Your cancellation request was submitted and is waiting for admin review."
+                : "A cancellation request was submitted and is waiting for admin review.",
         })
       }
       if (status === "rejected" && old?.status === "pending") {
@@ -382,7 +399,11 @@ function ClientAppointmentsContent() {
           filter: `client_id=eq.${clientId}`,
         },
         (payload) => {
-          const updated = payload.new as { id?: string; status?: string }
+          const updated = payload.new as {
+            id?: string
+            status?: string
+            cancellation_requested_by?: CancellationRequester
+          }
           const old = payload.old as { status?: string }
           showAppointmentStatusToast(updated, old)
           debouncedSilentReload()
@@ -698,7 +719,9 @@ function ClientAppointmentsContent() {
 
       setAppointments((prev) =>
         prev.map((apt) =>
-          apt.id === supportTarget.id ? { ...apt, status: "cancellation_requested" as const } : apt,
+          apt.id === supportTarget.id
+            ? { ...apt, status: "cancellation_requested" as const, cancellation_requested_by: "client" as const }
+            : apt,
         ),
       )
       setSupportTarget(null)
@@ -799,11 +822,18 @@ function ClientAppointmentsContent() {
             >
               {/* Cancellation requested banner */}
               {appointment.status === "cancellation_requested" && (
-                <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-4 py-3">
-                  <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0" />
-                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                    Cancellation requested &mdash; under admin review. Please wait for admin to resolve this.
-                  </p>
+                <div className="mb-4 flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                      {cancellationRequestBannerText(appointment.cancellation_requested_by, "client")}
+                    </p>
+                  </div>
+                  {appointment.cancellation_requested_by && (
+                    <Badge variant="outline" className="w-fit border-amber-400 text-amber-800 dark:text-amber-200">
+                      Requested by {appointment.cancellation_requested_by === "client" ? "you (client)" : "lawyer"}
+                    </Badge>
+                  )}
                 </div>
               )}
 
@@ -967,7 +997,9 @@ function ClientAppointmentsContent() {
 
                   {/* Cancellation Requested */}
                   {appointment.status === "cancellation_requested" && (
-                    <p className="text-xs text-amber-700 dark:text-amber-400 font-medium text-right">Under admin review</p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 font-medium text-right">
+                      {cancellationRequestStatusHint(appointment.cancellation_requested_by, "client")}
+                    </p>
                   )}
 
                   {/* Attended */}

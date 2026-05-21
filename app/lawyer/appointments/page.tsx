@@ -11,6 +11,11 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, AlertCircle, Calendar, Clock, FileText, User, Check, X, MessageSquare, XCircle } from "lucide-react"
 import { LawyerDashboardHeader } from "@/components/lawyer/dashboard-header"
+import {
+  cancellationRequestBannerText,
+  cancellationRequestStatusHint,
+  type CancellationRequester,
+} from "@/lib/appointments/cancellation-request"
 import { appointmentStatusLabel, appointmentWorkflowPhase, APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 import { ScheduledConsultationActions } from "@/components/appointments/scheduled-consultation-actions"
 import { CASE_DETAIL_CHANGED_EVENT, notifyCaseDetailChanged } from "@/lib/case-detail-events"
@@ -40,6 +45,7 @@ interface Appointment {
   request_message?: string
   notes?: string
   reschedule_count: number
+  cancellation_requested_by?: CancellationRequester | null
   case: {
     id: string
     title: string
@@ -82,9 +88,10 @@ export default function LawyerAppointmentsPage() {
   const [supportMessage, setSupportMessage] = useState("")
   const [supportSubmitting, setSupportSubmitting] = useState(false)
 
-  const loadAppointments = useCallback(async () => {
+  const loadAppointments = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true
     try {
-      setIsLoading(true)
+      if (!silent) setIsLoading(true)
       const supabase = createClient()
 
       const { data: sessionData } = await supabase.auth.getSession()
@@ -106,6 +113,7 @@ export default function LawyerAppointmentsPage() {
             request_message,
             notes,
             reschedule_count,
+            cancellation_requested_by,
             cases (
               id,
               title,
@@ -136,6 +144,7 @@ export default function LawyerAppointmentsPage() {
           request_message: apt.request_message,
           notes: apt.notes,
           reschedule_count: apt.reschedule_count || 0,
+          cancellation_requested_by: apt.cancellation_requested_by || null,
           case: apt.cases || { id: "", title: "Unknown", case_type: "", status: "", description: "", hourly_rate: null },
           client: apt.profiles || { id: "", first_name: "Unknown", last_name: "", avatar_url: null, email: "" },
         })),
@@ -165,64 +174,115 @@ export default function LawyerAppointmentsPage() {
     return () => window.removeEventListener(CASE_DETAIL_CHANGED_EVENT, onCaseChanged)
   }, [loadAppointments])
 
+  const showLawyerAppointmentToast = useCallback(
+    (
+      updated: { status?: string; cancellation_requested_by?: CancellationRequester },
+      old?: { status?: string },
+    ) => {
+      const status = updated.status
+      if (!status) return
+      if (status === "cancellation_requested") {
+        const by = updated.cancellation_requested_by
+        toast({
+          title: "Cancellation Under Review",
+          description:
+            by === "client"
+              ? "The client submitted a cancellation request. Admin will review it."
+              : by === "lawyer"
+                ? "Your cancellation request was submitted and is waiting for admin review."
+                : "A cancellation request was submitted and is waiting for admin review.",
+        })
+        return
+      }
+      if (status === "cancelled" && old?.status === "cancellation_requested") {
+        toast({ title: "Cancellation Approved", description: "Admin approved the cancellation request." })
+        return
+      }
+      if (
+        (status === "scheduled" || status === "rescheduled") &&
+        old?.status === "cancellation_requested"
+      ) {
+        toast({
+          title: "Cancellation Rejected",
+          description: "Admin rejected the cancellation request. The appointment remains active.",
+          variant: "destructive",
+        })
+        return
+      }
+      if (status === "rescheduled" && old?.status !== "cancellation_requested") {
+        toast({
+          title: "Appointment Rescheduled",
+          description: "The client has rescheduled this appointment. Please check the new time.",
+        })
+      }
+    },
+    [toast],
+  )
+
   useEffect(() => {
     if (!lawyerId) return
 
     const supabase = createClient()
+    let refetchTimeout: ReturnType<typeof setTimeout> | null = null
+    const debouncedSilentReload = () => {
+      if (refetchTimeout) clearTimeout(refetchTimeout)
+      refetchTimeout = setTimeout(() => {
+        void loadAppointments({ silent: true })
+      }, 250)
+    }
+
     const channel = supabase
       .channel(`appointments-lawyer-${lawyerId}-${Date.now()}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "appointments", filter: `lawyer_id=eq.${lawyerId}` },
-        () => void loadAppointments(),
+        () => debouncedSilentReload(),
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "cases", filter: `lawyer_id=eq.${lawyerId}` },
-        () => void loadAppointments(),
+        () => debouncedSilentReload(),
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "appointments", filter: `lawyer_id=eq.${lawyerId}` },
         (payload) => {
-          const updated = payload.new as any
-          const old = payload.old as any
-          if (updated.status === "attended" || updated.status === "completed") {
-            void loadAppointments()
-            return
+          const updated = payload.new as {
+            status?: string
+            cancellation_requested_by?: CancellationRequester
           }
-          setAppointments((prev) =>
-            prev.map((apt) =>
-              apt.id === updated.id
-                ? { ...apt, status: updated.status, scheduled_at: updated.scheduled_at || apt.scheduled_at, reschedule_count: updated.reschedule_count ?? apt.reschedule_count }
-                : apt,
-            ),
-          )
-          if (updated.status === "rescheduled") {
-            if (old?.status === "cancellation_requested") {
-              toast({ title: "Cancellation Denied", description: "The admin has denied the cancellation request. The appointment remains active." })
-            } else {
-              toast({ title: "Appointment Rescheduled", description: "The client has rescheduled this appointment. Please check the new time." })
-            }
-          } else if (updated.status === "cancellation_requested") {
-            toast({ title: "Cancellation Requested", description: "A cancellation request has been submitted for one of your appointments." })
-          } else if (updated.status === "cancelled") {
-            if (old?.status === "cancellation_requested") {
-              toast({ title: "Cancellation Approved", description: "The admin has approved the cancellation request." })
-            } else {
-              toast({ title: "Appointment Cancelled", description: "An appointment has been cancelled." })
-            }
-          } else if (updated.status === "scheduled" && old?.status === "cancellation_requested") {
-            toast({ title: "Cancellation Denied", description: "The admin has denied the cancellation request. The appointment remains active." })
+          const old = payload.old as { status?: string }
+          showLawyerAppointmentToast(updated, old)
+          debouncedSilentReload()
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${lawyerId}` },
+        (payload) => {
+          const row = payload.new as { type?: string }
+          if (row.type === "appointment_update" || row.type === "appointment_request") {
+            debouncedSilentReload()
           }
         },
       )
       .subscribe()
 
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadAppointments({ silent: true })
+      }
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    window.addEventListener("focus", onVisible)
+
     return () => {
+      if (refetchTimeout) clearTimeout(refetchTimeout)
+      document.removeEventListener("visibilitychange", onVisible)
+      window.removeEventListener("focus", onVisible)
       supabase.removeChannel(channel)
     }
-  }, [lawyerId, loadAppointments])
+  }, [lawyerId, loadAppointments, showLawyerAppointmentToast])
 
   useEffect(() => {
     if (!rescheduleTarget || !lawyerId) {
@@ -484,7 +544,9 @@ export default function LawyerAppointmentsPage() {
 
       setAppointments((prev) =>
         prev.map((apt) =>
-          apt.id === supportTarget.id ? { ...apt, status: "cancellation_requested" as const } : apt,
+          apt.id === supportTarget.id
+            ? { ...apt, status: "cancellation_requested" as const, cancellation_requested_by: "lawyer" as const }
+            : apt,
         ),
       )
       setSupportTarget(null)
@@ -757,11 +819,18 @@ export default function LawyerAppointmentsPage() {
                 <div key={appointment.id} className={`rounded-lg border ${statusBorderClass(appointment.status)} p-6 transition-all hover:shadow-md`}>
                   {/* Cancellation requested banner */}
                   {appointment.status === "cancellation_requested" && (
-                    <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-4 py-3">
-                      <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0" />
-                      <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                        Cancellation requested &mdash; under admin review. Please wait for admin to resolve this.
-                      </p>
+                    <div className="mb-4 flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                        <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                          {cancellationRequestBannerText(appointment.cancellation_requested_by, "lawyer")}
+                        </p>
+                      </div>
+                      {appointment.cancellation_requested_by && (
+                        <Badge variant="outline" className="w-fit border-amber-400 text-amber-800 dark:text-amber-200">
+                          Requested by {appointment.cancellation_requested_by === "client" ? "client" : "you (lawyer)"}
+                        </Badge>
+                      )}
                     </div>
                   )}
 
@@ -862,7 +931,9 @@ export default function LawyerAppointmentsPage() {
 
                       {/* Cancellation Requested */}
                       {appointment.status === "cancellation_requested" && (
-                        <p className="text-xs text-amber-700 dark:text-amber-400 font-medium text-right">Under admin review</p>
+                        <p className="text-xs text-amber-700 dark:text-amber-400 font-medium text-right">
+                          {cancellationRequestStatusHint(appointment.cancellation_requested_by, "lawyer")}
+                        </p>
                       )}
 
                       {/* Rejected */}

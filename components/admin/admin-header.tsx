@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -17,10 +17,36 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 
+function CancellationNavBadge({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <span className="ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+      {count > 99 ? "99+" : count}
+    </span>
+  )
+}
+
 export function AdminHeader() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [cancellationCount, setCancellationCount] = useState(0)
   const router = useRouter()
   const supabase = createClient()
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch("/api/admin/cancellation-requests/count", { cache: "no-store" })
+        if (!res.ok) return
+        const json = await res.json()
+        setCancellationCount(json.total_actionable ?? 0)
+      } catch {
+        /* ignore */
+      }
+    }
+    void load()
+    const interval = setInterval(load, 60_000)
+    return () => clearInterval(interval)
+  }, [])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -58,6 +84,7 @@ export function AdminHeader() {
             <Link href="/admin/cancellation-requests" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5">
               <AlertCircle className="h-4 w-4" />
               Cancellations
+              <CancellationNavBadge count={cancellationCount} />
             </Link>
             {/* Disputes nav hidden — module disabled for now */}
             <Link href="/admin/security-logs" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5">
@@ -101,8 +128,9 @@ export function AdminHeader() {
           <Link href="/admin/users" className="block text-sm font-medium px-4 py-2 hover:bg-muted rounded-md">
             Users
           </Link>
-          <Link href="/admin/cancellation-requests" className="block text-sm font-medium px-4 py-2 hover:bg-muted rounded-md">
-            Cancellations
+          <Link href="/admin/cancellation-requests" className="block text-sm font-medium px-4 py-2 hover:bg-muted rounded-md flex items-center justify-between">
+            <span>Cancellations</span>
+            <CancellationNavBadge count={cancellationCount} />
           </Link>
           {/* Disputes nav hidden — module disabled for now */}
           <Link href="/admin/security-logs" className="block text-sm font-medium px-4 py-2 hover:bg-muted rounded-md">

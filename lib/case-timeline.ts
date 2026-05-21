@@ -21,6 +21,7 @@ export const CaseTimelineEventType = {
   CONSULTATION_RESCHEDULED: "CONSULTATION_RESCHEDULED",
   CANCELLATION_REQUESTED: "CANCELLATION_REQUESTED",
   CANCELLATION_RESOLVED: "CANCELLATION_RESOLVED",
+  CANCELLATION_REFUNDED: "CANCELLATION_REFUNDED",
   CONSULTATION_NO_SHOW: "CONSULTATION_NO_SHOW",
 } as const
 
@@ -45,6 +46,7 @@ const TIMELINE_LABELS: Record<string, string> = {
   [CaseTimelineEventType.CONSULTATION_RESCHEDULED]: "Consultation rescheduled",
   [CaseTimelineEventType.CANCELLATION_REQUESTED]: "Cancellation requested",
   [CaseTimelineEventType.CANCELLATION_RESOLVED]: "Cancellation resolved",
+  [CaseTimelineEventType.CANCELLATION_REFUNDED]: "Refund issued to client",
   [CaseTimelineEventType.CONSULTATION_NO_SHOW]: "Consultation marked as no-show",
 }
 
@@ -87,12 +89,18 @@ export function caseTimelineEventDetail(
     return "Consultation timing was updated"
   }
   if (eventType === CaseTimelineEventType.CANCELLATION_REQUESTED && typeof m.appointment_id === "string") {
+    if (m.requested_by_role === "client") return "Client submitted a cancellation request for admin review"
+    if (m.requested_by_role === "lawyer") return "Lawyer submitted a cancellation request for admin review"
     return "A cancellation request was submitted for admin review"
   }
   if (eventType === CaseTimelineEventType.CANCELLATION_RESOLVED && typeof m.resolution === "string") {
     return m.resolution === "approved"
       ? "Cancellation request was approved by admin"
       : `Cancellation request was rejected by admin${typeof m.reason === "string" && m.reason ? ` — ${m.reason}` : ""}`
+  }
+  if (eventType === CaseTimelineEventType.CANCELLATION_REFUNDED) {
+    const amt = typeof m.amount === "number" ? ` (${m.amount} ${m.currency || "PKR"})` : ""
+    return `Consultation payment refunded to client${amt}`
   }
   return null
 }

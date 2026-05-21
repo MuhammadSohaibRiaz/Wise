@@ -13,6 +13,10 @@ import { Loader2, ArrowLeft } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { useEmailVerificationUrl } from "@/hooks/use-email-verification-url"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  appendNextToAuthPath,
+  sanitizeClientPostAuthNext,
+} from "@/lib/auth/client-booking-return"
 
 export default function ClientSignInPage() {
   const router = useRouter()
@@ -24,6 +28,7 @@ export default function ClientSignInPage() {
   const [resendEmail, setResendEmail] = useState("")
   const [isResending, setIsResending] = useState(false)
   const [showResendVerification, setShowResendVerification] = useState(false)
+  const [postAuthNext, setPostAuthNext] = useState<string | null>(null)
   const verification = useEmailVerificationUrl("client")
 
   const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
@@ -53,6 +58,7 @@ export default function ClientSignInPage() {
   useEffect(() => {
     if (typeof window === "undefined") return
     const params = new URLSearchParams(window.location.search)
+    setPostAuthNext(sanitizeClientPostAuthNext(params.get("next")))
     if (params.get("message") === "password-reset") {
       const msg = "Your password was reset. Sign in with your new password."
       setSuccessBanner(true)
@@ -88,6 +94,29 @@ export default function ClientSignInPage() {
       setBannerMessage("Sign in as a client to book a consultation with this lawyer.")
     }
   }, [])
+
+  useEffect(() => {
+    const redirectIfAlreadySignedIn = async () => {
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("user_type, email_verified_at")
+        .eq("id", user.id)
+        .maybeSingle()
+
+      if (profile?.user_type !== "client" || !profile.email_verified_at) return
+
+      const destination = postAuthNext || "/client/dashboard"
+      router.replace(destination)
+    }
+
+    void redirectIfAlreadySignedIn()
+  }, [postAuthNext, router])
 
   const handleResendVerification = async () => {
     const targetEmail = resendEmail.trim().toLowerCase() || email.trim().toLowerCase()
@@ -181,9 +210,9 @@ export default function ClientSignInPage() {
       showSuccess("Sign in successful! Redirecting...")
       const nextPath =
         typeof window !== "undefined"
-          ? new URLSearchParams(window.location.search).get("next")
-          : null
-      router.push(nextPath && nextPath.startsWith("/") ? nextPath : "/client/dashboard")
+          ? sanitizeClientPostAuthNext(new URLSearchParams(window.location.search).get("next"))
+          : postAuthNext
+      router.push(nextPath || "/client/dashboard")
     } catch (err) {
       showError("An unexpected error occurred. Please try again.")
     } finally {
@@ -286,7 +315,12 @@ export default function ClientSignInPage() {
         <div className="text-center text-sm">
           <p className="text-muted-foreground">
             New here?{" "}
-            <Link href="/auth/client/register" className="text-blue-600 hover:underline font-medium">
+            <Link
+              href={appendNextToAuthPath("/auth/client/register", postAuthNext, {
+                message: "sign-in-to-book",
+              })}
+              className="text-blue-600 hover:underline font-medium"
+            >
               Create an account
             </Link>
           </p>

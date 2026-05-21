@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,6 +13,10 @@ import { getEmailVerificationRedirectUrl } from "@/lib/auth/redirect-urls"
 import { Loader2, ArrowLeft, MailCheck } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  appendNextToAuthPath,
+  sanitizeClientPostAuthNext,
+} from "@/lib/auth/client-booking-return"
 
 export default function ClientRegisterPage() {
   const router = useRouter()
@@ -23,6 +27,15 @@ export default function ClientRegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [registrationComplete, setRegistrationComplete] = useState(false)
+  const [postAuthNext, setPostAuthNext] = useState<string | null>(null)
+  const [bookingBanner, setBookingBanner] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const params = new URLSearchParams(window.location.search)
+    setPostAuthNext(sanitizeClientPostAuthNext(params.get("next")))
+    setBookingBanner(params.get("message") === "sign-in-to-book")
+  }, [])
 
   const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
   const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
@@ -148,6 +161,15 @@ export default function ClientRegisterPage() {
           <p className="text-muted-foreground">Find and book the right lawyer for your needs</p>
         </div>
 
+        {bookingBanner && (
+          <Alert>
+            <AlertTitle>Book after verification</AlertTitle>
+            <AlertDescription>
+              After you verify your email and sign in, you will return to the lawyer you selected to finish booking.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {registrationComplete ? (
           <div className="space-y-4 rounded-lg border border-primary/30 bg-primary/5 p-6">
             <div className="flex justify-center">
@@ -160,7 +182,16 @@ export default function ClientRegisterPage() {
                 verified, you cannot access bookings or your dashboard.
               </AlertDescription>
             </Alert>
-            <Button className="w-full" onClick={() => router.push("/auth/client/sign-in")}>
+            <Button
+              className="w-full"
+              onClick={() =>
+                router.push(
+                  appendNextToAuthPath("/auth/client/sign-in", postAuthNext, {
+                    message: bookingBanner ? "sign-in-to-book" : undefined,
+                  }),
+                )
+              }
+            >
               Go to sign in
             </Button>
           </div>
@@ -243,7 +274,12 @@ export default function ClientRegisterPage() {
         <div className="text-center text-sm">
           <p className="text-muted-foreground">
             Already have an account?{" "}
-            <Link href="/auth/client/sign-in" className="text-blue-600 hover:underline font-medium">
+            <Link
+              href={appendNextToAuthPath("/auth/client/sign-in", postAuthNext, {
+                message: bookingBanner ? "sign-in-to-book" : undefined,
+              })}
+              className="text-blue-600 hover:underline font-medium"
+            >
               Sign in
             </Link>
           </p>
