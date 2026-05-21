@@ -90,6 +90,9 @@ function personName(profile: unknown, fallback: string) {
 }
 
 function normalizeModelSummary(raw: Record<string, unknown>): AiCaseSummary {
+  // The model is instructed to return JSON, but every field is still treated as
+  // untrusted output. Normalization keeps the UI stable if Groq omits fields,
+  // changes casing, or returns an out-of-range strength score.
   return {
     overview: normalizeString(raw.overview, "The available case data was summarized, but the model did not provide a usable overview."),
     current_status: normalizeString(raw.current_status, "The current case status could not be determined from the generated summary."),
@@ -111,6 +114,8 @@ function normalizeModelSummary(raw: Record<string, unknown>): AiCaseSummary {
 }
 
 function basicSummary(caseRow: any): AiCaseSummary {
+  // Empty cases do not need an LLM call; deterministic output is faster,
+  // cheaper, and avoids pretending there is evidence that is not yet uploaded.
   const title = normalizeString(caseRow.title, "Untitled case")
   const caseType = caseRow.case_type ? ` ${caseRow.case_type}` : ""
   const status = normalizeString(caseRow.status, "unknown")
@@ -197,11 +202,15 @@ export async function GET(_request: Request, { params }: RouteContext) {
       return jsonResponse({ error: "Case not found." }, 404)
     }
 
+    // Both sides of a case may generate the same summary. Anyone else gets a
+    // hard 403 even if they can guess the case id.
     const userId = authData.user.id
     if (caseRow.client_id !== userId && caseRow.lawyer_id !== userId) {
       return jsonResponse({ error: "You do not have access to this case." }, 403)
     }
 
+    // Fetch all case facts in parallel before asking Groq. The prompt contains
+    // only structured case data, not arbitrary full documents.
     const [
       lawyerProfileResult,
       documentsResult,
@@ -343,6 +352,8 @@ export async function GET(_request: Request, { params }: RouteContext) {
       })),
     }
 
+    // response_format asks Groq for strict JSON; parse/normalize below is the
+    // second safety layer before anything reaches the React summary component.
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       temperature: 0,

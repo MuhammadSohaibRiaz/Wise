@@ -33,6 +33,9 @@ export function createPineconeClient(config = getLegalRagConfig()) {
 export async function ensureLegalRagIndex(config = getLegalRagConfig()) {
   const pinecone = createPineconeClient(config)
 
+  // Pinecone integrated embeddings are used here. We create an index "for model"
+  // and map `chunk_text` as the text field, so ingestion can upsert raw text records
+  // without generating embeddings in our own code.
   try {
     return await pinecone.describeIndex(config.indexName)
   } catch (error: any) {
@@ -69,6 +72,8 @@ export async function getLegalRagNamespace(config = getLegalRagConfig()) {
   const indexModel = await pinecone.describeIndex(config.indexName)
   const host = indexModel.host
 
+  // The hosted index endpoint may be returned by describeIndex. Using it avoids
+  // SDK ambiguity and keeps ingestion/search pointed at the same namespace.
   if (host) {
     return pinecone.index({ host, namespace: config.namespace })
   }
@@ -144,6 +149,8 @@ export async function searchLegalKnowledge(query: string, options?: { topK?: num
   const expandedQuery = expandPakistaniLegalQuery(query)
   const finalTopK = options?.topK || config.topK
 
+  // Integrated search sends text directly to Pinecone; Pinecone embeds the query
+  // using the same model configured on the index, then returns matching records.
   const response = await namespace.searchRecords({
     query: {
       topK: Math.min(Math.max(finalTopK * 4, 12), 40),
@@ -173,6 +180,8 @@ export async function searchLegalKnowledge(query: string, options?: { topK?: num
     fields?: Record<string, unknown>
   }>
 
+  // Normalize SDK response fields into one app-owned shape so the API route
+  // can build citations without knowing Pinecone's raw response format.
   const parsedHits = hits
     .map((hit) => {
       const fields = hit.fields || {}
@@ -211,6 +220,8 @@ function expandPakistaniLegalQuery(query: string) {
   const normalized = query.toLowerCase()
   const expansions: string[] = []
 
+  // Query expansion adds statute-specific terms for common English/Urdu phrases.
+  // This improves retrieval while still requiring the final answer to cite actual chunks.
   if (/\bmurder\b|\bhomicide\b|\bqatl\b|\u0642\u062A\u0644/.test(normalized)) {
     expansions.push("qatl-e-amd qatl-i-amd Section 300 Section 302 punishment death qisas ta'zir Pakistan Penal Code")
   }
@@ -270,6 +281,8 @@ function expandPakistaniLegalQuery(query: string) {
 function rerankLegalHits(query: string, hits: LegalKnowledgeHit[]) {
   const normalized = query.toLowerCase()
 
+  // Pinecone ranking is semantic; this local reranker gives exact section/topic
+  // matches a boost so "Section 302" prefers the section chunk over general criminal text.
   return [...hits].sort((left, right) => {
     return boostedScore(right, normalized) - boostedScore(left, normalized)
   })
@@ -313,6 +326,8 @@ function boostedScore(hit: LegalKnowledgeHit, query: string) {
 }
 
 export function formatLegalContext(hits: LegalKnowledgeHit[]) {
+  // The bracket numbers generated here are the citation numbers the model uses
+  // in the final answer, e.g. [1], [2]. They map directly to source metadata.
   return hits
     .map((hit, index) => {
       const citationParts = [

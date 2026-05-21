@@ -841,14 +841,16 @@ export default function LawyerProfilePage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Consultation Fee (60 min base)</label>
+                  <label className="text-sm font-medium">Consultation Fee (PKR)</label>
                   <Input
                     type="number"
+                    min={0}
+                    placeholder="e.g. 5000"
                     value={formData.hourlyRate}
                     onChange={(e) => setFormData({ ...formData, hourlyRate: e.target.value })}
                   />
                   <p className="text-xs text-muted-foreground">
-                    This is your fee for a standard 60-minute consultation. Shorter/longer sessions are calculated proportionally.
+                    Standard fee for a 60-minute consultation. Shorter/longer sessions are calculated proportionally.
                   </p>
                 </div>
                 <div className="space-y-2">

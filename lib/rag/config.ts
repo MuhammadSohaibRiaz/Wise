@@ -12,6 +12,8 @@ export type LegalRagConfig = {
 }
 
 export function getLegalRagConfig(): LegalRagConfig {
+  // Defaults mirror the ingestion scripts. If PINECONE_NAMESPACE changes here,
+  // re-run `npm run rag:ingest:recreate` so search and ingestion stay aligned.
   return {
     pineconeApiKey: process.env.PINECONE_API_KEY || "",
     indexName: process.env.PINECONE_INDEX || "wisecase-legal-rag",
@@ -27,6 +29,8 @@ export function getLegalRagConfig(): LegalRagConfig {
 }
 
 export function assertLegalRagEnv(config = getLegalRagConfig()) {
+  // Pinecone is needed for legal retrieval; Groq is needed for generation.
+  // Platform-only RAG actions may still work without Pinecone.
   const missing: string[] = []
   if (!config.pineconeApiKey) missing.push("PINECONE_API_KEY")
   if (!process.env.GROQ_API_KEY) missing.push("GROQ_API_KEY")

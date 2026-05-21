@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Star, MapPin, Briefcase, Clock, Badge, Sparkles } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
@@ -45,6 +46,7 @@ export function LawyerCard({
   const ratingDisplay = formatLawyerRatingLabel(normalizeLawyerAverageRating(average_rating))
   const [bookingOpen, setBookingOpen] = useState(false)
   const [clientId, setClientId] = useState<string | null>(null)
+  const router = useRouter()
 
   useEffect(() => {
     const getCurrentUser = async () => {
@@ -60,8 +62,11 @@ export function LawyerCard({
   const handleBookNow = async (e: React.MouseEvent) => {
     e.preventDefault()
     if (!clientId) {
-      // Redirect to login if not authenticated
-      window.location.href = "/auth/client/sign-in"
+      const next =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : "/match"
+      router.push(`/auth/client/sign-in?message=sign-in-to-book&next=${encodeURIComponent(next)}`)
       return
     }
     const supabase = createClient()
@@ -184,7 +189,7 @@ export function LawyerCard({
             </Button>
           </Link>
           <Button onClick={handleBookNow} className="flex-1 w-full">
-            Book Now
+            {clientId ? "Book Consultation" : "Sign in to Book"}
           </Button>
         </div>
       </div>

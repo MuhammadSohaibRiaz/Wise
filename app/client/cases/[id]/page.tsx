@@ -269,6 +269,9 @@ export default function ClientCaseDetailPage() {
     if (!caseId) return
     const supabase = createClient()
     const topic = `client-case-detail-${caseId}-${Date.now()}`
+    // Client and lawyer often keep the same case open in separate browser
+    // windows during demos. These subscriptions keep status, documents,
+    // appointments, and activity synchronized across both views.
     const channel = supabase
       .channel(topic)
       .on(
@@ -303,6 +306,8 @@ export default function ClientCaseDetailPage() {
       setIsConfirming(true)
       const supabase = createClient()
 
+      // Client confirmation is the only normal transition from
+      // pending_completion to completed.
       const { data: updatedCase, error } = await supabase
         .from("cases")
         .update({ status: "completed", updated_at: new Date().toISOString() })
@@ -369,6 +374,8 @@ export default function ClientCaseDetailPage() {
       setIsConfirming(true)
       const supabase = createClient()
 
+      // Declining completion returns the case to active work and notifies the
+      // lawyer; it does not close or delete any documents/messages.
       const { data: updatedCase, error } = await supabase
         .from("cases")
         .update({ status: "in_progress", updated_at: new Date().toISOString() })
@@ -440,6 +447,8 @@ export default function ClientCaseDetailPage() {
   const lawyerName = caseDetail.lawyer
     ? `${caseDetail.lawyer.first_name || ""} ${caseDetail.lawyer.last_name || ""}`.trim() || "Unknown Lawyer"
     : "No lawyer assigned"
+  // AI Summary appears only after a lawyer is attached and the case has moved
+  // beyond the initial open/request stage.
   const showAiSummaryTab = caseDetail.status !== "open" && Boolean(caseDetail.lawyer)
 
   return (

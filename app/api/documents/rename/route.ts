@@ -3,6 +3,8 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
 function normalizeFileName(value: unknown) {
+  // Only the display name changes; the storage object path stays stable.
+  // Slashes/control chars are removed so the value is safe for headers/UI.
   if (typeof value !== "string") return ""
   return value
     .replace(/[\u0000-\u001f\u007f]/g, "")
@@ -57,6 +59,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Document not found." }, { status: 404 })
     }
 
+    // Only the original uploader can rename, even if the other case party can
+    // view or comment on the document.
     if (document.uploaded_by !== user.id) {
       return NextResponse.json({ error: "Only the uploader can rename this document." }, { status: 403 })
     }

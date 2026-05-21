@@ -318,6 +318,8 @@ export default function LawyerCaseDetailPage() {
     if (!caseId) return
     const supabase = createClient()
     const topic = `lawyer-case-detail-${caseId}-${Date.now()}`
+    // Real-time refresh mirrors the client page so both sides see status,
+    // document, appointment, and timeline changes without manual reloads.
     const channel = supabase
       .channel(topic)
       .on(
@@ -375,6 +377,8 @@ export default function LawyerCaseDetailPage() {
       return
     }
 
+    // App guard mirrors the DB trigger: lawyers cannot start/close work before
+    // at least one consultation has been marked as held.
     if (statusToApply === "pending_completion" && !hasAttendedAppointment) {
       toast({
         title: "Consultation required",
@@ -417,6 +421,8 @@ export default function LawyerCaseDetailPage() {
       setIsSaving(true)
       const supabase = createClient()
 
+      // RLS and DB triggers are the final authority; this optimistic UI path
+      // still scopes the update to the assigned lawyer and current case id.
       const { error: updateError } = await supabase
         .from("cases")
         .update({
@@ -585,6 +591,8 @@ export default function LawyerCaseDetailPage() {
   const clientName = caseDetail.client
     ? `${caseDetail.client.first_name || ""} ${caseDetail.client.last_name || ""}`.trim() || "Unknown Client"
     : "No client assigned"
+  // AI Summary is hidden for unactivated/open cases to avoid summarizing a
+  // relationship before the client-lawyer engagement has actually started.
   const showAiSummaryTab = caseDetail.status !== "open" && Boolean(caseDetail.client)
 
   return (

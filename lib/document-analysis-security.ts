@@ -66,6 +66,8 @@ const PATTERNS: Array<{ type: string; severity: InjectionSeverity; re: RegExp }>
 
 export function scanDocumentTextForInjection(text: string, maxHits = 12): InjectionHit[] {
   if (!text || text.length === 0) return []
+  // Cap scanning input for performance. The extracted document may be huge, but
+  // prompt attacks normally appear near the start or repeated throughout.
   const slice = text.length > 120_000 ? text.slice(0, 120_000) : text
   const hits: InjectionHit[] = []
   const seenTypes = new Set<string>()

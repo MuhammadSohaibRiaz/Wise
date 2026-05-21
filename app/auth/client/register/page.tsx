@@ -9,8 +9,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
-import { Loader2, ArrowLeft } from "lucide-react"
+import { Loader2, ArrowLeft, MailCheck } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export default function ClientRegisterPage() {
   const router = useRouter()
@@ -20,6 +21,7 @@ export default function ClientRegisterPage() {
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [registrationComplete, setRegistrationComplete] = useState(false)
 
   const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
   const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
@@ -108,10 +110,8 @@ export default function ClientRegisterPage() {
       }
 
       if (data.user) {
-        showSuccess("Account created. Please check your email to confirm your account, then sign in.")
-        setTimeout(() => {
-          router.push("/auth/client/sign-in")
-        }, 1200)
+        await supabase.auth.signOut()
+        setRegistrationComplete(true)
       }
     } catch (err: any) {
       console.error("Registration error:", err)
@@ -136,6 +136,23 @@ export default function ClientRegisterPage() {
           <p className="text-muted-foreground">Find and book the right lawyer for your needs</p>
         </div>
 
+        {registrationComplete ? (
+          <div className="space-y-4 rounded-lg border border-primary/30 bg-primary/5 p-6">
+            <div className="flex justify-center">
+              <MailCheck className="h-10 w-10 text-primary" />
+            </div>
+            <Alert>
+              <AlertTitle>Account created</AlertTitle>
+              <AlertDescription>
+                Please check your email and click the verification link before signing in. Until your email is
+                verified, you cannot access bookings or your dashboard.
+              </AlertDescription>
+            </Alert>
+            <Button className="w-full" onClick={() => router.push("/auth/client/sign-in")}>
+              Go to sign in
+            </Button>
+          </div>
+        ) : (
         <form onSubmit={handleRegister} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -209,6 +226,7 @@ export default function ClientRegisterPage() {
             {isLoading ? "Creating account..." : "Create account"}
           </Button>
         </form>
+        )}
 
         <div className="text-center text-sm">
           <p className="text-muted-foreground">

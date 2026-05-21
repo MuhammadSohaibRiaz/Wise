@@ -20,6 +20,9 @@ const SUPPORTED_EXTENSIONS = new Set([".pdf", ".txt", ".md"])
 const BATCH_SIZE = 8
 const TOKEN_BUDGET_PER_MINUTE = 180_000
 
+// Folder names under data/legal-knowledge become metadata on every Pinecone record.
+// This lets one Pinecone namespace hold multiple Pakistani law corpora while retrieval
+// can still identify criminal, family, tax, labour, civil, property, etc.
 const CORPORA: Record<string, { category: string; practiceArea: string; sourceTier: string }> = {
   criminal: { category: "criminal", practiceArea: "Criminal law and evidence", sourceTier: "primary_code" },
   family: { category: "family", practiceArea: "Family law", sourceTier: "primary_code" },
@@ -35,6 +38,8 @@ function sleep(ms: number) {
 }
 
 function estimateEmbeddingTokens(records: LegalKnowledgeRecord[]) {
+  // Pinecone integrated embedding has per-minute token limits. We estimate conservatively
+  // from words and characters so ingestion can pause before a 429/RESOURCE_EXHAUSTED error.
   return records.reduce((total, record) => {
     const words = record.chunk_text.split(/\s+/).filter(Boolean).length
     const byWords = Math.ceil(words * 1.5)
@@ -84,6 +89,8 @@ async function listSourceFiles() {
       .filter(Boolean),
   )
 
+  // Optional --corpus=family,tax or RAG_CORPORA=family,tax lets us re-ingest
+  // one subset without touching the whole knowledge base.
   for (const [folder, corpus] of Object.entries(CORPORA)) {
     if (selectedCorpora.size > 0 && !selectedCorpora.has(folder)) continue
     const folderPath = path.join(SOURCE_ROOT, folder)
@@ -125,6 +132,8 @@ async function upsertInBatches(records: LegalKnowledgeRecord[]) {
   let minuteWindowStartedAt = Date.now()
   let estimatedTokensThisMinute = 0
 
+  // Records are deterministic ids from source+chunk+hash. Re-running ingestion
+  // overwrites existing records instead of duplicating chunks.
   for (let index = 0; index < records.length; index += BATCH_SIZE) {
     const batch = records.slice(index, index + BATCH_SIZE)
     const batchTokens = estimateEmbeddingTokens(batch)

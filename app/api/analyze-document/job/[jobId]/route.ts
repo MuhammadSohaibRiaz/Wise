@@ -42,10 +42,14 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
       return NextResponse.json({ error: "Job not found" }, { status: 404 })
     }
 
+    // Polling is limited to the original requester so job IDs cannot leak
+    // analysis progress or result payloads across accounts.
     if (job.requested_by !== user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
+    // Lazy-worker design: the first polling request can process a queued job.
+    // This keeps the FYP deploy simple without a separate queue worker.
     if (job.status === "pending") {
       await processAnalysisJob(jobId)
     }

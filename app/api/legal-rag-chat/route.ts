@@ -11,6 +11,18 @@ import { createClient } from "@/lib/supabase/server"
 
 export const runtime = "nodejs"
 
+/**
+ * Unified assistant endpoint.
+ *
+ * Evaluation flow:
+ * 1. Normalize and rate-limit the incoming chat request.
+ * 2. Classify the latest user message as greeting, platform task, legal retrieval, or refusal.
+ * 3. For platform tasks, call controlled Supabase-backed AI tools.
+ * 4. For legal questions, retrieve Pinecone KB chunks first, then stream a Groq answer grounded in those chunks.
+ *
+ * This separation is important: platform tools may read private WiseCase data after auth,
+ * while legal RAG answers should be grounded only in indexed Pakistani legal materials.
+ */
 console.info(`[LegalRAG] RAG namespace: ${getLegalRagConfig().namespace}`)
 
 type LegalRagMessage = {
@@ -19,11 +31,13 @@ type LegalRagMessage = {
 }
 
 const publicPlatformTools = {
+  // Guests may use only public tools. Authenticated-only tools are added later after session lookup.
   searchLawyers: tools.searchLawyers,
   searchReviews: tools.searchReviews,
   getPlatformFAQ: tools.getPlatformFAQ,
 }
 
+// These budgets protect Groq's free-tier/token limits and prevent user-supplied history from bloating prompts.
 const MAX_REQUEST_BYTES = 80_000
 const MAX_MESSAGE_CHARS = 3_500
 const MAX_MESSAGES = 10
@@ -80,6 +94,8 @@ async function resolveAuthorizedCaseId(
 ): Promise<string | null> {
   if (!rawCaseId) return null
 
+  // Case-specific chat context is allowed only to the client or lawyer on that case.
+  // This prevents a user from manually passing another case id in the request body.
   const { data, error } = await supabase
     .from("cases")
     .select("id, client_id, lawyer_id")
@@ -93,6 +109,8 @@ async function resolveAuthorizedCaseId(
 function normalizeMessages(value: unknown): LegalRagMessage[] {
   if (!Array.isArray(value)) return []
 
+  // Accept only plain user/assistant text and cap both message length and history depth.
+  // This keeps prompts deterministic and limits prompt-injection surface from old chat messages.
   return value
     .map((message) => {
       if (!message || typeof message !== "object") return null
@@ -173,6 +191,8 @@ function hasRecentLegalContext(messages: LegalRagMessage[]) {
   const legalPattern =
     /\[\d+\]|\b(section|court|case|suit|petition|fir|bail|trial|appeal|law|legal|act|ordinance|divorce|custody|maintenance|tax|contract|property|murder|theft|punishment|pakistan|pakistani)\b|\u062F\u0641\u0639\u06C1|\u0642\u0627\u0646\u0648\u0646|\u0639\u062F\u0627\u0644\u062A|\u06A9\u06CC\u0633|\u0648\u06A9\u06CC\u0644|\u0637\u0644\u0627\u0642|\u062E\u0644\u0639|\u062D\u0636\u0627\u0646\u062A|\u0628\u0686\u06C1|\u0645\u062F\u062A|\u0633\u0632\u0627|\u062C\u0631\u0645/
 
+  // Short follow-ups like "what about this period?" are accepted only if recent assistant
+  // messages look legal/citation-backed. Otherwise random short messages are refused.
   return messages
     .filter((message) => message.role === "assistant")
     .slice(-3)
@@ -185,6 +205,8 @@ function isContextualFollowUp(query: string) {
 }
 
 function hasUrduPlatformIntent(query: string) {
+  // Urdu platform routing exists because evaluators/users may ask for lawyers,
+  // appointments, cases, or profile help in Urdu rather than English.
   const lawyer = /(?:\u0648\u06A9\u06CC\u0644|\u0648\u06A9\u0644\u0627\u0621|\u0644\u0627\u0626\u0631|\u0644\u0627\u0626\u06CC\u0631)/
   const find = /(?:\u0688\u06BE\u0648\u0646\u0688|\u0688\u06BE\u0648\u0646\u0688\u0648|\u062A\u0644\u0627\u0634|\u062F\u06A9\u06BE\u0627\u0624|\u062F\u06CC\u06A9\u06BE\u0648|\u0686\u0627\u06C1\u06CC\u06D2|\u0686\u0627\u06C1\u06D2|\u0631\u06CC\u06A9\u0645\u06CC\u0646\u0688|\u0633\u0641\u0627\u0631\u0634)/
   const appointments = /(?:\u0627\u067E\u0648\u0627\u0626\u0646\u0679\u0645\u0646\u0679|\u0627\u067E\u0627\u0626\u0646\u0679\u0645\u0646\u0679|\u0645\u0644\u0627\u0642\u0627\u062A)/
@@ -214,6 +236,8 @@ function isUrduText(value: string) {
 }
 
 function responseLanguageInstruction(query: string) {
+  // Keep the whole response in the user's language. This avoids mixed English/Urdu answers,
+  // including the legal disclaimer, which was a real UX issue during testing.
   return isUrduText(query)
     ? "CRITICAL: Respond ENTIRELY in Urdu because the user's question is in Urdu. Use only Urdu/Arabic script for the prose and disclaimer. Do not mix English words unless they are unavoidable proper nouns such as WiseCase."
     : "CRITICAL: Respond ENTIRELY in English because the user's question is in English. The disclaimer must also be in English. Never mix Urdu into an English response."
@@ -251,6 +275,9 @@ function guestPersonalPlatformResponse(query: string) {
 function classifyQuery(query: string, context?: { hasRecentLegalContext?: boolean }) {
   const normalized = query.toLowerCase().replace(/\s+/g, " ").trim()
 
+  // Classifier order matters:
+  // greetings/help are answered without KB retrieval, jailbreaks are refused early,
+  // platform intents go to tools, and only legal questions reach Pinecone.
   if (isGreeting(normalized)) return { action: "greeting" as const }
   if (isCapabilityQuestion(normalized)) return { action: "capability" as const }
 
@@ -522,6 +549,8 @@ function buildPlatformSystemPrompt(input: {
   caseId?: string | null
   query: string
 }) {
+  // Platform prompt is intentionally separate from legal RAG.
+  // It can use WiseCase tools, but still must not guess private data without a tool result.
   const basePrompt = getInitialMessage().content
   const roleRoutes =
     input.role === "lawyer"
@@ -545,6 +574,7 @@ ${responseLanguageInstruction(input.query)}
 - Never include Leave Review, Write Review, Add Review, Submit Review, or /client/reviews action buttons. Reviews can only be created from eligible completed case workflows, and this assistant does not verify review eligibility.
 - When the user asks for a specialty in Urdu, translate it before calling searchLawyers: family-law Urdu terms = family law, criminal-law Urdu terms = criminal law, tax-law Urdu terms = tax law, labour-law Urdu terms = labour law, property-law Urdu terms = property law, civil-law Urdu terms = civil law.
 - Keep responses concise and task-focused.
+- **Currency**: All WiseCase lawyer consultation fees and payment amounts are in **Pakistani Rupees (PKR)** only. Never use USD, US dollars, or the $ symbol for platform fees. When citing searchLawyers results, use \`consultation_fee_display\` or state amounts as "PKR X" / "Rs. X".
 - For document uploads, tell the user to use the upload button in this chat.
 - If a user asks to update profile fields, confirm what will change and update only fields they clearly provided.
 - If a tool returns empty results, say clearly "You don't have any [appointments/cases/etc] yet" rather than suggesting an error occurred.
@@ -564,6 +594,9 @@ function buildSystemPrompt(input: {
   query: string
   currentPath?: string
 }) {
+  // Legal prompt receives only retrieved chunks and citation metadata.
+  // This is the core anti-hallucination control: the model is asked to answer from context,
+  // cite bracket numbers, and say when the KB does not contain a reference.
   const citations = input.hits
     .map((hit, index) => {
       const section = hit.section_ref ? `, ${hit.section_ref}` : ""
@@ -612,6 +645,8 @@ function compactHitsForPrompt(hits: LegalKnowledgeHit[], budget: RagPromptBudget
   const compact: LegalKnowledgeHit[] = []
   let used = 0
 
+  // Pinecone can return large chunks. We trim each chunk and the total context so Groq
+  // stays inside token limits while keeping the highest-ranked citations first.
   for (const hit of hits.slice(0, budget.maxHits)) {
     const remaining = budget.maxContextChars - used
     if (remaining <= 500) break
@@ -629,6 +664,8 @@ function compactHitsForPrompt(hits: LegalKnowledgeHit[], budget: RagPromptBudget
 }
 
 function buildLegalRetrievalQuery(messages: LegalRagMessage[], query: string) {
+  // Retrieval query includes the last few user turns, so follow-ups like
+  // "how much can this period be shortened?" still search using the earlier custody context.
   const recentUserContext = messages
     .filter((message) => message.role === "user")
     .slice(-4, -1)
@@ -646,6 +683,8 @@ function buildLegalRetrievalQuery(messages: LegalRagMessage[], query: string) {
 }
 
 function buildLegalGenerationMessages(messages: LegalRagMessage[], query: string): LegalRagMessage[] {
+  // Generation gets a small conversation window for coherence, but old messages are capped
+  // because conversation history is untrusted user-controlled input.
   const compact = messages
     .slice(-MAX_LEGAL_HISTORY_MESSAGES)
     .map((message) => ({
@@ -695,11 +734,14 @@ function collectGroqErrorDetails(error: unknown, seen = new Set<unknown>()): { t
 }
 
 function isGroqUsageLimitError(error: unknown) {
+  // The AI SDK wraps provider errors, so we recursively inspect nested errors for 429/TPD clues.
   const { text, statusCodes } = collectGroqErrorDetails(error)
   return statusCodes.includes(429) || /rate_limit_exceeded|tokens per day|daily token|quota exceeded|usage limit|rate limit reached/i.test(text)
 }
 
 function isGroqPromptTooLargeError(error: unknown) {
+  // Groq free tier can reject a large prompt even when Pinecone retrieval succeeds.
+  // The caller retries once with reduced context instead of returning a misleading answer.
   const { text, statusCodes } = collectGroqErrorDetails(error)
   return statusCodes.includes(413) || /request too large|tokens per minute|reduce your message size/i.test(text)
 }
@@ -734,6 +776,8 @@ function createLegalRagStreamResponse(input: {
       }
 
       const runAttempt = async (budget: RagPromptBudget) => {
+        // One generation attempt: compact top Pinecone hits, build the strict legal system prompt,
+        // stream Groq tokens to the UI, then persist the final assistant answer for signed-in users.
         const promptHits = compactHitsForPrompt(input.hits, budget)
         const context = formatLegalContext(promptHits)
         const legalMessages = buildLegalGenerationMessages(input.messages, input.query)
@@ -793,6 +837,8 @@ function createLegalRagStreamResponse(input: {
         }
 
         try {
+          // If the first prompt is too large, retry with fewer/smaller chunks.
+          // Retrieval still succeeded; only the generation prompt was reduced.
           await runAttempt(REDUCED_RAG_PROMPT_BUDGET)
           close()
         } catch (retryError) {
@@ -829,6 +875,7 @@ function createLegalRagStreamResponse(input: {
 
 export async function POST(req: Request) {
   try {
+    // API-level guards come before any model/vector calls to avoid wasting paid resources.
     const contentLength = Number(req.headers.get("content-length") || "0")
     if (contentLength > MAX_REQUEST_BYTES) {
       return plainTextResponse("Your request is too large. Please shorten the chat and try again.", 413)
@@ -878,6 +925,7 @@ export async function POST(req: Request) {
     const caseId = user ? await resolveAuthorizedCaseId(supabase, user.id, requestedCaseId) : null
 
     const saveChatMessages = async (assistantText: string, metadata?: Record<string, unknown>) => {
+      // Persisted chat history is authenticated only. Guest chats stay in browser session storage.
       if (!user) return
       try {
         await supabase.from("ai_chat_messages").insert({
@@ -919,6 +967,7 @@ export async function POST(req: Request) {
     const recentLegalContext = hasRecentLegalContext(messages)
     const classification = classifyQuery(query, { hasRecentLegalContext: recentLegalContext })
 
+    // Fast-path responses avoid unnecessary Pinecone/Groq calls for greetings, help text, and refusals.
     if (classification.action === "greeting") {
       return savedPlainTextResponse(greetingResponse(role))
     }
@@ -934,6 +983,8 @@ export async function POST(req: Request) {
     const config = getLegalRagConfig()
 
     if (classification.action === "platform") {
+      // Platform branch is for WiseCase actions: lawyer search, profile/cases/appointments, FAQ,
+      // and document/case summaries. Tools enforce auth and only expose the current user's data.
       if (!user && isGuestPersonalPlatformQuery(query)) {
         return savedPlainTextResponse(guestPersonalPlatformResponse(query))
       }
@@ -993,6 +1044,8 @@ export async function POST(req: Request) {
 
     let hits: LegalKnowledgeHit[]
     try {
+      // Legal branch always retrieves from Pinecone first. Groq never answers statute questions
+      // without seeing the retrieved legal chunks and their citation metadata.
       hits = await searchLegalKnowledge(buildLegalRetrievalQuery(messages, query), { topK: config.topK, config })
     } catch (error) {
       console.error("[LegalRAG] Pinecone retrieval failed:", error)

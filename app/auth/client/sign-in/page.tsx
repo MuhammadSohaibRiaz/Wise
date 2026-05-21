@@ -11,21 +11,34 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2, ArrowLeft } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export default function ClientSignInPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [bannerMessage, setBannerMessage] = useState<string | null>(null)
 
   const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
   const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
 
   useEffect(() => {
     if (typeof window === "undefined") return
-    if (new URLSearchParams(window.location.search).get("confirmed") === "1") {
-      showSuccess("Email confirmed. You can now sign in.")
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("confirmed") === "1") {
+      setBannerMessage("Email confirmed. You can now sign in.")
       window.history.replaceState(null, "", window.location.pathname)
+      return
+    }
+    if (params.get("error") === "unverified") {
+      setBannerMessage(
+        "Please verify your email address before signing in. Check your inbox for the verification link.",
+      )
+      return
+    }
+    if (params.get("message") === "sign-in-to-book") {
+      setBannerMessage("Sign in as a client to book a consultation with this lawyer.")
     }
   }, [])
 
@@ -61,6 +74,15 @@ export default function ClientSignInPage() {
         return
       }
 
+      if (!user.email_confirmed_at) {
+        await supabase.auth.signOut()
+        showError(
+          "Please verify your email address before signing in. Check your inbox for the verification link.",
+        )
+        setIsLoading(false)
+        return
+      }
+
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("user_type")
@@ -86,7 +108,11 @@ export default function ClientSignInPage() {
       }
 
       showSuccess("Sign in successful! Redirecting...")
-      router.push("/client/dashboard")
+      const nextPath =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("next")
+          : null
+      router.push(nextPath && nextPath.startsWith("/") ? nextPath : "/client/dashboard")
     } catch (err) {
       showError("An unexpected error occurred. Please try again.")
     } finally {
@@ -108,6 +134,13 @@ export default function ClientSignInPage() {
           <h1 className="text-3xl font-bold">Client Sign In</h1>
           <p className="text-muted-foreground">Access your legal cases and consultations</p>
         </div>
+
+        {bannerMessage && (
+          <Alert>
+            <AlertTitle>Notice</AlertTitle>
+            <AlertDescription>{bannerMessage}</AlertDescription>
+          </Alert>
+        )}
 
         <form onSubmit={handleSignIn} className="space-y-4">
           <div className="space-y-2">

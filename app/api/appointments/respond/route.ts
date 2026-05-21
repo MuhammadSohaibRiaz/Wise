@@ -65,6 +65,9 @@ export async function POST(req: NextRequest) {
       "Consultation"
 
     if (action === "accept") {
+      // Acceptance does not schedule work directly. It moves the request to
+      // awaiting_payment so Stripe payment remains mandatory before the slot is
+      // treated as confirmed.
       const { data: blockedAppointments, error: scheduleError } = await admin
         .from("appointments")
         .select("id, scheduled_at, duration_minutes")
@@ -144,6 +147,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, status: "awaiting_payment" })
     }
 
+    // Rejection closes the provisional open case because no lawyer-client
+    // engagement was formed.
     const { error: appointmentError } = await admin
       .from("appointments")
       .update({ status: "rejected", responded_at: new Date().toISOString(), updated_at: new Date().toISOString() })

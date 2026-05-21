@@ -39,9 +39,12 @@ export function ProgressBar() {
         cleanup()
         isRunning.current = false
         setProgress(100)
-        setTimeout(() => { setVisible(false); setProgress(0) }, 200)
+        timeoutRef.current = setTimeout(() => {
+          setVisible(false)
+          setProgress(0)
+        }, 300)
       }
-    }, 8000)
+    }, 2000)
   }, [cleanup])
 
   const done = useCallback(() => {
@@ -51,7 +54,7 @@ export function ProgressBar() {
     timeoutRef.current = setTimeout(() => {
       setVisible(false)
       setProgress(0)
-    }, 200)
+    }, 300)
   }, [cleanup])
 
   useEffect(() => {
@@ -99,7 +102,18 @@ export function ProgressBar() {
   }, [start])
 
   useEffect(() => {
-    if (isRunning.current) done()
+    if (!isRunning.current) return
+    setProgress(100)
+    const completeTimer = setTimeout(() => {
+      done()
+    }, 50)
+    const maxTimer = setTimeout(() => {
+      if (isRunning.current) done()
+    }, 500)
+    return () => {
+      clearTimeout(completeTimer)
+      clearTimeout(maxTimer)
+    }
   }, [pathname, searchParams, done])
 
   useEffect(() => () => cleanup(), [cleanup])

@@ -11,21 +11,32 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2, ArrowLeft } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export default function LawyerSignInPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [bannerMessage, setBannerMessage] = useState<string | null>(null)
 
   const showError = (msg: string) => toast({ variant: "destructive", title: "Error", description: msg })
   const showSuccess = (msg: string) => toast({ variant: "success", title: "Success", description: msg })
 
   useEffect(() => {
     if (typeof window === "undefined") return
-    if (new URLSearchParams(window.location.search).get("confirmed") === "1") {
-      showSuccess("Email confirmed. You can now sign in. Your lawyer verification may still be pending admin review.")
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("confirmed") === "1") {
+      setBannerMessage(
+        "Email confirmed. You can now sign in. Your lawyer verification may still be pending admin review.",
+      )
       window.history.replaceState(null, "", window.location.pathname)
+      return
+    }
+    if (params.get("error") === "unverified") {
+      setBannerMessage(
+        "Please verify your email address before signing in. Check your inbox for the verification link.",
+      )
     }
   }, [])
 
@@ -57,6 +68,15 @@ export default function LawyerSignInPage() {
       
       if (userError || !user) {
         showError("Failed to verify account. Please try again.")
+        setIsLoading(false)
+        return
+      }
+
+      if (!user.email_confirmed_at) {
+        await supabase.auth.signOut()
+        showError(
+          "Please verify your email address before signing in. Check your inbox for the verification link.",
+        )
         setIsLoading(false)
         return
       }
@@ -108,6 +128,13 @@ export default function LawyerSignInPage() {
           <h1 className="text-3xl font-bold">Lawyer Sign In</h1>
           <p className="text-muted-foreground">Manage your cases and consultations</p>
         </div>
+
+        {bannerMessage && (
+          <Alert>
+            <AlertTitle>Notice</AlertTitle>
+            <AlertDescription>{bannerMessage}</AlertDescription>
+          </Alert>
+        )}
 
         <form onSubmit={handleSignIn} className="space-y-4">
           <div className="space-y-2">

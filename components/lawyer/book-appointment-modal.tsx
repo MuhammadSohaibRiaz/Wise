@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { DayPicker } from "react-day-picker"
 import { format, isPast, isSameDay, startOfDay, addHours, setHours, setMinutes } from "date-fns"
 import { createClient } from "@/lib/supabase/client"
@@ -58,8 +59,17 @@ export function BookAppointmentModal({
   const [selectedDocId, setSelectedDocId] = useState<string>("")
   const [isLoadingDocs, setIsLoadingDocs] = useState(false)
   const { toast } = useToast()
+  const router = useRouter()
 
   const supabase = createClient()
+
+  const redirectToSignIn = () => {
+    const next =
+      typeof window !== "undefined"
+        ? `${window.location.pathname}${window.location.search}`
+        : "/match"
+    router.push(`/auth/client/sign-in?message=sign-in-to-book&next=${encodeURIComponent(next)}`)
+  }
 
   // Fetch dates that have at least one booking (for visual indicator only, NOT disabling)
   useEffect(() => {
@@ -89,7 +99,9 @@ export function BookAppointmentModal({
       void (async () => {
         if (!clientId) return
 
-        // Fetch client's analyzed documents for the dropdown
+        // Fetch client's analyzed documents for the dropdown. Linking an
+        // analysis document seeds the case details but still creates a normal
+        // consultation request that the lawyer must accept.
         setIsLoadingDocs(true)
         try {
           const { data: docs } = await supabase
@@ -117,7 +129,8 @@ export function BookAppointmentModal({
           setIsLoadingDocs(false)
         }
 
-        // Pre-fill from case_drafts if one exists
+        // Pre-fill from case_drafts if one exists. Drafts are created by the AI
+        // analysis/recommendation flow so users do not retype the same facts.
         const draft = await getLatestReadyDraftForClient(supabase, clientId, lawyerId)
         if (draft) {
           setSelectedDraftId(draft.id)
@@ -158,7 +171,9 @@ export function BookAppointmentModal({
         const now = new Date()
         const isToday = isSameDay(selectedDate, now)
 
-        // Get booked appointments for this lawyer on selected date
+        // Get booked appointments for this lawyer on selected date. This is a
+        // UX check; the booking submit path repeats conflict detection to catch
+        // races where another user takes a slot after the calendar loaded.
         const { data: booked, error } = await supabase
           .from("appointments")
           .select("scheduled_at, duration_minutes")
@@ -227,6 +242,21 @@ export function BookAppointmentModal({
   }, [selectedDate, duration, lawyerId, supabase, toast])
 
   const handleRequestAppointment = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      toast({
+        title: "Sign in required",
+        description: "Please sign in as a client to book a consultation.",
+        variant: "destructive",
+      })
+      onOpenChange(false)
+      redirectToSignIn()
+      return
+    }
+
     if (!selectedDate || !selectedTime || !caseType || !caseTitle || !clientId) {
       toast({
         title: "Error",
@@ -236,13 +266,14 @@ export function BookAppointmentModal({
       return
     }
 
-    // Validate client ID
-    if (!clientId) {
+    if (!clientId || user.id !== clientId) {
       toast({
         title: "Error",
         description: "You must be logged in to book an appointment. Please sign in first.",
         variant: "destructive",
       })
+      onOpenChange(false)
+      redirectToSignIn()
       return
     }
 
@@ -261,16 +292,8 @@ export function BookAppointmentModal({
     try {
       setIsLoading(true)
 
-      // Verify user is authenticated
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (!user || user.id !== clientId) {
-        throw new Error("Authentication failed. Please sign in again.")
-      }
-
-      // Combine date and time
+      // Combine date and time into the canonical timestamp stored in
+      // appointments.scheduled_at.
       const [hours, minutes] = selectedTime.split(":")
       const appointmentDateTime = new Date(selectedDate)
       appointmentDateTime.setHours(Number.parseInt(hours), Number.parseInt(minutes), 0)
@@ -291,6 +314,8 @@ export function BookAppointmentModal({
           const dayEnd = new Date(dayStart)
           dayEnd.setDate(dayEnd.getDate() + 1)
 
+          // Final server-side-style conflict check before inserting. This keeps
+          // concurrent bookings from creating overlapping consultations.
           const { data: conflictingAppointments, error: conflictsError } = await supabase
             .from("appointments")
             .select("id, scheduled_at, duration_minutes")
@@ -319,7 +344,8 @@ export function BookAppointmentModal({
             return
           }
 
-          // Create case first
+          // Create case first in `open`; it becomes active only after payment
+          // and a held consultation. This avoids "in progress" before work starts.
       const { data: caseData, error: caseError } = await supabase
         .from("cases")
         .insert({
@@ -348,7 +374,8 @@ export function BookAppointmentModal({
         },
       })
 
-      // Link selected analysis document to the real case
+      // Link selected analysis document to the real case so both client and
+      // lawyer can see it in the shared Documents tab after booking.
       const docIdToLink = selectedDocId || draftLinkedDocumentId
       if (docIdToLink) {
         const { error: linkError } = await supabase

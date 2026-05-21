@@ -1,11 +1,26 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { APP_CURRENCY, formatConsultationFeeBase } from "@/lib/currency"
 
 export type LawyerSearchHit = {
   id: string
   name: string
   avatar: string | null
   specializations: string[]
+  /** Stored fee for a standard 60-minute consultation (PKR). */
   hourly_rate: number | null | undefined
+  currency: typeof APP_CURRENCY
+  consultation_fee_pkr: number | null
+  consultation_fee_display: string | null
+}
+
+export function enrichLawyerSearchHit(lawyer: Omit<LawyerSearchHit, "currency" | "consultation_fee_pkr" | "consultation_fee_display">): LawyerSearchHit {
+  const fee = lawyer.hourly_rate != null && Number(lawyer.hourly_rate) > 0 ? Number(lawyer.hourly_rate) : null
+  return {
+    ...lawyer,
+    currency: APP_CURRENCY,
+    consultation_fee_pkr: fee,
+    consultation_fee_display: fee != null ? formatConsultationFeeBase(fee) : null,
+  }
 }
 
 type PracticeAreaIntent = {
@@ -14,6 +29,9 @@ type PracticeAreaIntent = {
 }
 
 function detectPracticeAreaIntent(value: string): PracticeAreaIntent | null {
+  // Normalize natural-language English/Urdu requests into a strict practice
+  // area filter. This prevents "family law" searches from returning unrelated
+  // tax/labour lawyers just because their names matched generic tokens.
   const text = value.toLowerCase()
 
   const intents: Array<{ label: string; queryPattern: RegExp; specializationPattern: RegExp }> = [
@@ -143,6 +161,8 @@ export async function searchLawyersFromSupabase(
     ? rows.filter((lawyer) => lawyer.specializations.some((specialization) => requestedPracticeArea.matchesSpecialization(specialization)))
     : rows
 
+  // Score name/specialization text after the hard practice-area filter. That
+  // gives relevant specialties priority while still allowing name searches.
   const scored = candidates
     .map((l) => {
       const blob = `${l.name} ${l.specializations.join(" ")}`.toLowerCase()
@@ -163,7 +183,7 @@ export async function searchLawyersFromSupabase(
     .sort((a, b) => b.score - a.score)
     .slice(0, 12)
 
-  const lawyers = scored.slice(0, 8).map(({ score: _s, ...rest }) => rest)
+  const lawyers = scored.slice(0, 8).map(({ score: _s, ...rest }) => enrichLawyerSearchHit(rest))
   return {
     lawyers,
     note:

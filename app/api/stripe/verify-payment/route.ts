@@ -23,8 +23,9 @@ export async function POST(request: NextRequest) {
 
         console.log(`[Payment Verify] Checking session: ${sessionId}`)
 
-        // Retrieve the checkout session from Stripe
-        const session = await stripe.checkout.sessions.retrieve(sessionId)
+            // Retrieve the checkout session from Stripe instead of trusting the
+            // browser redirect query string.
+            const session = await stripe.checkout.sessions.retrieve(sessionId)
 
         console.log(`[Payment Verify] Session status: ${session.payment_status}`)
         console.log(`[Payment Verify] Metadata:`, session.metadata)
@@ -38,6 +39,8 @@ export async function POST(request: NextRequest) {
 
             console.log(`[Payment Verify] Payment confirmed for appointment ${appointment_id}`)
 
+            // The logged-in client proves intent, then the admin client performs
+            // the final writes that must bypass RLS after Stripe confirms payment.
             const admin = createAdminClient()
             const { data: appointmentForAuth, error: appointmentAuthError } = await admin
                 .from("appointments")
@@ -66,6 +69,8 @@ export async function POST(request: NextRequest) {
                 console.log(`[Payment Verify] ✅ Payment ${payment_id} marked as completed`)
             }
 
+            // Idempotent state change: only awaiting_payment can become
+            // scheduled, so refreshes/retries do not corrupt the workflow.
             const { data: updatedAppointment, error: appointmentError } = await admin
                 .from("appointments")
                 .update({

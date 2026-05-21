@@ -3,6 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
 function storagePathFromUrl(fileUrl: string) {
+  // Historical rows stored full Supabase public/signed URLs. New viewers use
+  // document ids, so this extracts the storage object path without exposing the
+  // bucket URL to the browser.
   try {
     const url = new URL(fileUrl)
     const markers = [
@@ -53,6 +56,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "Document not found." }, { status: 404 })
     }
 
+    // Access policy: uploader can view their own upload; for case documents,
+    // both assigned participants can view through this proxy route.
     let allowed = document.uploaded_by === user.id
     if (!allowed && document.case_id) {
       const { data: caseRow, error: caseError } = await admin
@@ -87,6 +92,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "Document file is unavailable." }, { status: 404 })
     }
 
+    // Stream the file through the app domain with no-store headers. This keeps
+    // document links as /api/documents/view/:id instead of raw Supabase URLs.
     return new Response(file.stream(), {
       headers: {
         "Content-Type": document.file_type || file.type || "application/octet-stream",

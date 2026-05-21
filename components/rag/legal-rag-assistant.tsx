@@ -37,6 +37,8 @@ const STARTERS = [
 ]
 
 function isLocalGreeting(text: string) {
+  // Fast-path greetings locally so "hi/hello" never burns Pinecone or Groq
+  // quota and never inherits unrelated legal context from previous messages.
   return /^(hi|hii|hello|helo|hlo|hey|yo|salam|assalamualaikum|assalamu alaikum|aoa|good\s+(morning|afternoon|evening))[\s!.,?]*$/i.test(text.trim())
 }
 
@@ -55,6 +57,8 @@ function localGreetingResponse(role: ChatRole) {
 }
 
 function isLikelyPlatformQuery(text: string) {
+  // UI-only heuristic used for the searching indicator. The API still performs
+  // authoritative classification before deciding platform tools vs legal RAG.
   const normalized = text.toLowerCase()
   return (
     /\b(review|reviews|rating|profile|appointment|appointments|dashboard|settings|sign in|sign up|register|fees|refund|privacy|verification|upload|analyze document|analyse document)\b/.test(normalized) ||
@@ -88,6 +92,8 @@ function stripControlMarkers(text: string) {
 }
 
 function sanitizeAssistantText(text: string) {
+  // Groq can occasionally mix scripts in Urdu answers. We normalize known
+  // legal transliterations and remove accidental CJK characters before display.
   return text
     .replace(/\u6CD5\u5F8B\u06CC/g, "\u0642\u0627\u0646\u0648\u0646\u06CC")
     .replace(/\u6CD5\u5F8B/g, "\u0642\u0627\u0646\u0648\u0646")
@@ -99,6 +105,8 @@ function sanitizeAssistantText(text: string) {
 }
 
 function prepareSpeechText(text: string) {
+  // Spoken output should be conversational, so remove retrieval citations,
+  // control markers, and disclaimers before sending text to browser TTS.
   return sanitizeAssistantText(stripControlMarkers(text))
     .replace(/^Searching Pakistani legal knowledge base\.\.\.\s*/i, "")
     .replace(/^The first response was too large for the current AI token limit\. Retrying with shorter legal context\.\.\.\s*/im, "")
@@ -151,6 +159,8 @@ function normalizeIndicDigits(text: string) {
 }
 
 function normalizeVoiceTranscript(text: string) {
+  // Browser speech recognition often mishears legal terms. These corrections
+  // keep voice input useful for common Pakistani law questions in English/Urdu.
   const normalized = normalizeIndicDigits(text)
     .replace(/\bmord\s+guage\b/gi, "mortgage")
     .replace(/\bmort\s+gage\b/gi, "mortgage")
@@ -279,6 +289,8 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
         if (!user) {
           setUserId(null)
           setChatRole("guest")
+          // Guests have no DB identity, so their visible chat lives only in
+          // sessionStorage. Authenticated users load persisted ai_chat_messages.
           const stored = sessionStorage.getItem(STORAGE_KEY)
           if (stored) {
             const parsed = JSON.parse(stored)
@@ -535,6 +547,8 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
   }, [input, isListening, voiceLanguage])
 
   function startNewConversation() {
+    // Demo-friendly reset: clears the visible conversation only. For signed-in
+    // users the persisted history remains until they choose the trash action.
     abortRef.current?.abort()
     window.speechSynthesis?.cancel()
     setError(null)
@@ -578,6 +592,8 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
   }
 
   function shouldAutoFollowStream() {
+    // Smart-scroll rule: follow the stream only when the user is already near
+    // the bottom, otherwise leave their reading position alone.
     const container = scrollRef.current
     return Boolean(container && !userScrolledUpRef.current && isNearScrollBottom(container))
   }
@@ -621,6 +637,8 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
     setIsSending(true)
     setIsSearching(shouldShowLegalSearchStatus)
 
+    // One AbortController per request lets closing/clearing the panel stop the
+    // active stream cleanly without affecting future messages.
     const controller = new AbortController()
     abortRef.current = controller
 
@@ -638,6 +656,8 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
       const textStream = response.body
       if (!textStream) throw new Error(await response.text().catch(() => "The assistant did not return a response."))
 
+      // The route streams plain text. Tool calls and RAG internals are filtered
+      // server-side so the UI only appends assistant-readable content.
       const reader = textStream.getReader()
       const decoder = new TextDecoder()
       let accumulated = ""
@@ -814,6 +834,8 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
       }
       setMessages((current) => [...current, uploadMessage, analyzingMessage])
 
+      // RAG uploads reuse the same document analysis pipeline as the analysis
+      // page, but they present the result inside chat with a View Analysis CTA.
       const res = await fetch("/api/analyze-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

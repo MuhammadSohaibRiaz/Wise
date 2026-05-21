@@ -21,6 +21,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Please provide either a case description or arguments." }, { status: 400 })
     }
 
+    // The simulator is separate from RAG: it does not retrieve from Pinecone.
+    // It is a structured role-play evaluator and must reject non-legal inputs.
     const prompt = `
       You are an Honorable Judge of the High Court of Pakistan. 
       Your task is to provide a simulated judicial evaluation of a case presented to you.
@@ -65,6 +67,8 @@ export async function POST(req: NextRequest) {
       response_format: { type: "json_object" },
     })
 
+    // JSON output lets the frontend render fixed sections such as strengths,
+    // weaknesses, and simulated outcome without parsing free-form prose.
     const result = JSON.parse(completion.choices[0].message.content || "{}")
 
     if (result.is_legal_case === false) {

@@ -27,6 +27,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    // Used by the UI when an analysis already exists: return stored results
+    // instead of spending another Groq call and duplicating DB rows.
     if (skipAnalysis) {
       const { data: analysis } = await supabase
         .from("document_analysis")
@@ -54,6 +56,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 })
     }
 
+    // A document is visible to its uploader, or to both participants of the
+    // linked case. This prevents someone from analyzing another user's upload
+    // just by guessing a document UUID.
     let allowed = document.uploaded_by === user.id
     if (!allowed && document.case_id) {
       const { data: caseRow } = await supabase
@@ -70,6 +75,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
+    // Long analyses are queued so Vercel/API timeouts do not cut off the user
+    // flow. The job polling route acts as a lazy worker when no background
+    // worker is running.
     if (asyncMode) {
       const { data: job, error: jobErr } = await supabase
         .from("document_analysis_jobs")
@@ -96,6 +104,9 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // Synchronous path used by smaller uploads and older callers. The shared
+    // service owns extraction, security scanning, Groq analysis, persistence,
+    // and lawyer recommendation.
     const result = await runDocumentAnalysis(supabase, {
       documentId,
       userId: user.id,

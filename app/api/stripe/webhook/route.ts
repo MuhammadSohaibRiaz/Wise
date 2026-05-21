@@ -33,6 +33,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Webhook Error: ${error.message}` }, { status: 400 })
   }
 
+  // Stripe webhooks have no user cookies, so every DB write must use the
+  // service-role client. RLS would block this flow with the anon client.
   const supabase = createAdminClient()
 
   try {
@@ -53,6 +55,8 @@ export async function POST(request: NextRequest) {
             })
             .eq("id", payment_id)
 
+          // Payment success confirms the consultation slot. The case itself
+          // remains open until the consultation is later marked as held.
           const { data: updatedAppointment } = await supabase
             .from("appointments")
             .update({

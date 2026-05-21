@@ -26,7 +26,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid amount" }, { status: 400 })
     }
 
-    // Verify appointment belongs to user and is in awaiting_payment status
+    // Verify the appointment belongs to the authenticated client and is exactly
+    // at the payment step. This prevents paying for someone else's appointment
+    // or re-paying an already confirmed slot.
     const { data: appointment, error: appointmentError } = await supabase
       .from("appointments")
       .select("id, client_id, lawyer_id, status, case_id, cases(title)")
@@ -39,6 +41,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Appointment not found or invalid" }, { status: 404 })
     }
 
+    // Prefer the configured production URL; fall back to the request origin for
+    // local/dev previews so Stripe redirects back to the right environment.
     const siteUrl = (
       process.env.NEXT_PUBLIC_SITE_URL ||
       (process.env.VERCEL_PROJECT_PRODUCTION_URL
@@ -77,6 +81,8 @@ export async function POST(request: NextRequest) {
     })
 
     if (session.id) {
+      // Store the Checkout session for later verification/debugging. Older DBs
+      // may not have this column, so failure is logged but not fatal.
       const { error: checkoutMetaErr } = await supabase
         .from("payments")
         .update({ stripe_checkout_session_id: session.id, updated_at: new Date().toISOString() })

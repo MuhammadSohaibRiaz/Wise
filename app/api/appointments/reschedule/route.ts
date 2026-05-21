@@ -93,6 +93,8 @@ export async function POST(req: NextRequest) {
     const dayEnd = new Date(newTime)
     dayEnd.setHours(23, 59, 59, 999)
 
+    // Conflict detection checks overlapping time ranges, not just equal start
+    // times, so 30/60/90 minute sessions cannot overlap.
     const { data: existingAppointments, error: conflictErr } = await supabase
       .from("appointments")
       .select("id, scheduled_at, duration_minutes")

@@ -43,6 +43,8 @@ function getStrengthConfig(score: number) {
 }
 
 function StrengthGauge({ score }: { score: number }) {
+  // Clamp again on the client for display safety; the API already clamps the
+  // model output before returning it.
   const safeScore = Math.max(0, Math.min(100, Math.round(score || 0)))
   const config = getStrengthConfig(safeScore)
   const offset = CIRCUMFERENCE - (safeScore / 100) * CIRCUMFERENCE
@@ -111,6 +113,8 @@ export function AiCaseSummary({ caseId }: AiCaseSummaryProps) {
       setIsLoading(true)
       setError(null)
 
+      // Summary generation is intentionally on-demand and no-store so the panel
+      // always sees the latest documents, appointments, and timeline events.
       const response = await fetch(`/api/cases/${caseId}/summary`, {
         method: "GET",
         headers: { Accept: "application/json" },

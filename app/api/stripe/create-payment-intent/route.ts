@@ -34,7 +34,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    // Verify appointment belongs to user and is in awaiting_payment status
+    // Verify appointment belongs to the authenticated client and is still in
+    // awaiting_payment. This route exists for the PaymentIntent flow; Checkout
+    // uses create-checkout-session with the same ownership rule.
     console.log("[Stripe API] Querying appointment:", appointmentId)
     const { data: appointment, error: appointmentError } = await supabase
       .from("appointments")
@@ -95,7 +97,8 @@ export async function POST(request: NextRequest) {
       lawyer_id: appointment.lawyer_id,
     })
 
-    // Calculate amount in cents
+    // Stripe expects minor units. PKR has no fractional paisa in this UI, but
+    // Stripe still accepts amount as the smallest currency unit.
     const amountInCents = Math.round(amount * 100)
 
     // Get hourly rate from cases relation
@@ -109,7 +112,8 @@ export async function POST(request: NextRequest) {
       providedAmount: amount,
     })
 
-    // Create payment record
+    // Store the local payment first so webhook/verify routes can reconcile the
+    // Stripe intent back to WiseCase appointments and cases.
     const { data: payment, error: paymentError } = await supabase
       .from("payments")
       .insert({

@@ -138,11 +138,16 @@ export const tools = {
     }),
     execute: async (input) => {
       const supabase = await createClient();
+      // Keep search logic in one shared helper so the RAG tool and normal
+      // lawyer-search API rank specialties the same way.
       const r = await searchLawyersFromSupabase(supabase, input);
       if (r.error) return { error: r.error };
       const lawyers = r.lawyers.slice(0, 5);
       return {
         lawyers,
+        currency: "PKR",
+        fee_note:
+          "All consultation fees are in Pakistani Rupees (PKR) for a standard 60-minute consultation. Use consultation_fee_display when mentioning price — never USD or $.",
         note:
           lawyers.length === 0
             ? (r.note ??
@@ -188,7 +193,7 @@ export const tools = {
       // Mocked knowledge base for platform-wide context
       const faqs = [
         { q: "verification", a: "Lawyers must upload a valid Bar License which is reviewed by our admin team. Verification usually takes 24-48 hours." },
-        { q: "fees", a: "WiseCase platform is currently free for students (FYP). For professional use, we charge a 10% commission on case settlements." },
+        { q: "fees", a: "Lawyer consultation fees on WiseCase are listed in Pakistani Rupees (PKR) for a standard 60-minute consultation. Shorter or longer sessions are priced proportionally. Platform commission policies may apply on settlements." },
         { q: "refunds", a: "Appointments can be canceled up to 24 hours before the scheduled time for a full refund." },
         { q: "ai", a: "Our AI uses Llama-3-70B via Groq to analyze documents with high precision. However, AI results should be verified by a legal professional." },
         { q: "privacy", a: "Your documents are stored securely in encrypted Supabase storage. Only you and your assigned lawyer can access them." }
@@ -209,6 +214,8 @@ export const tools = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return { error: "Not logged in." };
 
+      // Case summaries are private: the tool first proves the user is the
+      // client or assigned lawyer before reading any document analyses.
       const { data: caseRow, error: caseError } = await supabase
         .from("cases")
         .select("id, client_id, lawyer_id")

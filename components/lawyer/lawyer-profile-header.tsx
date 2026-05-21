@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Star, MapPin, Clock, Check, MessageCircle } from "lucide-react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
@@ -48,6 +49,7 @@ export function LawyerProfileHeader({
   const ratingLabel = formatLawyerRatingLabel(ratingNorm)
   const [bookingOpen, setBookingOpen] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const router = useRouter()
 
   useEffect(() => {
     const getCurrentUser = async () => {
@@ -62,8 +64,11 @@ export function LawyerProfileHeader({
 
   const handleBookClick = () => {
     if (!userId) {
-      // Redirect to login if not authenticated
-      window.location.href = "/auth/client/sign-in"
+      const next =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : `/client/lawyer/${id}`
+      router.push(`/auth/client/sign-in?message=sign-in-to-book&next=${encodeURIComponent(next)}`)
       return
     }
     setBookingOpen(true)
@@ -98,7 +103,7 @@ export function LawyerProfileHeader({
               </div>
               <div className="flex flex-col gap-2">
                 <Button onClick={handleBookClick} className="w-full">
-                  Book Appointment
+                  {userId ? "Book Consultation" : "Sign in to Book"}
                 </Button>
                 <a href={`/client/messages?lawyer=${id}`}>
                   <Button variant="outline" className="w-full bg-transparent">

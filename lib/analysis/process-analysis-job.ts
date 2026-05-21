@@ -63,11 +63,16 @@ export async function processAnalysisJob(jobId: string): Promise<{ ok: boolean; 
   }
 
   try {
+    // Jobs use the admin client because the worker has no browser session, but
+    // `requested_by` is still passed into the analysis service for ownership
+    // checks and result attribution.
     const result = await runDocumentAnalysis(admin, {
       documentId: job.document_id,
       userId: job.requested_by,
     })
 
+    // Store the result payload on the job so the polling route can return it
+    // immediately without another DB join after completion.
     await admin
       .from("document_analysis_jobs")
       .update({

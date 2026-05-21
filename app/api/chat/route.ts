@@ -174,7 +174,10 @@ export async function POST(req: Request) {
       }
     };
 
-    const systemPrompt = `${systemMessage.content}\n\n${authContext}${pageContext}`;
+    const currencyContext =
+      "\n[CURRENCY] All WiseCase lawyer consultation fees and payments are in Pakistani Rupees (PKR) only. Never use USD or the $ symbol for platform fees. When searchLawyers returns consultation_fee_display, use that exact wording.";
+
+    const systemPrompt = `${systemMessage.content}\n\n${authContext}${currencyContext}${pageContext}`;
 
     const useTools = !!user;
     console.log(`[Chat:API]   streaming → tools=${useTools} | model=llama-3.3-70b-versatile | systemPromptLen=${systemPrompt.length}`);

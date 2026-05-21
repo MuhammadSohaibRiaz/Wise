@@ -5,6 +5,9 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   let response = NextResponse.next({ request })
 
+  // Public routes still get a Supabase session refresh below. The RAG endpoint
+  // is public for legal KB questions, but it applies stricter guest behavior in
+  // the route itself.
   const publicRoutes = ["/", "/auth", "/match", "/terms", "/privacy", "/client/lawyer", "/api/chat", "/api/legal-rag-chat"]
   const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route + "/"))
 
@@ -40,6 +43,8 @@ export async function updateSession(request: NextRequest) {
     return redirectResponse
   }
 
+  // Middleware is the first RBAC layer for page navigation. API routes still
+  // repeat ownership checks because direct HTTP calls bypass page components.
   const needsRoleCheck = !isPublicRoute && (pathname.startsWith("/admin") || pathname.startsWith("/client/") || pathname.startsWith("/lawyer/"))
 
   if (!user && !isPublicRoute) {
@@ -48,6 +53,16 @@ export async function updateSession(request: NextRequest) {
       : pathname.startsWith("/lawyer/")
         ? "/auth/lawyer/sign-in"
         : "/auth/client/sign-in"
+    return createRedirect(dest)
+  }
+
+  if (user && !user.email_confirmed_at && !isPublicRoute) {
+    await supabase.auth.signOut()
+    const dest = pathname.startsWith("/lawyer/")
+      ? "/auth/lawyer/sign-in?error=unverified"
+      : pathname.startsWith("/admin")
+        ? "/auth/admin/sign-in?error=unverified"
+        : "/auth/client/sign-in?error=unverified"
     return createRedirect(dest)
   }
 

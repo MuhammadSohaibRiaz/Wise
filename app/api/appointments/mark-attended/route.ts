@@ -59,6 +59,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (row.case_id) {
+      // This is the only normal path that moves an open case to in_progress:
+      // a consultation must be marked as held first.
       const { data: activatedCase, error: caseUpdateError } = await supabase
         .from("cases")
         .update({ status: "in_progress", updated_at: new Date().toISOString() })

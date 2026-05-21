@@ -6,6 +6,8 @@ export async function GET(request: NextRequest) {
   const code = requestUrl.searchParams.get("code")
   const requestedNext = requestUrl.searchParams.get("next")
 
+  // Supabase email links land here first. Only allow known internal `next`
+  // targets so confirmation/reset links cannot become open redirects.
   const safeNext =
     requestedNext === "/auth/client/sign-in" || requestedNext === "/auth/lawyer/sign-in"
       ? `${requestedNext}?confirmed=1`
@@ -31,6 +33,9 @@ export async function GET(request: NextRequest) {
       },
     )
 
+    // exchangeCodeForSession converts the one-time email code into cookies for
+    // this browser, which is required before the reset-password page can update
+    // the password.
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
       const {

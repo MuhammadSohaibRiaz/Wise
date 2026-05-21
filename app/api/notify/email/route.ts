@@ -55,6 +55,8 @@ export async function POST(req: NextRequest) {
   try {
     const supabase = createAdminClient()
 
+    // All user-provided template variables must be escaped before entering HTML.
+    // The email body builder handles layout only; this route owns data safety.
     switch (template) {
       case "case_completion_request": {
         const { client_id, lawyer_id, case_title, case_id } = data

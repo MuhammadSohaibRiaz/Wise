@@ -101,6 +101,9 @@ export function CaseDocumentsPanel({
   const documentIds = useMemo(() => documents.map((doc) => doc.id), [documents])
 
   const fetchDocumentMeta = useCallback(async () => {
+    // Notes are private per user; comments are shared between case parties.
+    // They live outside `documents` so uploads remain usable even if script 052
+    // has not been applied in a fresh Supabase project yet.
     if (!currentUserId || documentIds.length === 0) {
       setNotes({})
       setNoteDrafts({})
@@ -163,6 +166,8 @@ export function CaseDocumentsPanel({
   useEffect(() => {
     if (!currentUserId || !docMetaAvailable || documentIds.length === 0) return
 
+    // Re-fetch metadata when either party comments, so the client and lawyer
+    // tabs stay in sync without a manual refresh.
     const supabase = createClient()
     const documentIdSet = new Set(documentIds)
     const channel = supabase
@@ -215,6 +220,8 @@ export function CaseDocumentsPanel({
         data: { publicUrl },
       } = supabase.storage.from("documents").getPublicUrl(path)
 
+      // Case-tab uploads are shared raw case documents. They intentionally do
+      // not call `/api/analyze-document`; analysis is user-triggered elsewhere.
       const { data: document, error: insertError } = await supabase
         .from("documents")
         .insert({
@@ -258,6 +265,8 @@ export function CaseDocumentsPanel({
     try {
       setIsSavingDocMeta(documentId)
       const supabase = createClient()
+      // Composite unique key (document_id,user_id) gives each participant one
+      // private editable note per document.
       const { error } = await supabase.from("case_document_notes").upsert(
         {
           document_id: documentId,
@@ -286,6 +295,8 @@ export function CaseDocumentsPanel({
     try {
       setIsSavingDocMeta(documentId)
       const supabase = createClient()
+      // Users comment only on the other party's uploads; timeline logging keeps
+      // an audit trail visible in the Activity tab.
       const { error } = await supabase.from("case_document_comments").insert({
         document_id: documentId,
         user_id: currentUserId,
@@ -358,6 +369,8 @@ export function CaseDocumentsPanel({
 
     try {
       setIsSavingDocMeta(documentId)
+      // Rename goes through an API route so ownership and finished-case guards
+      // are enforced server-side, not only by the hidden pencil button.
       const response = await fetch("/api/documents/rename", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

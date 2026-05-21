@@ -36,6 +36,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
+    // Only unpaid appointments can be directly cancelled by a participant.
+    // Paid/confirmed cancellations go through the admin review flow elsewhere.
     if (row.status !== "pending" && row.status !== "awaiting_payment") {
       return NextResponse.json(
         { error: "This appointment cannot be cancelled. If you need to cancel a paid appointment, please contact support." },
@@ -58,6 +60,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: updErr.message }, { status: 400 })
     }
 
+    // If the appointment was still provisional, close the open case and detach
+    // the lawyer so it cannot appear as active work.
     if (row.case_id) {
       await admin
         .from("cases")
