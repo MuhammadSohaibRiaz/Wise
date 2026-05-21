@@ -44,6 +44,14 @@ export default function LawyerSignInPage() {
       setBannerMessage(
         "Please verify your email address before signing in. Check your inbox for the verification link.",
       )
+      return
+    }
+    if (params.get("error") === "link-expired") {
+      setShowResendVerification(true)
+      setBannerMessage(
+        "This verification link has expired. Resend a new link below, then use only the latest email.",
+      )
+      showError("Verification link expired. Please resend and use the newest email only.")
     }
   }, [])
 

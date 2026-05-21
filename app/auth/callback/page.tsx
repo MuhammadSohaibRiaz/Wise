@@ -1,8 +1,9 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { consumeAuthHash, parseHashParams } from "@/lib/auth/callback-storage"
 import { Loader2 } from "lucide-react"
 
 function signInPathForUserType(userType: string | undefined): string {
@@ -10,12 +11,22 @@ function signInPathForUserType(userType: string | undefined): string {
   return `${base}?message=email-confirmed`
 }
 
+function signInPathForAuthError(userType: string | undefined, errorCode: string | null): string {
+  const base = userType === "lawyer" ? "/auth/lawyer/sign-in" : "/auth/client/sign-in"
+  if (errorCode === "otp_expired") {
+    return `${base}?error=link-expired`
+  }
+  return `${base}?error=auth-callback`
+}
+
 function AuthCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [error, setError] = useState<string | null>(null)
+  const handledRef = useRef(false)
 
   useEffect(() => {
+    if (handledRef.current) return
     let cancelled = false
 
     async function run() {
@@ -29,8 +40,33 @@ function AuthCallbackContent() {
           ? requestedNext
           : null
 
+      let hashRaw = window.location.hash
+      if (hashRaw) {
+        consumeAuthHash()
+      } else {
+        hashRaw = consumeAuthHash() || ""
+      }
+
+      if (hashRaw) {
+        const hashParams = parseHashParams(hashRaw)
+        if (hashParams.get("error") || hashParams.get("error_code")) {
+          handledRef.current = true
+          const errorCode = hashParams.get("error_code")
+          const desc = hashParams.get("error_description")?.replace(/\+/g, " ") ?? "Link invalid or expired."
+          if (!cancelled) {
+            setError(desc)
+          }
+          window.history.replaceState(null, "", window.location.pathname + window.location.search)
+          setTimeout(() => {
+            if (!cancelled) router.replace(signInPathForAuthError(undefined, errorCode))
+          }, 2500)
+          return
+        }
+      }
+
       const code = searchParams.get("code")
       let linkType: string | null = linkTypeParam
+      let sessionEstablished = false
 
       if (code) {
         const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
@@ -38,13 +74,9 @@ function AuthCallbackContent() {
           if (!cancelled) setError(exchangeError.message)
           return
         }
-      } else {
-        const hash = window.location.hash.replace(/^#/, "")
-        if (!hash) {
-          if (!cancelled) setError("Invalid or expired link.")
-          return
-        }
-        const hashParams = new URLSearchParams(hash)
+        sessionEstablished = true
+      } else if (hashRaw) {
+        const hashParams = parseHashParams(hashRaw)
         linkType = linkType ?? hashParams.get("type")
         const access_token = hashParams.get("access_token")
         const refresh_token = hashParams.get("refresh_token")
@@ -62,10 +94,22 @@ function AuthCallbackContent() {
           if (!cancelled) setError(sessionError.message)
           return
         }
+        sessionEstablished = true
         window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)
+      } else {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (session) {
+          sessionEstablished = true
+        } else {
+          if (!cancelled) setError("Invalid or expired link.")
+          return
+        }
       }
 
-      if (cancelled) return
+      if (cancelled || !sessionEstablished) return
+      handledRef.current = true
 
       const {
         data: { user },
@@ -78,7 +122,6 @@ function AuthCallbackContent() {
 
       const userType = user.user_metadata?.user_type as string | undefined
 
-      // Only true password-reset flows — never treat email verification magic links as recovery.
       const isEmailVerificationLink =
         linkType === "magiclink" || linkType === "signup" || linkType === "email" || linkType === "invite"
       const isRecovery =
@@ -100,6 +143,10 @@ function AuthCallbackContent() {
         const markRes = await fetch("/api/auth/mark-email-verified", { method: "POST" })
         if (!markRes.ok) {
           console.error("[Auth callback] mark-email-verified failed:", markRes.status)
+          if (!cancelled) {
+            setError("Could not save verification status. Please try again or contact support.")
+          }
+          return
         }
       }
 
@@ -125,7 +172,7 @@ function AuthCallbackContent() {
     <main className="min-h-screen flex flex-col items-center justify-center gap-3 px-4">
       {error ? (
         <>
-          <p className="text-sm text-destructive text-center">{error}</p>
+          <p className="text-sm text-destructive text-center max-w-sm">{error}</p>
           <button
             type="button"
             className="text-sm text-primary underline"
@@ -137,7 +184,7 @@ function AuthCallbackContent() {
       ) : (
         <>
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Completing sign-in…</p>
+          <p className="text-sm text-muted-foreground">Verifying your email…</p>
         </>
       )}
     </main>

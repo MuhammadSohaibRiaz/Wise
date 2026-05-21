@@ -45,6 +45,14 @@ export default function ClientSignInPage() {
       )
       return
     }
+    if (params.get("error") === "link-expired") {
+      setShowResendVerification(true)
+      setBannerMessage(
+        "This verification link has expired. Resend a new link below, then use only the latest email.",
+      )
+      showError("Verification link expired. Please resend and use the newest email only.")
+      return
+    }
     if (params.get("message") === "sign-in-to-book") {
       setBannerMessage("Sign in as a client to book a consultation with this lawyer.")
     }

@@ -1,12 +1,11 @@
 "use client"
 
 import { useEffect } from "react"
+import { parseHashParams, stashAuthHash } from "@/lib/auth/callback-storage"
 
 /**
- * Supabase often redirects to Site URL root instead of /auth/callback:
- * - PKCE: ?code=...
- * - Implicit/magic-link: #access_token=...
- * Forward both to /auth/callback so the handler can complete the flow.
+ * Supabase redirects to Site URL root with hash or query params.
+ * Stash the hash and send users to /auth/callback (hash often lost on navigation).
  */
 export function OAuthCallbackHashRedirect() {
   useEffect(() => {
@@ -18,23 +17,27 @@ export function OAuthCallbackHashRedirect() {
     const params = new URLSearchParams(search)
     const code = params.get("code")
 
+    if (hash) {
+      const hashParams = parseHashParams(hash)
+      if (hashParams.get("error") || hashParams.get("error_code")) {
+        stashAuthHash(hash)
+        window.location.replace("/auth/callback")
+        return
+      }
+      if (hash.includes("access_token")) {
+        stashAuthHash(hash)
+        const target = new URL("/auth/callback", window.location.origin)
+        params.forEach((value, key) => target.searchParams.set(key, value))
+        window.location.replace(target.toString())
+        return
+      }
+    }
+
     if (code) {
       const target = new URL("/auth/callback", window.location.origin)
       params.forEach((value, key) => target.searchParams.set(key, value))
-      // Root ?code= from email links has no next — infer from hash type when present.
-      if (!target.searchParams.has("next") && hash) {
-        const hashParams = new URLSearchParams(hash.replace(/^#/, ""))
-        const hashType = hashParams.get("type")
-        if (hashType === "recovery") {
-          target.searchParams.set("next", "/auth/reset-password")
-        }
-      }
-      window.location.replace(target.toString() + hash)
-      return
-    }
-
-    if (hash && hash.includes("access_token")) {
-      window.location.replace(`/auth/callback${search}${hash}`)
+      if (hash) stashAuthHash(hash)
+      window.location.replace(target.toString())
     }
   }, [])
 
