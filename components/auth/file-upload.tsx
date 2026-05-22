@@ -8,6 +8,8 @@ import Image from "next/image"
 
 interface FileUploadProps {
   onFileSelect: (file: File) => void
+  /** Called when the user removes the selected file (parent must clear stored File state). */
+  onFileClear?: () => void
   accept?: string
   maxSize?: number // in MB
   preview?: boolean
@@ -17,6 +19,7 @@ interface FileUploadProps {
 
 export function FileUpload({
   onFileSelect,
+  onFileClear,
   accept = "image/*,.pdf,.doc,.docx",
   maxSize = 10,
   preview = true,
@@ -44,6 +47,9 @@ export function FileUpload({
     // Validate file size
     if (file.size > maxSize * 1024 * 1024) {
       setError(`File size must be less than ${maxSize}MB`)
+      setFileName(null)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+      onFileClear?.()
       return
     }
 
@@ -68,6 +74,7 @@ export function FileUpload({
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
+    onFileClear?.()
   }
 
   return (

@@ -800,8 +800,9 @@ function LawyerProfileContent() {
                   Please upload a clear scan or photo of your Bar License. Our admins will use this to verify your account.
                 </p>
                 <div className="max-w-md">
-                    <FileUpload 
-                        onFileSelect={(file) => setLicenseFile(file)} 
+                    <FileUpload
+                        onFileSelect={(file) => setLicenseFile(file)}
+                        onFileClear={() => setLicenseFile(null)}
                         currentImageUrl={licenseUrl || undefined}
                         label="Upload or replace your license document"
                     />

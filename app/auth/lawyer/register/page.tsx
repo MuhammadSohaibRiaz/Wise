@@ -63,7 +63,7 @@ export default function LawyerRegisterPage() {
       return
     }
 
-    if (!licenseFile) {
+    if (!licenseFile || licenseFile.size <= 0) {
       showError("Please upload your bar license document before creating your account.")
       return
     }
@@ -268,6 +268,7 @@ export default function LawyerRegisterPage() {
                 setLicenseFile(file)
                 window.setTimeout(() => submitButtonRef.current?.focus(), 0)
               }}
+              onFileClear={() => setLicenseFile(null)}
               accept="image/*,.pdf"
             />
           </div>
@@ -296,7 +297,12 @@ export default function LawyerRegisterPage() {
             />
           </div>
 
-          <Button ref={submitButtonRef} type="submit" className="w-full" disabled={isLoading}>
+          <Button
+            ref={submitButtonRef}
+            type="submit"
+            className="w-full"
+            disabled={isLoading || !licenseFile}
+          >
             {isLoading ? <Loader2 className="animate-spin" /> : "Create Account"}
           </Button>
         </form>
