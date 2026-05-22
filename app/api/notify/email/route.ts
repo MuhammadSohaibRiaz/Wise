@@ -71,6 +71,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const supabase = createAdminClient()
+    const deliverEmail = async (params: Parameters<typeof sendEmail>[0]) => {
+      const ok = await sendEmail(params)
+      if (!ok) {
+        throw new Error(`Failed to send email to ${params.to}`)
+      }
+    }
 
     // All user-provided template variables must be escaped before entering HTML.
     // The email body builder handles layout only; this route owns data safety.
@@ -97,7 +103,7 @@ export async function POST(req: NextRequest) {
         )
         const safeCaseTitle = escapeHtml(case_title || "your case")
 
-        await sendEmail({
+        await deliverEmail({
           to: clientRes.data.email,
           subject: "Action Required: Your lawyer has requested case completion",
           html: buildEmailHtml({
@@ -133,7 +139,7 @@ export async function POST(req: NextRequest) {
         const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
         const formattedTime = scheduled_at ? escapeHtml(formatAppointmentDateTime(scheduled_at) || scheduled_at) : "the selected time"
 
-        await sendEmail({
+        await deliverEmail({
           to: lawyerRes.data.email,
           subject: "New appointment request",
           html: buildEmailHtml({
@@ -168,7 +174,7 @@ export async function POST(req: NextRequest) {
         )
         const safeCaseTitle = escapeHtml(case_title || "your case")
 
-        await sendEmail({
+        await deliverEmail({
           to: clientRes.data.email,
           subject: "Your consultation request has been accepted",
           html: buildEmailHtml({
@@ -203,7 +209,7 @@ export async function POST(req: NextRequest) {
         )
         const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
 
-        await sendEmail({
+        await deliverEmail({
           to: clientRes.data.email,
           subject: "Your consultation request was declined",
           html: buildEmailHtml({
@@ -232,7 +238,7 @@ export async function POST(req: NextRequest) {
 
         const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
 
-        await sendEmail({
+        await deliverEmail({
           to: profile.email,
           subject: "Payment Confirmed — Consultation Scheduled",
           html: buildEmailHtml({
@@ -261,7 +267,7 @@ export async function POST(req: NextRequest) {
 
         const safeFirstName = profile.first_name ? escapeHtml(profile.first_name) : ""
 
-        await sendEmail({
+        await deliverEmail({
           to: profile.email,
           subject: "Your WiseCase account has been verified",
           html: buildEmailHtml({
@@ -288,7 +294,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Lawyer email not found" }, { status: 404 })
         }
 
-        await sendEmail({
+        await deliverEmail({
           to: profile.email,
           subject: "Action Required: License verification unsuccessful",
           html: buildEmailHtml({
@@ -320,7 +326,7 @@ export async function POST(req: NextRequest) {
         const safeActorName = escapeHtml(actor_name || "The other party")
         const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
 
-        await sendEmail({
+        await deliverEmail({
           to: profile.email,
           subject: "Your appointment has been rescheduled",
           html: buildEmailHtml({
@@ -351,7 +357,7 @@ export async function POST(req: NextRequest) {
         const safeActorName = escapeHtml(actor_name || "The other party")
         const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
 
-        await sendEmail({
+        await deliverEmail({
           to: profile.email,
           subject: "Appointment Cancelled",
           html: buildEmailHtml({
@@ -400,7 +406,7 @@ export async function POST(req: NextRequest) {
           ? `Your cancellation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} was rejected by WiseCase admin. The appointment remains active.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""} Please attend your appointment as planned.`
           : `${requesterPhrase}${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} was rejected by WiseCase admin. The appointment remains active.${safeReason ? `<br><br><strong>Admin note:</strong> ${safeReason}` : ""}`
 
-        await sendEmail({
+        await deliverEmail({
           to: profile.email,
           subject: isApproved ? "Cancellation Approved" : "Cancellation Rejected",
           html: buildEmailHtml({
@@ -438,7 +444,7 @@ export async function POST(req: NextRequest) {
           ? `The client's payment${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} (${safeCurrency} ${safeAmount}) has been refunded to their original payment method after the cancelled consultation.`
           : `Your payment${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} of <strong>${safeCurrency} ${safeAmount}</strong> has been refunded to your original payment method. It may take a few business days to appear on your statement.`
 
-        await sendEmail({
+        await deliverEmail({
           to: profile.email,
           subject: isLawyer ? "Client payment refunded" : "Your refund has been issued",
           html: buildEmailHtml({
