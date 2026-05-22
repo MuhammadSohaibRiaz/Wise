@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Star, Loader2, MessageSquare } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
+import { ReviewModal } from "@/components/client/review-modal"
 
 interface Review {
   id: string
@@ -37,6 +38,8 @@ interface PendingReview {
 export default function ReviewsPage() {
   const [submittedReviews, setSubmittedReviews] = useState<Review[]>([])
   const [pendingReviews, setPendingReviews] = useState<PendingReview[]>([])
+  const [activeReview, setActiveReview] = useState<PendingReview | null>(null)
+  const [clientId, setClientId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const { toast } = useToast()
 
@@ -55,6 +58,7 @@ export default function ReviewsPage() {
           })
           return
         }
+        setClientId(session.user.id)
 
         // Fetch submitted reviews
         const { data: reviewsData, error: reviewsError } = await supabase
@@ -195,7 +199,7 @@ export default function ReviewsPage() {
                         </p>
                       </div>
                     </div>
-                    <Button>Leave Review</Button>
+                    <Button onClick={() => setActiveReview(item)}>Leave Review</Button>
                   </div>
                 </CardContent>
               </Card>
@@ -254,6 +258,21 @@ export default function ReviewsPage() {
           </div>
         )}
       </section>
+
+      {activeReview && clientId && (
+        <ReviewModal
+          isOpen={!!activeReview}
+          onClose={() => setActiveReview(null)}
+          caseId={activeReview.case_id}
+          lawyerId={activeReview.lawyer_id}
+          clientId={clientId}
+          persistSkipOnDismiss={false}
+          onSuccess={() => {
+            setPendingReviews((items) => items.filter((item) => item.case_id !== activeReview.case_id))
+            setActiveReview(null)
+          }}
+        />
+      )}
     </main>
   )
 }

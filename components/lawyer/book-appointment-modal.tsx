@@ -248,6 +248,9 @@ export function BookAppointmentModal({
   }, [selectedDate, duration, lawyerId, supabase, toast])
 
   const handleRequestAppointment = async () => {
+    if (isLoading) return
+    setIsLoading(true)
+
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -260,6 +263,7 @@ export function BookAppointmentModal({
       })
       onOpenChange(false)
       redirectToSignIn()
+      setIsLoading(false)
       return
     }
 
@@ -276,6 +280,7 @@ export function BookAppointmentModal({
         variant: "destructive",
       })
       onOpenChange(false)
+      setIsLoading(false)
       return
     }
 
@@ -286,6 +291,7 @@ export function BookAppointmentModal({
         variant: "destructive",
       })
       onOpenChange(false)
+      setIsLoading(false)
       return
     }
 
@@ -295,6 +301,7 @@ export function BookAppointmentModal({
         description: "Please fill in all required fields.",
         variant: "destructive",
       })
+      setIsLoading(false)
       return
     }
 
@@ -306,6 +313,7 @@ export function BookAppointmentModal({
       })
       onOpenChange(false)
       redirectToSignIn()
+      setIsLoading(false)
       return
     }
 
@@ -316,14 +324,13 @@ export function BookAppointmentModal({
         description: "Lawyer's consultation fee is not set. Please contact the lawyer directly.",
         variant: "destructive",
       })
+      setIsLoading(false)
       return
     }
 
     let createdCaseId: string | null = null
 
     try {
-      setIsLoading(true)
-
       // Combine date and time into the canonical timestamp stored in
       // appointments.scheduled_at.
       const [hours, minutes] = selectedTime.split(":")
