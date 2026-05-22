@@ -277,6 +277,14 @@ export default function ClientCaseDetailPage() {
     }
   }, [caseId, fetchCaseDetail])
 
+  useEffect(() => {
+    const refreshOnFocus = () => {
+      void fetchCaseDetail(true)
+    }
+    window.addEventListener("focus", refreshOnFocus)
+    return () => window.removeEventListener("focus", refreshOnFocus)
+  }, [fetchCaseDetail])
+
   useCaseDetailRealtimeSync(caseId, fetchCaseDetail)
 
   const handleConfirmCompletion = async (outcome: CaseOutcomeValue) => {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -43,22 +43,22 @@ export default function ReviewsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const { toast } = useToast()
 
-  useEffect(() => {
-    const fetchReviews = async () => {
-      try {
-        setIsLoading(true)
-        const supabase = createClient()
+  const fetchReviews = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setIsLoading(true)
+      const supabase = createClient()
 
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.user?.id) {
-          toast({
-            title: "Error",
-            description: "You must be logged in to view reviews",
-            variant: "destructive",
-          })
-          return
-        }
-        setClientId(session.user.id)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user?.id) {
+        setClientId(null)
+        toast({
+          title: "Error",
+          description: "You must be logged in to view reviews",
+          variant: "destructive",
+        })
+        return
+      }
+      setClientId(session.user.id)
 
         // Fetch submitted reviews
         const { data: reviewsData, error: reviewsError } = await supabase
@@ -119,21 +119,30 @@ export default function ReviewsPage() {
             completed_at: c.updated_at,
           }))
 
-        setPendingReviews(pending)
-      } catch (error) {
-        console.error("Error fetching reviews:", error)
-        toast({
-          title: "Error",
-          description: "Failed to load reviews",
-          variant: "destructive",
-        })
-      } finally {
-        setIsLoading(false)
-      }
+      setPendingReviews(pending)
+    } catch (error) {
+      console.error("Error fetching reviews:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load reviews",
+        variant: "destructive",
+      })
+    } finally {
+      if (!silent) setIsLoading(false)
     }
-
-    fetchReviews()
   }, [toast])
+
+  useEffect(() => {
+    fetchReviews()
+  }, [fetchReviews])
+
+  useEffect(() => {
+    const refreshOnFocus = () => {
+      void fetchReviews(true)
+    }
+    window.addEventListener("focus", refreshOnFocus)
+    return () => window.removeEventListener("focus", refreshOnFocus)
+  }, [fetchReviews])
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -270,6 +279,7 @@ export default function ReviewsPage() {
           onSuccess={() => {
             setPendingReviews((items) => items.filter((item) => item.case_id !== activeReview.case_id))
             setActiveReview(null)
+            void fetchReviews(true)
           }}
         />
       )}
