@@ -12,11 +12,7 @@ import { BookAppointmentModal } from "@/components/lawyer/book-appointment-modal
 import { createClient } from "@/lib/supabase/client"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
 import { formatSuccessRateDisplay } from "@/lib/lawyer-success-rate-display"
-import {
-  buildClientSignInToBookUrl,
-  buildMatchBookReturnUrl,
-  buildProfileBookReturnUrl,
-} from "@/lib/auth/client-booking-return"
+import { buildClientSignInToBookUrl, buildMatchBookReturnUrl } from "@/lib/auth/client-booking-return"
 import { markLatestDraftLawyerSelection } from "@/lib/case-drafts"
 
 interface LawyerCardProps {
@@ -201,24 +197,11 @@ export function LawyerCard({
 
         {/* Action Buttons */}
         <div className="flex gap-2 mt-auto">
-          {clientId ? (
-            <Link href={`/client/lawyer/${id}`} className="flex-1">
-              <Button variant="outline" className="w-full bg-transparent">
-                View Profile
-              </Button>
-            </Link>
-          ) : (
-            <Button
-              variant="outline"
-              className="flex-1 w-full bg-transparent"
-              onClick={(e) => {
-                e.preventDefault()
-                router.push(buildClientSignInToBookUrl(buildProfileBookReturnUrl(id)))
-              }}
-            >
+          <Link href={`/client/lawyer/${id}`} className="flex-1">
+            <Button variant="outline" className="w-full bg-transparent">
               View Profile
             </Button>
-          )}
+          </Link>
           <Button onClick={handleBookNow} className="flex-1 w-full">
             {clientId ? "Book Consultation" : "Sign in to Book"}
           </Button>
