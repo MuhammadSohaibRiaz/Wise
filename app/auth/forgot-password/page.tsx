@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/client"
+import { createImplicitAuthClient } from "@/lib/supabase/client"
 import { getPasswordResetCallbackUrl } from "@/lib/auth/redirect-urls"
 import { ArrowLeft } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
@@ -36,7 +36,7 @@ function ForgotPasswordContent() {
     setIsLoading(true)
 
     try {
-      const supabase = createClient()
+      const supabase = createImplicitAuthClient()
 
       const normalizedEmail = email.trim().toLowerCase()
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {

@@ -1,6 +1,7 @@
 import { createBrowserClient } from "@supabase/ssr"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
-export function createClient() {
+function getSupabaseBrowserEnv() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -19,5 +20,22 @@ export function createClient() {
     throw new Error("Supabase environment variables are not configured. Please update .env.local file.")
   }
 
+  return { supabaseUrl, supabaseAnonKey }
+}
+
+export function createClient() {
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseBrowserEnv()
+
   return createBrowserClient(supabaseUrl, supabaseAnonKey)
+}
+
+export function createImplicitAuthClient() {
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseBrowserEnv()
+
+  return createSupabaseClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      flowType: "implicit",
+      detectSessionInUrl: false,
+    },
+  })
 }
