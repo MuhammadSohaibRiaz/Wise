@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 
+import { REFUND_ARRIVAL_MESSAGE } from "@/lib/admin/cancellation-messages"
 import {
   fetchCompletedPaymentForCase,
   isStripeAlreadyRefundedError,
   markPaymentRefunded,
-  REFUND_ARRIVAL_MESSAGE,
-  syncPaymentRefundedFromStripe,
 } from "@/lib/admin/cancellation-refund"
+import { syncPaymentRefundedFromStripe } from "@/lib/admin/cancellation-stripe-sync"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"

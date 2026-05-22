@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { formatCurrency } from "@/lib/currency"
-import { REFUND_ARRIVAL_MESSAGE } from "@/lib/admin/cancellation-refund"
+import { REFUND_ARRIVAL_MESSAGE } from "@/lib/admin/cancellation-messages"
 
 function CopyIdLine({ label, value }: { label: string; value: string }) {
   const { toast } = useToast()

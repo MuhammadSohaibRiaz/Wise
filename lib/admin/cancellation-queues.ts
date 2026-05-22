@@ -1,11 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { CancellationRequester } from "@/lib/appointments/cancellation-request"
-import {
-  fetchCompletedPaymentForCase,
-  syncPaymentRefundedFromStripe,
-  type PaymentSummary,
-} from "@/lib/admin/cancellation-refund"
+import { fetchCompletedPaymentForCase, type PaymentSummary } from "@/lib/admin/cancellation-refund"
+import { syncPaymentRefundedFromStripe } from "@/lib/admin/cancellation-stripe-sync"
 
 export type AdminCancellationRequest = {
   id: string

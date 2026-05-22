@@ -15,3 +15,4 @@ export function formatRescheduleModalHint(rescheduleCount: number): string {
 
 export const MAX_RESCHEDULES_MESSAGE =
   "Maximum reschedules reached. Please attend or contact support to cancel."
+  
