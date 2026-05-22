@@ -34,6 +34,8 @@ interface LawyerCardProps {
   verified: boolean
   availability_status: string | null
   recommendationReason?: string | null
+  /** When true (match page + lawyer viewer), hide View Profile / Book actions. */
+  hideActionsForLawyerViewer?: boolean
 }
 
 export function LawyerCard({
@@ -51,6 +53,7 @@ export function LawyerCard({
   verified,
   availability_status,
   recommendationReason,
+  hideActionsForLawyerViewer = false,
 }: LawyerCardProps) {
   const ratingDisplay = formatLawyerRatingLabel(normalizeLawyerAverageRating(average_rating))
   const successDisplay = formatSuccessRateDisplay(total_cases, success_rate)
@@ -97,6 +100,7 @@ export function LawyerCard({
   }
 
   const showBookButton = !userId || isClient
+  const showActionButtons = !hideActionsForLawyerViewer
 
   return (
     <>
@@ -213,19 +217,20 @@ export function LawyerCard({
         {/* Spacer to push buttons to bottom */}
         <div className="flex-grow" />
 
-        {/* Action Buttons */}
-        <div className="flex gap-2 mt-auto">
-          <Link href={`/client/lawyer/${id}`} className={showBookButton ? "flex-1" : "w-full"}>
-            <Button variant="outline" className="w-full bg-transparent">
-              View Profile
-            </Button>
-          </Link>
-          {showBookButton ? (
-            <Button onClick={handleBookNow} className="flex-1 w-full">
-              {isClient ? "Book Consultation" : "Sign in to Book"}
-            </Button>
-          ) : null}
-        </div>
+        {showActionButtons ? (
+          <div className="flex gap-2 mt-auto">
+            <Link href={`/client/lawyer/${id}`} className={showBookButton ? "flex-1" : "w-full"}>
+              <Button variant="outline" className="w-full bg-transparent">
+                View Profile
+              </Button>
+            </Link>
+            {showBookButton ? (
+              <Button onClick={handleBookNow} className="flex-1 w-full">
+                {isClient ? "Book Consultation" : "Sign in to Book"}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {isClient && userId && (

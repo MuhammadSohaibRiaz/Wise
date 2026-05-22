@@ -391,6 +391,7 @@ function MatchPageInner() {
                           caseType: filters.specializations[0] ?? null,
                           totalCases: lawyer.total_cases,
                         })}
+                        hideActionsForLawyerViewer={userType === "lawyer"}
                       />
                     ))}
                   </div>

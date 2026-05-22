@@ -829,7 +829,11 @@ export function Chat({ onClose }: { onClose: () => void }) {
         {messages.map((m) => {
           if ((m as any).role === 'assistant') {
             const txt = getMessageText(m as any);
-            const stripped = txt.replace(/\[NAVIGATE:.*?\]/g, '').replace(/\[VIEW_ANALYSIS:.*?\]/g, '').replace(/\[ACTION:.*?:.*?\]/g, '').trim();
+            const stripped = txt
+              .replace(/\[NAVIGATE:.*?\]/g, '')
+              .replace(/\[VIEW_ANALYSIS:.*?\]/g, '')
+              .replace(/\[ACTION:.*?:.*?\]/g, '')
+              .trim();
             if (!stripped && !getToolSummary(m as any)) return null;
           }
           return (
@@ -858,15 +862,29 @@ export function Chat({ onClose }: { onClose: () => void }) {
                   .replace(/\[VIEW_ANALYSIS:(.*?)\]/g, '')
                   .replace(/\[ACTION:.*?:.*?\]/g, ''); 
 
-                const actionMarkers = [...rawText.matchAll(/\[ACTION:(.*?):(.*?)\]/g)].map(match => ({
-                  label: match[1],
-                  path: match[2]
-                })).filter((a) => isAllowedAction(a.label, a.path));
+                const actionMarkers = [...rawText.matchAll(/\[ACTION:(.*?):(.*?)\]/g)]
+                  .map((match) => ({
+                    label: match[1],
+                    path: match[2],
+                  }))
+                  .filter((a) => {
+                    if (
+                      chatRole === "lawyer" &&
+                      /view\s*profile/i.test(a.label) &&
+                      a.path.startsWith("/client/lawyer/")
+                    ) {
+                      return false
+                    }
+                    return isAllowedAction(a.label, a.path)
+                  });
 
                 const cleanText = withVisibleLinks.trim();
                 const toolSummary = getToolSummary(m as any);
                 const navPath = getNavigatePath(m as any);
-                const profileFromSearch = (m as any).role === "assistant" ? getLawyerProfileHrefFromMessage(m) : null;
+                const profileFromSearch =
+                  (m as any).role === "assistant" && chatRole !== "lawyer"
+                    ? getLawyerProfileHrefFromMessage(m)
+                    : null;
                 const viewAnalysisId = rawText.match(/\[VIEW_ANALYSIS:(.*?)\]/)?.[1];
                 const renderedText = cleanText || toolSummary || '';
                 const isAutoNavMessage = isExplicitNavigationText(cleanText);

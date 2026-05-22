@@ -2,6 +2,10 @@ import { createClient } from "@/lib/supabase/server";
 import { tool } from "ai";
 import { z } from "zod";
 import { searchLawyersFromSupabase } from "@/lib/lawyer-search";
+import {
+  applyProfileUpdate,
+  normalizeYearsExperience,
+} from "@/lib/ai/profile-update-from-message";
 
 export const tools = {
   getProfileStatus: tool({
@@ -76,38 +80,12 @@ export const tools = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return { error: "Not logged in." };
 
-      const profileUpdates: Record<string, unknown> = {};
-      if (input.firstName) profileUpdates.first_name = input.firstName;
-      if (input.lastName) profileUpdates.last_name = input.lastName;
-      if (input.phone) profileUpdates.phone = input.phone;
-      if (input.bio) profileUpdates.bio = input.bio;
-      if (input.location) profileUpdates.location = input.location;
-
-      const consultationFee = input.hourlyRate ?? input.consultationFee;
-      const yearsExperience =
-        input.yearsExperience != null ? Math.max(0, Math.round(input.yearsExperience)) : undefined;
-
-      const lawyerUpdates: Record<string, unknown> = {};
-      if (input.specializations) lawyerUpdates.specializations = input.specializations;
-      if (consultationFee != null && consultationFee > 0) lawyerUpdates.hourly_rate = consultationFee;
-      if (yearsExperience != null) lawyerUpdates.years_of_experience = yearsExperience;
-      if (input.licenseNumber) lawyerUpdates.bar_license_number = input.licenseNumber;
-
-      if (Object.keys(profileUpdates).length === 0 && Object.keys(lawyerUpdates).length === 0) {
-        return { error: "No valid profile fields provided for update." };
-      }
-
-      if (Object.keys(profileUpdates).length > 0) {
-        const { error } = await supabase.from('profiles').update(profileUpdates).eq('id', user.id);
-        if (error) return { error: `Profile update failed: ${error.message}` };
-      }
-
-      if (Object.keys(lawyerUpdates).length > 0) {
-        const { error } = await supabase.from('lawyer_profiles').update(lawyerUpdates).eq('id', user.id);
-        if (error) return { error: `Lawyer profile update failed: ${error.message}` };
-      }
-
-      return { success: true, message: "Profile updated successfully." };
+      const result = await applyProfileUpdate(supabase, user.id, {
+        ...input,
+        yearsExperience: normalizeYearsExperience(input.yearsExperience),
+      });
+      if (!result.success) return { error: result.error || "Update failed." };
+      return { success: true, message: result.message };
     },
   }),
 

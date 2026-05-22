@@ -5,6 +5,7 @@ import { tools } from "@/lib/ai/tools";
 import { extractCaseIdFromPath } from "@/lib/chat-case-context";
 import { applySimpleRateLimit } from "@/lib/rate-limit";
 import { stripPseudoToolCalls } from "@/lib/chat/sanitize-assistant-text";
+import { tryApplyProfileUpdateFromUserMessage } from "@/lib/ai/profile-update-from-message";
 
 export const runtime = "nodejs";
 
@@ -179,7 +180,27 @@ export async function POST(req: Request) {
     const currencyContext =
       "\n[CURRENCY] All WiseCase lawyer consultation fees and payments are in Pakistani Rupees (PKR) only. Never use USD or the $ symbol for platform fees. When searchLawyers returns consultation_fee_display, use that exact wording.";
 
-    const systemPrompt = `${systemMessage.content}\n\n${authContext}${currencyContext}${pageContext}`;
+    let profileUpdateContext = "";
+    let profilePreAppliedSummary = "";
+    if (user) {
+      const lastUserMessage = messages[messages.length - 1];
+      const userText =
+        lastUserMessage?.role === "user" ? extractTextFromUiMessage(lastUserMessage) : "";
+      if (userText) {
+        const preApply = await tryApplyProfileUpdateFromUserMessage(supabase, user.id, userText);
+        if (preApply.contextLine) {
+          profileUpdateContext = `\n${preApply.contextLine}`;
+          if (preApply.applied) {
+            profilePreAppliedSummary = preApply.contextLine;
+          }
+          console.log(
+            `[Chat:API]   profile pre-apply → ${preApply.applied ? "saved" : "skipped/failed"}`,
+          );
+        }
+      }
+    }
+
+    const systemPrompt = `${systemMessage.content}\n\n${authContext}${profileUpdateContext}${currencyContext}${pageContext}`;
 
     const useTools = !!user;
     console.log(`[Chat:API]   streaming → tools=${useTools} | model=llama-3.3-70b-versatile | systemPromptLen=${systemPrompt.length}`);
@@ -190,7 +211,28 @@ export async function POST(req: Request) {
         system: systemPrompt,
         messages: modelMessages,
         ...(useTools ? { tools, stopWhen: stepCountIs(3) } : {}),
-        onFinish: async ({ text, toolCalls, toolResults }) => saveChatMessages(text, toolCalls, toolResults),
+        onFinish: async ({ text, toolCalls, toolResults }) => {
+          let finalText = stripPseudoToolCalls(text);
+          if (
+            profilePreAppliedSummary &&
+            (!finalText || /<function\s*\(/i.test(text) || /updateProfile/i.test(text))
+          ) {
+            const role =
+              (
+                await supabase.from("profiles").select("user_type").eq("id", user!.id).maybeSingle()
+              ).data?.user_type === "lawyer"
+                ? "lawyer"
+                : "client";
+            finalText =
+              "Your profile has been updated with the details you provided. " +
+              "Experience is stored in whole years (extra months are not counted separately).";
+            finalText +=
+              role === "lawyer"
+                ? "\n\n[ACTION:Edit Profile:/lawyer/profile]"
+                : "\n\n[ACTION:Settings:/client/settings]";
+          }
+          await saveChatMessages(finalText, toolCalls, toolResults);
+        },
       });
       console.log(`[Chat:API]   streamText → ok (${Date.now() - t0}ms)`);
     } catch (toolError: any) {
