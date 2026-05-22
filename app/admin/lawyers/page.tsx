@@ -10,7 +10,16 @@ import { useToast } from "@/hooks/use-toast"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AdminHeader } from "@/components/admin/admin-header"
 import { Input } from "@/components/ui/input"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { useRouter } from "next/navigation"
+import { adminLicenseViewUrl } from "@/lib/storage/verification-storage"
 
 interface PendingLawyer {
   id: string
@@ -42,6 +51,7 @@ export default function AdminVerificationPage() {
   const [isProcessing, setIsProcessing] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  const [rejectTarget, setRejectTarget] = useState<PendingLawyer | null>(null)
   const { toast } = useToast()
   const supabase = createClient()
   const router = useRouter()
@@ -167,8 +177,9 @@ export default function AdminVerificationPage() {
       setLawyers(lawyers.filter(l => l.id !== lawyerId))
 
       toast({
-        title: "Lawyer Verified",
-        description: "The lawyer has been successfully verified.",
+        variant: "success",
+        title: "Lawyer approved",
+        description: "The lawyer is verified and can appear in client search.",
       })
     } catch (error) {
       console.error("Verification error:", error)
@@ -182,11 +193,9 @@ export default function AdminVerificationPage() {
     }
   }
 
-  const handleReject = async (lawyerId: string) => {
-    if (!confirm("Are you sure you want to reject this lawyer verification? The account will remain, but verification will be marked as rejected.")) return
-
+  const handleReject = async (lawyer: PendingLawyer) => {
     try {
-      setIsProcessing(lawyerId)
+      setIsProcessing(lawyer.id)
 
       const { error } = await supabase
         .from("lawyer_profiles")
@@ -195,33 +204,32 @@ export default function AdminVerificationPage() {
           verification_status: "rejected",
           verified_at: null,
         })
-        .eq("id", lawyerId)
+        .eq("id", lawyer.id)
 
       if (error) throw error
 
       const { data: { user } } = await supabase.auth.getUser()
       await supabase.from("notifications").insert({
-        user_id: lawyerId,
-        created_by: user?.id ?? lawyerId,
+        user_id: lawyer.id,
+        created_by: user?.id ?? lawyer.id,
         type: "system",
         title: "Verification Rejected",
         description: "Your verification was rejected. Please review your profile and upload updated license documents to request another review.",
         data: { verification_status: "rejected" },
       })
 
-      // Email notification sent to lawyer — see /api/notify/email
       fetch("/api/notify/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ template: "verification_rejected", data: { lawyer_id: lawyerId } }),
+        body: JSON.stringify({ template: "verification_rejected", data: { lawyer_id: lawyer.id } }),
       }).catch(() => {})
 
-      setLawyers(lawyers.filter(l => l.id !== lawyerId))
+      setLawyers(lawyers.filter((l) => l.id !== lawyer.id))
+      setRejectTarget(null)
 
       toast({
-        title: "Lawyer Rejected",
-        description: "The lawyer has been marked as rejected and notified.",
-        variant: "destructive"
+        title: "Verification rejected",
+        description: `${lawyer.first_name} ${lawyer.last_name} was notified and can resubmit documents.`,
       })
     } catch (error) {
       console.error("Rejection error:", error)
@@ -414,7 +422,7 @@ export default function AdminVerificationPage() {
                           <Button
                             variant="outline"
                             className="flex-1 text-xs border-primary text-primary hover:bg-primary/5"
-                            onClick={() => window.open(lawyer.lawyer_profile.license_file_url, '_blank')}
+                            onClick={() => window.open(adminLicenseViewUrl(lawyer.id), "_blank", "noopener,noreferrer")}
                           >
                             <ExternalLink className="h-3 w-3 mr-1.5" />
                             View License
@@ -427,7 +435,7 @@ export default function AdminVerificationPage() {
                         <Button
                           variant="outline"
                           className="flex-1 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-                          onClick={() => handleReject(lawyer.id)}
+                          onClick={() => setRejectTarget(lawyer)}
                           disabled={isProcessing === lawyer.id}
                         >
                           Reject
@@ -441,6 +449,47 @@ export default function AdminVerificationPage() {
           </div>
         )}
       </main>
+
+      <Dialog
+        open={!!rejectTarget}
+        onOpenChange={(open) => {
+          if (!open) setRejectTarget(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reject lawyer verification</DialogTitle>
+            <DialogDescription>
+              {rejectTarget ? (
+                <>
+                  Reject verification for{" "}
+                  <strong>
+                    {rejectTarget.first_name} {rejectTarget.last_name}
+                  </strong>
+                  ? Their account stays active; they can upload a new license and request review again.
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setRejectTarget(null)} disabled={!!isProcessing}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!rejectTarget || isProcessing === rejectTarget?.id}
+              onClick={() => rejectTarget && void handleReject(rejectTarget)}
+            >
+              {rejectTarget && isProcessing === rejectTarget.id ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <XCircle className="h-4 w-4 mr-2" />
+              )}
+              Reject verification
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
