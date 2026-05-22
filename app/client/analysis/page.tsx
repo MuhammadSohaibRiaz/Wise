@@ -29,6 +29,55 @@ type QueuedAnalysisJob = {
   } | null
 }
 
+function normalizeAnalysisForView(
+  raw: Record<string, unknown>,
+  documentUrl?: string,
+  meta?: {
+    lowConfidence?: boolean
+    groundingPassed?: boolean
+    groundingWarnings?: string[]
+    positionScore?: number
+  },
+) {
+  let normalizedRecommendations: string[] = []
+  if (Array.isArray(raw.recommendations)) {
+    normalizedRecommendations = raw.recommendations as string[]
+  } else if (typeof raw.recommendations === "string") {
+    try {
+      const parsed = JSON.parse(raw.recommendations)
+      normalizedRecommendations = Array.isArray(parsed) ? parsed : [raw.recommendations]
+    } catch {
+      normalizedRecommendations = raw.recommendations ? [raw.recommendations] : []
+    }
+  }
+
+  return {
+    summary: String(raw.summary ?? ""),
+    key_terms: Array.isArray(raw.key_terms) ? (raw.key_terms as string[]) : [],
+    risk_assessment: String(raw.risk_assessment ?? ""),
+    risk_level: (raw.risk_level as string) ?? "Medium",
+    urgency: (raw.urgency as string) ?? "Normal",
+    seriousness: (raw.seriousness as string) ?? "Moderate",
+    recommendations:
+      normalizedRecommendations.length > 0
+        ? normalizedRecommendations
+        : ["Review the full analysis and consult a lawyer if needed."],
+    category: String(raw.category ?? "General"),
+    is_legal_document: raw.is_legal_document,
+    legal_citations: Array.isArray(raw.legal_citations) ? (raw.legal_citations as string[]) : [],
+    disclaimer: String(raw.disclaimer ?? ""),
+    document_url: documentUrl,
+    position_score:
+      meta?.positionScore ??
+      (typeof raw.position_score === "number" ? raw.position_score : undefined),
+    grounding_passed:
+      meta?.groundingPassed ??
+      (typeof raw.grounding_passed === "boolean" ? raw.grounding_passed : undefined),
+    low_confidence: meta?.lowConfidence,
+    grounding_warnings: meta?.groundingWarnings,
+  }
+}
+
 async function pollAnalysisJob(jobId: string, signal?: AbortSignal): Promise<QueuedAnalysisJob> {
   const maxAttempts = 150
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -93,34 +142,9 @@ function AICaseAnalysisContent() {
 
       // Booking reads `case_drafts` + optional session fallback in `BookAppointmentModal`.
 
-      // Normalize DB shape to the UI shape expected by `AnalysisResultsView`
-      let normalizedRecommendations: any[] = []
-      if (Array.isArray((analysis as any).recommendations)) {
-        normalizedRecommendations = (analysis as any).recommendations
-      } else if (typeof (analysis as any).recommendations === "string") {
-        const raw = (analysis as any).recommendations
-        try {
-          const parsed = JSON.parse(raw)
-          normalizedRecommendations = Array.isArray(parsed) ? parsed : [raw]
-        } catch {
-          normalizedRecommendations = raw ? [raw] : []
-        }
-      }
-
-      setAnalysisResult({
-        summary: (analysis as any).summary ?? "",
-        key_terms: Array.isArray((analysis as any).key_terms) ? (analysis as any).key_terms : [],
-        risk_assessment: (analysis as any).risk_assessment ?? "",
-        risk_level: (analysis as any).risk_level ?? "Medium",
-        urgency: (analysis as any).urgency ?? "Normal",
-        seriousness: (analysis as any).seriousness ?? "Moderate",
-        recommendations: normalizedRecommendations.length > 0 ? normalizedRecommendations : ["Review the full analysis and consult a lawyer if needed."],
-        category: (analysis as any).category ?? "General",
-        is_legal_document: (analysis as any).is_legal_document,
-        legal_citations: (analysis as any).legal_citations ?? [],
-        disclaimer: (analysis as any).disclaimer ?? "",
-        document_url: documentViewUrl(docId),
-      })
+      setAnalysisResult(
+        normalizeAnalysisForView(analysis as Record<string, unknown>, documentViewUrl(docId)),
+      )
       
       // Fetch matching lawyers based on the category stored in analysis (if any)
       // For now, we'll trigger the match logic or just fetch lawyers
@@ -221,16 +245,41 @@ function AICaseAnalysisContent() {
       let analysisPayload: Record<string, unknown> = (data.analysis || {}) as Record<string, unknown>
       let recommended = (data.recommendedLawyers || []) as unknown[]
       let isLegalDocument = data.isLegalDocument !== false
+      let meta: {
+        lowConfidence?: boolean
+        groundingPassed?: boolean
+        groundingWarnings?: string[]
+        positionScore?: number
+      } = {
+        lowConfidence: data.lowConfidence,
+        groundingPassed: data.groundingPassed,
+        groundingWarnings: data.groundingWarnings,
+        positionScore: data.positionScore,
+      }
 
       if (data.queued && data.jobId) {
         const job = await pollAnalysisJob(data.jobId as string)
         if (job.status === "failed") {
           throw new Error(job.error_message || "Analysis did not complete successfully.")
         }
-        const payload = job.result_payload
+        const payload = job.result_payload as {
+          analysis?: Record<string, unknown>
+          recommendedLawyers?: unknown[]
+          isLegalDocument?: boolean
+          lowConfidence?: boolean
+          groundingPassed?: boolean
+          groundingWarnings?: string[]
+          positionScore?: number
+        } | null
         analysisPayload = (payload?.analysis || {}) as Record<string, unknown>
         recommended = (payload?.recommendedLawyers || []) as unknown[]
         isLegalDocument = payload?.isLegalDocument !== false
+        meta = {
+          lowConfidence: payload?.lowConfidence,
+          groundingPassed: payload?.groundingPassed,
+          groundingWarnings: payload?.groundingWarnings,
+          positionScore: payload?.positionScore,
+        }
       }
 
       if (isLegalDocument === false) {
@@ -242,10 +291,9 @@ function AICaseAnalysisContent() {
         })
       }
 
-      setAnalysisResult({
-        ...analysisPayload,
-        document_url: documentViewUrl(documentId),
-      })
+      setAnalysisResult(
+        normalizeAnalysisForView(analysisPayload, documentViewUrl(documentId), meta),
+      )
       setRecommendedLawyers(recommended)
       
       toast({

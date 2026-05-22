@@ -68,7 +68,11 @@ export async function POST(req: NextRequest) {
         .single()
 
       if (analysis) {
-        const recommendedLawyers = await matchLawyersWithCategory(supabase, analysis.summary || "")
+        const matchCategory =
+          analysis.category && analysis.category !== "Non-Legal"
+            ? String(analysis.category)
+            : analysis.summary || ""
+        const recommendedLawyers = await matchLawyersWithCategory(supabase, matchCategory)
         return NextResponse.json({
           success: true,
           analysis,
@@ -121,6 +125,9 @@ export async function POST(req: NextRequest) {
       isLegalDocument: result.isLegalDocument,
       lowConfidence: result.lowConfidence,
       confidenceScore: result.confidenceScore,
+      groundingPassed: result.groundingPassed,
+      groundingWarnings: result.groundingWarnings,
+      positionScore: result.positionScore,
       async: false,
     })
   } catch (error: unknown) {

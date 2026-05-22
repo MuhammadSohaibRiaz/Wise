@@ -7,6 +7,8 @@ interface CaseStrengthMeterProps {
   riskLevel: "Low" | "Medium" | "High"
   urgency: "Normal" | "Urgent" | "Immediate"
   seriousness: "Low" | "Moderate" | "Critical"
+  /** Server-computed score when available; falls back to risk/urgency formula. */
+  scoreOverride?: number
 }
 
 const RISK_SCORES: Record<string, number> = { Low: 70, Medium: 45, High: 20 }
@@ -27,8 +29,16 @@ const RADIUS = 54
 const STROKE = 10
 const CIRCUMFERENCE = Math.PI * RADIUS
 
-export function CaseStrengthMeter({ riskLevel, urgency, seriousness }: CaseStrengthMeterProps) {
-  const score = computeScore(riskLevel, urgency, seriousness)
+export function CaseStrengthMeter({
+  riskLevel,
+  urgency,
+  seriousness,
+  scoreOverride,
+}: CaseStrengthMeterProps) {
+  const score =
+    scoreOverride != null && Number.isFinite(scoreOverride)
+      ? Math.min(100, Math.max(0, Math.round(scoreOverride)))
+      : computeScore(riskLevel, urgency, seriousness)
   const config = getScoreConfig(score)
   const [animatedOffset, setAnimatedOffset] = useState(CIRCUMFERENCE)
 

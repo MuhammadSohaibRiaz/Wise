@@ -21,6 +21,10 @@ interface AnalysisResultsViewProps {
     legal_citations?: string[]
     disclaimer?: string
     document_url?: string
+    position_score?: number
+    grounding_passed?: boolean
+    low_confidence?: boolean
+    grounding_warnings?: string[]
   }
 }
 
@@ -52,12 +56,23 @@ export function AnalysisResultsView({ analysis }: AnalysisResultsViewProps) {
               riskLevel={analysis.risk_level || "Medium"}
               urgency={analysis.urgency || "Normal"}
               seriousness={analysis.seriousness || "Moderate"}
+              scoreOverride={analysis.position_score}
             />
             <div className="flex-1 text-center sm:text-left">
               <h3 className="text-lg font-semibold">Case Strength Analysis</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Calculated from risk level, urgency, and seriousness of your document. A higher score indicates a stronger legal position.
+                Reflects document clarity, grounded facts, and supporting evidence. This is not a win/loss prediction — consult a lawyer for strategy.
               </p>
+              {analysis.low_confidence && (
+                <p className="text-sm text-amber-700 dark:text-amber-400 mt-2">
+                  Low confidence: some details could not be fully verified against your document text.
+                </p>
+              )}
+              {analysis.grounding_passed === false && !analysis.low_confidence && (
+                <p className="text-sm text-amber-700 dark:text-amber-400 mt-2">
+                  Summary was adjusted to facts found in your uploaded document.
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
