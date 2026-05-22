@@ -11,6 +11,10 @@ import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { PaymentButton } from "@/components/payments/payment-button"
 import { appointmentStatusLabel } from "@/lib/appointments-status"
+import {
+  getPayablePendingPaymentIds,
+  normalizePaymentAppointment,
+} from "@/lib/payments/payment-display"
 
 interface Payment {
   id: string
@@ -32,17 +36,6 @@ interface Payment {
     first_name: string | null
     last_name: string | null
   } | null
-}
-
-function normalizeAppointmentRelation(raw: unknown): Payment["appointment"] {
-  if (!raw) return null
-  const row = Array.isArray(raw) ? raw[0] : raw
-  if (!row || typeof row !== "object") return null
-  const value = row as Record<string, unknown>
-  return {
-    id: String(value.id ?? ""),
-    status: String(value.status ?? ""),
-  }
 }
 
 const statusConfig: Record<Payment["status"], { label: string; className: string }> = {
@@ -132,7 +125,7 @@ export default function PaymentsPage() {
 
       const fetchedPayments = ((data || []) as Payment[]).map((payment) => ({
         ...payment,
-        appointment: normalizeAppointmentRelation(payment.appointment),
+        appointment: normalizePaymentAppointment(payment.appointment),
       }))
       setPayments(fetchedPayments)
 
@@ -360,27 +353,6 @@ export default function PaymentsPage() {
       </section>
     </main>
   )
-}
-
-function getPayablePendingPaymentIds(payments: Payment[]): Set<string> {
-  const payableIds = new Set<string>()
-  const seenAwaitingAppointmentIds = new Set<string>()
-
-  for (const payment of payments) {
-    if (
-      payment.status !== "pending" ||
-      !payment.appointment_id ||
-      payment.appointment?.status !== "awaiting_payment"
-    ) {
-      continue
-    }
-
-    if (seenAwaitingAppointmentIds.has(payment.appointment_id)) continue
-    seenAwaitingAppointmentIds.add(payment.appointment_id)
-    payableIds.add(payment.id)
-  }
-
-  return payableIds
 }
 
 function buildReceiptPdf(payment: Payment): Uint8Array {

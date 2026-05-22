@@ -160,9 +160,11 @@ export function canMarkConsultationHeld(
   status: string,
   scheduledAt: string,
   _durationMinutes?: number,
+  rescheduleCount = 0,
   now = Date.now(),
 ): boolean {
   if (status !== "scheduled" && status !== "rescheduled") return false
+  if (rescheduleCount >= 3) return true
   const start = new Date(scheduledAt).getTime()
   const allowEarlyMs = 7 * 24 * 60 * 60_000
   return now >= start - allowEarlyMs

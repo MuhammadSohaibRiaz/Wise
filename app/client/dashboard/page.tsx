@@ -19,6 +19,7 @@ import {
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
 import { formatCurrency } from "@/lib/currency"
 import { isReviewPromptSkipped } from "@/lib/client-review-prompt"
+import { sumPayablePendingPayments } from "@/lib/payments/payment-display"
 
 interface DashboardStats {
   activeConsultations: number
@@ -90,11 +91,20 @@ export default function ClientDashboardPage() {
 
       const { data: paymentsData } = await supabase
         .from("payments")
-        .select("amount, status")
+        .select(`
+          id,
+          amount,
+          status,
+          appointment_id,
+          appointment:appointments!payments_appointment_id_fkey (
+            id,
+            status
+          )
+        `)
         .eq("client_id", uid)
         .eq("status", "pending")
 
-      const pendingPayments = (paymentsData || []).reduce((sum, p) => sum + p.amount, 0)
+      const pendingPayments = sumPayablePendingPayments(paymentsData || [])
 
       const { data: completedPayments } = await supabase
         .from("payments")

@@ -42,6 +42,7 @@ export function ScheduledConsultationActions({
     appointment.status,
     appointment.scheduled_at,
     appointment.duration_minutes,
+    appointment.reschedule_count,
   )
   const noShowEnabled = canMarkNoShow(
     appointment.status,

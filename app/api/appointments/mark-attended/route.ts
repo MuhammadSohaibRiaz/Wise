@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     const { data: row, error: fetchErr } = await supabase
       .from("appointments")
-      .select("id, client_id, lawyer_id, status, scheduled_at, duration_minutes, case_id")
+      .select("id, client_id, lawyer_id, status, scheduled_at, duration_minutes, case_id, reschedule_count")
       .eq("id", appointmentId)
       .maybeSingle()
 
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     const start = new Date(row.scheduled_at).getTime()
     const now = Date.now()
     const allowEarlyMs = 7 * 24 * 60 * 60_000
-    if (now < start - allowEarlyMs) {
+    if ((row.reschedule_count || 0) < 3 && now < start - allowEarlyMs) {
       return NextResponse.json(
         { error: "Consultation slot is too far in the future to mark as held (7-day window)" },
         { status: 400 },
