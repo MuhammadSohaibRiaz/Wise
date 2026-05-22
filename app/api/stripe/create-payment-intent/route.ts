@@ -112,6 +112,51 @@ export async function POST(request: NextRequest) {
       providedAmount: amount,
     })
 
+    const { data: existingPendingPayment, error: existingPaymentError } = await supabase
+      .from("payments")
+      .select("id, amount")
+      .eq("appointment_id", appointmentId)
+      .eq("client_id", user.id)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (existingPaymentError) {
+      console.error("[Stripe] Pending payment lookup error:", existingPaymentError)
+      return NextResponse.json({ error: "Failed to check existing payment" }, { status: 500 })
+    }
+
+    if (existingPendingPayment) {
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amountInCents,
+        currency: currency.toLowerCase(),
+        metadata: {
+          appointment_id: appointmentId,
+          payment_id: existingPendingPayment.id,
+          client_id: user.id,
+          case_id: appointment.case_id,
+        },
+        description: `Payment for appointment ${appointmentId}`,
+      })
+
+      await supabase
+        .from("payments")
+        .update({
+          amount,
+          currency: currency.toUpperCase(),
+          stripe_payment_id: paymentIntent.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existingPendingPayment.id)
+
+      return NextResponse.json({
+        clientSecret: paymentIntent.client_secret,
+        paymentId: existingPendingPayment.id,
+        reused: true,
+      })
+    }
+
     // Store the local payment first so webhook/verify routes can reconcile the
     // Stripe intent back to WiseCase appointments and cases.
     const { data: payment, error: paymentError } = await supabase

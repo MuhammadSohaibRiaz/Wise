@@ -39,6 +39,10 @@ import { AiCaseSummary } from "@/components/cases/ai-case-summary"
 import { CaseDocumentsPanel } from "@/components/cases/case-documents-panel"
 import { formatCurrency, formatHourlyRate } from "@/lib/currency"
 import { CASE_OUTCOME_LABELS } from "@/lib/lawyer-success-rate-display"
+import {
+  formatCaseAppointmentDateTime,
+  getPrimaryCaseAppointment,
+} from "@/lib/appointments/case-appointment-display"
 
 interface CaseDetail {
   id: string
@@ -571,6 +575,7 @@ export default function LawyerCaseDetailPage() {
   // AI Summary is hidden for unactivated/open cases to avoid summarizing a
   // relationship before the client-lawyer engagement has actually started.
   const showAiSummaryTab = caseDetail.status !== "open" && Boolean(caseDetail.client)
+  const primaryAppointment = getPrimaryCaseAppointment(appointments)
 
   return (
     <div className="min-h-screen bg-background">
@@ -702,6 +707,21 @@ export default function LawyerCaseDetailPage() {
                           <div>
                             <p className="text-xs text-muted-foreground">Consultation Fee</p>
                             <p className="text-sm font-medium">{formatHourlyRate(caseDetail.hourly_rate)}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {primaryAppointment && (
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Appointment Time</p>
+                            <p className="text-sm font-medium">
+                              {formatCaseAppointmentDateTime(primaryAppointment.scheduled_at)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Duration: {primaryAppointment.duration_minutes} minutes
+                            </p>
                           </div>
                         </div>
                       )}

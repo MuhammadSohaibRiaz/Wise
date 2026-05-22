@@ -41,6 +41,10 @@ import { formatCurrency, formatHourlyRate } from "@/lib/currency"
 import { CaseOutcomeDialog, type CaseOutcomeValue } from "@/components/cases/case-outcome-dialog"
 import { CASE_OUTCOME_LABELS } from "@/lib/lawyer-success-rate-display"
 import { shouldAutoPromptReview } from "@/lib/client-review-prompt"
+import {
+  formatCaseAppointmentDateTime,
+  getPrimaryCaseAppointment,
+} from "@/lib/appointments/case-appointment-display"
 
 interface CaseDetail {
   id: string
@@ -401,6 +405,7 @@ export default function ClientCaseDetailPage() {
   // AI Summary appears only after a lawyer is attached and the case has moved
   // beyond the initial open/request stage.
   const showAiSummaryTab = caseDetail.status !== "open" && Boolean(caseDetail.lawyer)
+  const primaryAppointment = getPrimaryCaseAppointment(appointments)
 
   return (
     <main className="space-y-8">
@@ -575,6 +580,21 @@ export default function ClientCaseDetailPage() {
                   <div>
                     <p className="text-xs text-muted-foreground">Consultation Fee</p>
                     <p className="text-sm font-medium">{formatHourlyRate(caseDetail.hourly_rate)}</p>
+                  </div>
+                </div>
+              )}
+
+              {primaryAppointment && (
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Appointment Time</p>
+                    <p className="text-sm font-medium">
+                      {formatCaseAppointmentDateTime(primaryAppointment.scheduled_at)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Duration: {primaryAppointment.duration_minutes} minutes
+                    </p>
                   </div>
                 </div>
               )}
