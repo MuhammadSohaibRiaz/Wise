@@ -3,7 +3,8 @@
 import type React from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
+import { isPublicClientLawyerProfile } from "@/lib/auth/protected-routes"
 import { ClientSidebar } from "@/components/client/sidebar"
 import { ClientHeader } from "@/components/client/header"
 import { useState, useEffect, useMemo, Suspense } from "react"
@@ -17,8 +18,10 @@ export default function ClientLayout({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const pathname = usePathname()
+  const router = useRouter()
   const [isLoading, setIsLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const isPublicLawyerProfile = isPublicClientLawyerProfile(pathname)
 
   const toggleSidebar = useMemo(() => () => setSidebarOpen((prev) => !prev), [])
 
@@ -29,6 +32,9 @@ export default function ClientLayout({
       if (!user) {
         setIsAuthenticated(false)
         setIsLoading(false)
+        if (!isPublicClientLawyerProfile(pathname)) {
+          router.replace("/auth/client/sign-in")
+        }
         return
       }
       setIsAuthenticated(true)
@@ -46,7 +52,7 @@ export default function ClientLayout({
     }
 
     init()
-  }, [])
+  }, [pathname, router])
 
   if (isLoading) {
     return (
@@ -58,8 +64,6 @@ export default function ClientLayout({
       </div>
     )
   }
-
-  const isPublicLawyerProfile = /^\/client\/lawyer\/[^/]+/.test(pathname)
 
   if (!isAuthenticated && isPublicLawyerProfile) {
     return (
@@ -94,6 +98,14 @@ export default function ClientLayout({
           </main>
         </div>
       </>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
     )
   }
 

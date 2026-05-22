@@ -12,7 +12,11 @@ import { BookAppointmentModal } from "@/components/lawyer/book-appointment-modal
 import { createClient } from "@/lib/supabase/client"
 import { formatLawyerRatingLabel, normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
 import { formatSuccessRateDisplay } from "@/lib/lawyer-success-rate-display"
-import { buildClientSignInToBookUrl, buildMatchBookReturnUrl } from "@/lib/auth/client-booking-return"
+import {
+  buildClientSignInToBookUrl,
+  buildMatchBookReturnUrl,
+  canUserBookLawyerConsultation,
+} from "@/lib/auth/client-booking-return"
 import { markLatestDraftLawyerSelection } from "@/lib/case-drafts"
 
 interface LawyerCardProps {
@@ -51,7 +55,8 @@ export function LawyerCard({
   const ratingDisplay = formatLawyerRatingLabel(normalizeLawyerAverageRating(average_rating))
   const successDisplay = formatSuccessRateDisplay(total_cases, success_rate)
   const [bookingOpen, setBookingOpen] = useState(false)
-  const [clientId, setClientId] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [isClient, setIsClient] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -60,14 +65,25 @@ export function LawyerCard({
       const {
         data: { session },
       } = await supabase.auth.getSession()
-      setClientId(session?.user?.id || null)
+      const uid = session?.user?.id ?? null
+      setUserId(uid)
+      if (!uid) {
+        setIsClient(false)
+        return
+      }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("user_type")
+        .eq("id", uid)
+        .maybeSingle()
+      setIsClient(canUserBookLawyerConsultation(profile?.user_type))
     }
     getCurrentUser()
   }, [])
 
   const handleBookNow = async (e: React.MouseEvent) => {
     e.preventDefault()
-    if (!clientId) {
+    if (!userId || !isClient) {
       const returnPath =
         typeof window !== "undefined"
           ? buildMatchBookReturnUrl(id, window.location.search)
@@ -76,9 +92,11 @@ export function LawyerCard({
       return
     }
     const supabase = createClient()
-    await markLatestDraftLawyerSelection(supabase, clientId, id)
+    await markLatestDraftLawyerSelection(supabase, userId, id)
     setBookingOpen(true)
   }
+
+  const showBookButton = !userId || isClient
 
   return (
     <>
@@ -197,25 +215,27 @@ export function LawyerCard({
 
         {/* Action Buttons */}
         <div className="flex gap-2 mt-auto">
-          <Link href={`/client/lawyer/${id}`} className="flex-1">
+          <Link href={`/client/lawyer/${id}`} className={showBookButton ? "flex-1" : "w-full"}>
             <Button variant="outline" className="w-full bg-transparent">
               View Profile
             </Button>
           </Link>
-          <Button onClick={handleBookNow} className="flex-1 w-full">
-            {clientId ? "Book Consultation" : "Sign in to Book"}
-          </Button>
+          {showBookButton ? (
+            <Button onClick={handleBookNow} className="flex-1 w-full">
+              {isClient ? "Book Consultation" : "Sign in to Book"}
+            </Button>
+          ) : null}
         </div>
       </div>
 
-      {clientId && (
+      {isClient && userId && (
         <BookAppointmentModal
           open={bookingOpen}
           onOpenChange={setBookingOpen}
           lawyerId={id}
           lawyerName={name}
           hourlyRate={Number(hourly_rate) || 0}
-          clientId={clientId}
+          clientId={userId}
           onBookingSuccess={() => {
             // Redirect to appointments page after successful booking
             window.location.href = "/client/appointments"

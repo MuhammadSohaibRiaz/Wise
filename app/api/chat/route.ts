@@ -4,6 +4,7 @@ import { getInitialMessage } from "@/lib/chatBotData";
 import { tools } from "@/lib/ai/tools";
 import { extractCaseIdFromPath } from "@/lib/chat-case-context";
 import { applySimpleRateLimit } from "@/lib/rate-limit";
+import { stripPseudoToolCalls } from "@/lib/chat/sanitize-assistant-text";
 
 export const runtime = "nodejs";
 
@@ -133,6 +134,7 @@ export async function POST(req: Request) {
         authContext =
           `Current User: ${user.email}, role **lawyer** (${first}). **Always use lawyer routes**: dashboard \`/lawyer/dashboard\`, appointments \`/lawyer/appointments\`, cases \`/lawyer/cases\`, profile/settings \`/lawyer/profile\`. ` +
           `Never navigate this user to \`/client/*\` unless they explicitly ask how clients experience the product. ` +
+          `When they ask to update phone, bio, consultation fee (PKR), or years of experience, call the **updateProfile** tool with extracted fields — never print <function> tags or JSON in the reply. ` +
           `Document analysis chat uploads still use \`/client/analysis\` only when analyzing own docs as on that page — prefer directing lawyers to their dashboard or profile for practice settings.`;
       } else {
         authContext =
@@ -165,7 +167,7 @@ export async function POST(req: Request) {
           user_id: user.id,
           case_id: caseId,
           role: "assistant",
-          content: text,
+          content: stripPseudoToolCalls(text),
           metadata: toolCalls ? { toolCalls, toolResults } : undefined,
         });
         console.log(`[Chat:API]   onFinish → saved to DB (text=${text.length}chars, tools=${toolCalls ? 'yes' : 'no'})`);

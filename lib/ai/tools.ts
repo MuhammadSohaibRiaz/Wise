@@ -56,7 +56,8 @@ export const tools = {
   }),
 
   updateProfile: tool({
-    description: 'Updates the profile information for the logged-in user. Use this to help users complete their missing fields.',
+    description:
+      "Updates the logged-in user profile. Call this when the user gives concrete values (phone, bio, consultation fee, years of experience, name, etc.). Do not print JSON or <function> tags in the reply.",
     inputSchema: z.object({
       firstName: z.string().optional(),
       lastName: z.string().optional(),
@@ -65,8 +66,9 @@ export const tools = {
       location: z.string().optional(),
       // Lawyer specific
       specializations: z.array(z.string()).optional(),
-      hourlyRate: z.number().optional(),
-      yearsExperience: z.number().optional(),
+      hourlyRate: z.number().optional().describe("Consultation fee in PKR for a 60-minute session"),
+      consultationFee: z.number().optional().describe("Alias for hourlyRate (PKR)"),
+      yearsExperience: z.number().optional().describe("Whole years of experience"),
       licenseNumber: z.string().optional(),
     }),
     execute: async (input) => {
@@ -74,17 +76,21 @@ export const tools = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return { error: "Not logged in." };
 
-      const profileUpdates: any = {};
+      const profileUpdates: Record<string, unknown> = {};
       if (input.firstName) profileUpdates.first_name = input.firstName;
       if (input.lastName) profileUpdates.last_name = input.lastName;
       if (input.phone) profileUpdates.phone = input.phone;
       if (input.bio) profileUpdates.bio = input.bio;
       if (input.location) profileUpdates.location = input.location;
 
-      const lawyerUpdates: any = {};
+      const consultationFee = input.hourlyRate ?? input.consultationFee;
+      const yearsExperience =
+        input.yearsExperience != null ? Math.max(0, Math.round(input.yearsExperience)) : undefined;
+
+      const lawyerUpdates: Record<string, unknown> = {};
       if (input.specializations) lawyerUpdates.specializations = input.specializations;
-      if (input.hourlyRate) lawyerUpdates.hourly_rate = input.hourlyRate;
-      if (input.yearsExperience) lawyerUpdates.years_of_experience = input.yearsExperience;
+      if (consultationFee != null && consultationFee > 0) lawyerUpdates.hourly_rate = consultationFee;
+      if (yearsExperience != null) lawyerUpdates.years_of_experience = yearsExperience;
       if (input.licenseNumber) lawyerUpdates.bar_license_number = input.licenseNumber;
 
       if (Object.keys(profileUpdates).length === 0 && Object.keys(lawyerUpdates).length === 0) {

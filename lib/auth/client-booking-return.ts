@@ -2,6 +2,11 @@
 export const BOOK_LAWYER_QUERY = "bookLawyer"
 export const BOOK_ON_PROFILE_QUERY = "book"
 
+/** Only client accounts may book lawyer consultations on WiseCase. */
+export function canUserBookLawyerConsultation(userType: string | null | undefined): boolean {
+  return userType === "client"
+}
+
 const LAWYER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 /** Return path after sign-in: /match with lawyer id (public route, works for guest → auth flow). */

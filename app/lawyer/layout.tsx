@@ -15,6 +15,7 @@ import {
   cacheLawyerLicenseGate,
   clearCachedLawyerLicenseGate,
   readCachedLawyerLicenseGate,
+  isLawyerLicenseApproved,
   resolveLawyerLicenseGate,
 } from "@/lib/lawyer-license-verification"
 
@@ -100,7 +101,7 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
       if (cancelled) return
 
       const gate = resolveLawyerLicenseGate(lawyerProfile)
-      const licenseApproved = gate === "approved"
+      const licenseApproved = isLawyerLicenseApproved(lawyerProfile)
 
       if (licenseApproved) {
         clearCachedLawyerLicenseGate()
@@ -131,7 +132,7 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
     }
   }, [router, pathname])
 
-  if (isLoading) {
+  if (isLoading || !isAuthenticated) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center">

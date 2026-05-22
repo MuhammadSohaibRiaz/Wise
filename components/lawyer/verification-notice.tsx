@@ -31,7 +31,7 @@ export function VerificationNotice() {
       if (data) {
         if (data.verification_status === "rejected") {
           setStatus("rejected")
-        } else if (data.verification_status === "approved" || data.verified) {
+        } else if (data.verification_status === "approved") {
           setStatus("approved")
         } else if (data.license_file_url) {
           setStatus('pending')

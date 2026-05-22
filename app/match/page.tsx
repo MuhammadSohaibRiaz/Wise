@@ -11,7 +11,7 @@ import { Loader2, LayoutDashboard } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { normalizeLawyerAverageRating } from "@/lib/lawyer-rating"
-import { BOOK_LAWYER_QUERY } from "@/lib/auth/client-booking-return"
+import { BOOK_LAWYER_QUERY, canUserBookLawyerConsultation } from "@/lib/auth/client-booking-return"
 import { BookAppointmentModal } from "@/components/lawyer/book-appointment-modal"
 import { markLatestDraftLawyerSelection } from "@/lib/case-drafts"
 
@@ -67,7 +67,9 @@ function MatchPageInner() {
   const [filteredLawyers, setFilteredLawyers] = useState<LawyerProfile[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [userType, setUserType] = useState<string | null>(null)
   const [clientId, setClientId] = useState<string | null>(null)
+  const canBookAsClient = canUserBookLawyerConsultation(userType)
   const [bookingOpen, setBookingOpen] = useState(false)
   const [bookingLawyer, setBookingLawyer] = useState<LawyerProfile | null>(null)
   const [filters, setFilters] = useState<FilterState>({
@@ -103,12 +105,37 @@ function MatchPageInner() {
       const uid = session?.user?.id ?? null
       setClientId(uid)
       setIsAuthenticated(!!uid)
+      if (!uid) {
+        setUserType(null)
+        return
+      }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("user_type")
+        .eq("id", uid)
+        .maybeSingle()
+      setUserType(profile?.user_type ?? null)
     }
     void checkAuth()
   }, [])
 
   useEffect(() => {
-    if (!bookLawyerId || !clientId || isLoading || autoBookHandled.current) return
+    if (!bookLawyerId || isLoading || autoBookHandled.current) return
+
+    if (isAuthenticated && !canBookAsClient) {
+      autoBookHandled.current = true
+      toast({
+        title: "Clients only",
+        description: "Lawyer accounts cannot book consultations. Browse profiles or use your lawyer dashboard.",
+      })
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete(BOOK_LAWYER_QUERY)
+      const q = params.toString()
+      router.replace(q ? `/match?${q}` : "/match", { scroll: false })
+      return
+    }
+
+    if (!bookLawyerId || !clientId || !canBookAsClient) return
 
     const target = lawyers.find((l) => l.id === bookLawyerId)
     if (!target) return
@@ -124,7 +151,7 @@ function MatchPageInner() {
       const q = params.toString()
       router.replace(q ? `/match?${q}` : "/match", { scroll: false })
     })
-  }, [bookLawyerId, clientId, isLoading, lawyers, searchParams, router])
+  }, [bookLawyerId, canBookAsClient, clientId, isAuthenticated, isLoading, lawyers, searchParams, router, toast])
 
   useEffect(() => {
     const fetchLawyers = async () => {
@@ -305,7 +332,7 @@ function MatchPageInner() {
               )}
             </div>
             {isAuthenticated && (
-              <Link href="/client/dashboard">
+              <Link href={userType === "lawyer" ? "/lawyer/dashboard" : "/client/dashboard"}>
                 <Button variant="outline" className="gap-2">
                   <LayoutDashboard className="h-4 w-4" />
                   Go to Dashboard
@@ -374,7 +401,7 @@ function MatchPageInner() {
         </div>
       </main>
 
-      {bookingLawyer && clientId && (
+      {bookingLawyer && clientId && canBookAsClient && (
         <BookAppointmentModal
           open={bookingOpen}
           onOpenChange={setBookingOpen}

@@ -15,6 +15,7 @@ import { useEmailVerificationUrl } from "@/hooks/use-email-verification-url"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   cacheLawyerLicenseGate,
+  clearCachedLawyerLicenseGate,
   lawyerSignInToast,
   resolveLawyerLicenseGate,
 } from "@/lib/lawyer-license-verification"
@@ -196,6 +197,7 @@ export default function LawyerSignInPage() {
         return
       }
 
+      clearCachedLawyerLicenseGate()
       const gate = resolveLawyerLicenseGate(lawyerProfile)
       cacheLawyerLicenseGate(gate)
       const signInToast = lawyerSignInToast(gate)

@@ -12,7 +12,11 @@ import {
   markLatestDraftLawyerSelection,
 } from "@/lib/case-drafts"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
-import { buildClientSignInToBookUrl, buildProfileBookReturnUrl } from "@/lib/auth/client-booking-return"
+import {
+  buildClientSignInToBookUrl,
+  buildProfileBookReturnUrl,
+  canUserBookLawyerConsultation,
+} from "@/lib/auth/client-booking-return"
 import { APPOINTMENT_SLOT_BLOCKING_STATUSES } from "@/lib/appointments-status"
 import {
   getAvailableSlotsForDay,
@@ -73,6 +77,40 @@ export function BookAppointmentModal({
   const redirectToSignIn = () => {
     router.push(buildClientSignInToBookUrl(buildProfileBookReturnUrl(lawyerId)))
   }
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+
+    const verifyClientBooking = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("user_type")
+        .eq("id", user.id)
+        .maybeSingle()
+
+      if (cancelled) return
+
+      if (!canUserBookLawyerConsultation(profile?.user_type) || user.id === lawyerId) {
+        toast({
+          title: "Clients only",
+          description: "Only client accounts can book lawyer consultations.",
+          variant: "destructive",
+        })
+        onOpenChange(false)
+      }
+    }
+
+    void verifyClientBooking()
+    return () => {
+      cancelled = true
+    }
+  }, [open, lawyerId, onOpenChange, supabase, toast])
 
   useEffect(() => {
     const fetchBookedDates = async () => {
@@ -222,6 +260,32 @@ export function BookAppointmentModal({
       })
       onOpenChange(false)
       redirectToSignIn()
+      return
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("user_type")
+      .eq("id", user.id)
+      .maybeSingle()
+
+    if (!canUserBookLawyerConsultation(profile?.user_type)) {
+      toast({
+        title: "Clients only",
+        description: "Lawyer accounts cannot book consultations. Sign in with a client account to book.",
+        variant: "destructive",
+      })
+      onOpenChange(false)
+      return
+    }
+
+    if (user.id === lawyerId) {
+      toast({
+        title: "Invalid booking",
+        description: "You cannot book a consultation with your own profile.",
+        variant: "destructive",
+      })
+      onOpenChange(false)
       return
     }
 

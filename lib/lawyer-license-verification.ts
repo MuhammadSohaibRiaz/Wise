@@ -38,6 +38,18 @@ export function clearCachedLawyerLicenseGate() {
   }
 }
 
+/** Admin approval is the only signal for full dashboard access. */
+export function isLawyerLicenseApproved(profile: {
+  verification_status?: string | null
+} | null): boolean {
+  return profile?.verification_status === "approved"
+}
+
+/** Routes a pending lawyer may use (upload license / edit profile). */
+export function isLawyerLicenseExemptPath(pathname: string): boolean {
+  return pathname === "/lawyer/verification" || pathname.startsWith("/lawyer/profile")
+}
+
 export function resolveLawyerLicenseGate(profile: {
   verified?: boolean | null
   verification_status?: string | null
@@ -45,7 +57,7 @@ export function resolveLawyerLicenseGate(profile: {
 } | null): LawyerLicenseGate {
   if (!profile) return "unverified"
   if (profile.verification_status === "rejected") return "rejected"
-  if (profile.verified === true || profile.verification_status === "approved") return "approved"
+  if (isLawyerLicenseApproved(profile)) return "approved"
   if (profile.license_file_url) return "pending"
   return "unverified"
 }

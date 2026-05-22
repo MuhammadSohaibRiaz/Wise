@@ -16,6 +16,7 @@ import { DefaultChatTransport } from 'ai';
 import { normalizeChatNavigationPath, type ChatRole } from '@/lib/chat-routes';
 import { toast } from '@/hooks/use-toast';
 import { toUserFacingAnalysisError } from '@/lib/ai/capacity-messages';
+import { stripPseudoToolCalls } from '@/lib/chat/sanitize-assistant-text';
 
 type QueuedAnalysisJob = {
   status: string
@@ -286,13 +287,16 @@ export function Chat({ onClose }: { onClose: () => void }) {
   const getMessageText = useMemo(() => {
     return (m: any) => {
       const parts = Array.isArray(m?.parts) ? m.parts : [];
+      let text = '';
       if (parts.length > 0) {
-        return parts
+        text = parts
           .filter((p: any) => p?.type === 'text')
           .map((p: any) => p.text ?? '')
           .join('');
+      } else {
+        text = typeof m?.content === 'string' ? m.content : '';
       }
-      return typeof m?.content === 'string' ? m.content : '';
+      return (m as any)?.role === 'assistant' ? stripPseudoToolCalls(text) : text;
     };
   }, []);
 
@@ -393,6 +397,25 @@ export function Chat({ onClose }: { onClose: () => void }) {
           if (!seen.has(msg)) {
             summaries.push(msg);
             seen.add(msg);
+          }
+        }
+        if (part?.type === 'tool-updateProfile' && part?.state === 'output-available') {
+          const output = part.output ?? {};
+          if (output.error) {
+            const msg = String(output.error);
+            if (!seen.has(msg)) {
+              summaries.push(msg);
+              seen.add(msg);
+            }
+          } else if (output.success) {
+            const msg =
+              typeof output.message === 'string'
+                ? output.message
+                : 'Profile updated successfully.';
+            if (!seen.has(msg)) {
+              summaries.push(msg);
+              seen.add(msg);
+            }
           }
         }
       }
