@@ -8,7 +8,7 @@ export function isAdminRoute(pathname: string): boolean {
 }
 
 export function isLawyerRoute(pathname: string): boolean {
-  return pathname === "/lawyer" || pathname.startsWith("/lawyer/")
+  return getFirstPathSegment(pathname) === "lawyer"
 }
 
 /** Guest-accessible lawyer profile (under /client for public discovery). */
@@ -17,10 +17,14 @@ export function isPublicClientLawyerProfile(pathname: string): boolean {
 }
 
 export function isClientProtectedRoute(pathname: string): boolean {
-  if (pathname === "/client" || pathname.startsWith("/client/")) {
+  if (getFirstPathSegment(pathname) === "client") {
     return !isPublicClientLawyerProfile(pathname)
   }
   return false
+}
+
+function getFirstPathSegment(pathname: string): string {
+  return pathname.split(/[/?#]/).filter(Boolean)[0]?.toLowerCase() || ""
 }
 
 export function isPublicPath(pathname: string): boolean {

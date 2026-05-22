@@ -46,8 +46,7 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   function createRedirect(dest: string) {
-    const url = request.nextUrl.clone()
-    url.pathname = dest
+    const url = new URL(dest, request.url)
     const redirectResponse = NextResponse.redirect(url)
     response.cookies.getAll().forEach((cookie) => {
       redirectResponse.cookies.set(cookie.name, cookie.value)

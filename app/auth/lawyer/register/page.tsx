@@ -35,11 +35,53 @@ export default function LawyerRegisterPage() {
   const showSuccess = (msg: string) =>
     toast({ variant: "success", title: "Success", description: msg, duration: 5000 })
 
+  const normalizeBarLicenseInput = (value: string) =>
+    value
+      .toUpperCase()
+      .replace(/[^A-Z0-9/-]/g, "")
+      .slice(0, 13)
+
+  const isValidBarLicense = (value: string) =>
+    /^(PB-\d{5}\/\d{4}|SBC-\d{4}|KP-\d{4}\/\d{2}|IBC-\d{4}|BBC-\d{4})$/.test(value)
+
+  const barLicenseFormatMessage =
+    "Enter a valid bar license: PB-12345/2022, SBC-5678, KP-9876/21, IBC-1234, or BBC-4321."
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    const trimmedFirstName = firstName.trim()
+    const trimmedLastName = lastName.trim()
+    const normalizedEmail = email.trim().toLowerCase()
+    const normalizedBarLicense = barLicense.trim().toUpperCase()
+
+    if (!trimmedFirstName) {
+      showError("First name is required")
+      return
+    }
+
+    if (!trimmedLastName) {
+      showError("Last name is required")
+      return
+    }
+
+    if (!normalizedEmail) {
+      showError("Email is required")
+      return
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      showError("Please enter a valid email address")
+      return
+    }
+
     if (password !== confirmPassword) {
       showError("Passwords do not match")
+      return
+    }
+
+    if (!password) {
+      showError("Password is required")
       return
     }
 
@@ -48,13 +90,13 @@ export default function LawyerRegisterPage() {
       return
     }
 
-    if (!barLicense.trim()) {
+    if (!normalizedBarLicense) {
       showError("Bar license number is required")
       return
     }
 
-    if (!/^PKB-\d{6}$/.test(barLicense.trim())) {
-      showError("Bar license must be in format PKB-XXXXXX (e.g. PKB-123456)")
+    if (!isValidBarLicense(normalizedBarLicense)) {
+      showError(barLicenseFormatMessage)
       return
     }
 
@@ -72,7 +114,6 @@ export default function LawyerRegisterPage() {
 
     try {
       const supabase = createClient()
-      const normalizedEmail = email.trim().toLowerCase()
       const emailRedirectTo = getEmailVerificationRedirectUrl("lawyer")
 
       const { data, error: signUpError } = await supabase.auth.signUp({
@@ -80,10 +121,10 @@ export default function LawyerRegisterPage() {
         password,
         options: {
           data: {
-            first_name: firstName,
-            last_name: lastName,
+            first_name: trimmedFirstName,
+            last_name: trimmedLastName,
             user_type: "lawyer",
-            bar_license: barLicense,
+            bar_license: normalizedBarLicense,
             practice_area: practiceArea,
           },
           emailRedirectTo,
@@ -116,7 +157,7 @@ export default function LawyerRegisterPage() {
           await supabase
             .from("lawyer_profiles")
             .update({
-              bar_license_number: barLicense,
+              bar_license_number: normalizedBarLicense,
               specializations: [practiceArea],
               license_file_url: publicUrl,
               verification_status: "pending",
@@ -184,7 +225,7 @@ export default function LawyerRegisterPage() {
             </Button>
           </div>
         ) : (
-        <form onSubmit={handleRegister} className="space-y-4">
+        <form onSubmit={handleRegister} className="space-y-4" noValidate>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="firstName">First Name</Label>
@@ -193,7 +234,6 @@ export default function LawyerRegisterPage() {
                 placeholder="John"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
-                required
                 disabled={isLoading}
               />
             </div>
@@ -204,7 +244,6 @@ export default function LawyerRegisterPage() {
                 placeholder="Doe"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
-                required
                 disabled={isLoading}
               />
             </div>
@@ -218,7 +257,6 @@ export default function LawyerRegisterPage() {
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              required
               disabled={isLoading}
             />
           </div>
@@ -227,21 +265,16 @@ export default function LawyerRegisterPage() {
             <Label htmlFor="barLicense">Bar License Number</Label>
             <Input
               id="barLicense"
-              placeholder="PKB-123456"
+              placeholder="PB-12345/2022"
               value={barLicense}
-              maxLength={10}
-              onChange={(e) => {
-                let v = e.target.value.toUpperCase()
-                if (v.length <= 4) {
-                  v = v.replace(/[^A-Z-]/g, "")
-                } else {
-                  v = v.slice(0, 4) + v.slice(4).replace(/[^0-9]/g, "")
-                }
-                setBarLicense(v)
-              }}
-              required
+              maxLength={13}
+              autoCapitalize="characters"
+              onChange={(e) => setBarLicense(normalizeBarLicenseInput(e.target.value))}
               disabled={isLoading}
             />
+            <p className="text-xs text-muted-foreground">
+              Accepted: PB-12345/2022, SBC-5678, KP-9876/21, IBC-1234, BBC-4321.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -280,7 +313,6 @@ export default function LawyerRegisterPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required
               disabled={isLoading}
             />
           </div>
@@ -292,7 +324,6 @@ export default function LawyerRegisterPage() {
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              required
               disabled={isLoading}
             />
           </div>
@@ -301,7 +332,7 @@ export default function LawyerRegisterPage() {
             ref={submitButtonRef}
             type="submit"
             className="w-full"
-            disabled={isLoading || !licenseFile}
+            disabled={isLoading}
           >
             {isLoading ? <Loader2 className="animate-spin" /> : "Create Account"}
           </Button>
