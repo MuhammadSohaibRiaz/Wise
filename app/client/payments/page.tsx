@@ -209,12 +209,12 @@ export default function PaymentsPage() {
   }
 
   const downloadReceipt = (payment: Payment) => {
-    const receiptHtml = buildReceiptHtml(payment)
-    const blob = new Blob([receiptHtml], { type: "text/html;charset=utf-8" })
+    const receiptPdf = buildReceiptPdf(payment)
+    const blob = new Blob([receiptPdf], { type: "application/pdf" })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement("a")
     anchor.href = url
-    anchor.download = `wisecase-receipt-${payment.id.slice(0, 8)}.html`
+    anchor.download = `wisecase-receipt-${payment.id.slice(0, 8)}.pdf`
     document.body.appendChild(anchor)
     anchor.click()
     anchor.remove()
@@ -383,7 +383,7 @@ function getPayablePendingPaymentIds(payments: Payment[]): Set<string> {
   return payableIds
 }
 
-function buildReceiptHtml(payment: Payment): string {
+function buildReceiptPdf(payment: Payment): Uint8Array {
   const lawyerName = payment.lawyer
     ? `${payment.lawyer.first_name || ""} ${payment.lawyer.last_name || ""}`.trim() || "Lawyer"
     : "Lawyer"
@@ -392,50 +392,82 @@ function buildReceiptHtml(payment: Payment): string {
     timeStyle: "short",
   }).format(new Date(payment.created_at))
 
-  return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>WiseCase Receipt ${escapeReceiptHtml(payment.id)}</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 40px; color: #111827; }
-    .receipt { max-width: 720px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px; }
-    .header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 24px; }
-    h1 { margin: 0; font-size: 28px; }
-    .muted { color: #6b7280; }
-    .row { display: flex; justify-content: space-between; gap: 20px; padding: 10px 0; border-bottom: 1px solid #f3f4f6; }
-    .amount { font-size: 28px; font-weight: 700; }
-    .status { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #dcfce7; color: #166534; font-size: 12px; font-weight: 700; text-transform: uppercase; }
-  </style>
-</head>
-<body>
-  <main class="receipt">
-    <div class="header">
-      <div>
-        <h1>WiseCase</h1>
-        <p class="muted">Payment receipt</p>
-      </div>
-      <div>
-        <span class="status">Paid</span>
-      </div>
-    </div>
-    <div class="row"><strong>Receipt ID</strong><span>${escapeReceiptHtml(payment.id)}</span></div>
-    <div class="row"><strong>Date</strong><span>${escapeReceiptHtml(paidDate)}</span></div>
-    <div class="row"><strong>Case</strong><span>${escapeReceiptHtml(payment.case?.title || "Payment")}</span></div>
-    <div class="row"><strong>Lawyer</strong><span>${escapeReceiptHtml(lawyerName)}</span></div>
-    <div class="row"><strong>Payment method</strong><span>${escapeReceiptHtml(payment.payment_method || "Card")}</span></div>
-    <div class="row"><strong>Status</strong><span>Completed</span></div>
-    <p class="amount">${escapeReceiptHtml(formatCurrency(payment.amount))}</p>
-    <p class="muted">This receipt was generated from your WiseCase payment history.</p>
-  </main>
-</body>
-</html>`
+  const lines = [
+    ["Receipt ID", payment.id],
+    ["Date", paidDate],
+    ["Case", payment.case?.title || "Payment"],
+    ["Lawyer", lawyerName],
+    ["Payment method", payment.payment_method || "Card"],
+    ["Status", "Completed"],
+    ["Amount", formatCurrency(payment.amount)],
+  ]
+
+  const content = [
+    "BT",
+    "/F1 28 Tf",
+    "72 760 Td",
+    `(${escapePdfText("WiseCase")}) Tj`,
+    "/F1 12 Tf",
+    "0 -24 Td",
+    `(${escapePdfText("Payment receipt")}) Tj`,
+    "/F1 10 Tf",
+    "360 22 Td",
+    `(${escapePdfText("PAID")}) Tj`,
+    "ET",
+    "0.8 w",
+    "72 710 m 540 710 l S",
+    "BT",
+    "/F1 12 Tf",
+    ...lines.flatMap(([label, value], index) => {
+      const y = 675 - index * 34
+      return [
+        `1 0 0 1 72 ${y} Tm`,
+        `(${escapePdfText(label)}) Tj`,
+        `1 0 0 1 260 ${y} Tm`,
+        `(${escapePdfText(value)}) Tj`,
+      ]
+    }),
+    "ET",
+    "BT",
+    "/F1 10 Tf",
+    "72 170 Td",
+    `(${escapePdfText("This receipt was generated from your WiseCase payment history.")}) Tj`,
+    "ET",
+  ].join("\n")
+
+  return makePdf(content)
 }
 
-function escapeReceiptHtml(value: string): string {
+function escapePdfText(value: string): string {
   return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)")
+}
+
+function makePdf(pageContent: string): Uint8Array {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${pageContent.length} >>\nstream\n${pageContent}\nendstream`,
+  ]
+
+  let pdf = "%PDF-1.4\n"
+  const offsets = [0]
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length)
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
+  })
+  const xrefOffset = pdf.length
+  pdf += `xref\n0 ${objects.length + 1}\n`
+  pdf += "0000000000 65535 f \n"
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`
+  })
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
+
+  return new TextEncoder().encode(pdf)
 }
