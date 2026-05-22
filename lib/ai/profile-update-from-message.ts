@@ -17,7 +17,7 @@ function hasAnyField(fields: ProfileUpdateFields): boolean {
   return Object.values(fields).some((v) => v != null && v !== "")
 }
 
-function parseNumeric(value: unknown): number | undefined {
+export function parseNumeric(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value
   if (typeof value === "string") {
     const n = Number.parseInt(value.replace(/,/g, ""), 10)

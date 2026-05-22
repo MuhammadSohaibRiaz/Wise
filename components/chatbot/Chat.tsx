@@ -860,7 +860,8 @@ export function Chat({ onClose }: { onClose: () => void }) {
                     return `[${normalized}](${normalized})`;
                   })
                   .replace(/\[VIEW_ANALYSIS:(.*?)\]/g, '')
-                  .replace(/\[ACTION:.*?:.*?\]/g, ''); 
+                  .replace(/\s*(?:at|here|below|from here)?\s*\[ACTION:.*?:.*?\]/gi, '')
+                  .replace(/\s*(?:You can view your updated profile|View your updated profile)\s*$/i, '');
 
                 const actionMarkers = [...rawText.matchAll(/\[ACTION:(.*?):(.*?)\]/g)]
                   .map((match) => ({
@@ -1070,4 +1071,3 @@ export function Chat({ onClose }: { onClose: () => void }) {
     </Card>
   );
 }
-

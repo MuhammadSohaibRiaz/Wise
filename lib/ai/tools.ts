@@ -5,6 +5,7 @@ import { searchLawyersFromSupabase } from "@/lib/lawyer-search";
 import {
   applyProfileUpdate,
   normalizeYearsExperience,
+  parseNumeric,
 } from "@/lib/ai/profile-update-from-message";
 
 export const tools = {
@@ -70,9 +71,9 @@ export const tools = {
       location: z.string().optional(),
       // Lawyer specific
       specializations: z.array(z.string()).optional(),
-      hourlyRate: z.number().optional().describe("Consultation fee in PKR for a 60-minute session"),
-      consultationFee: z.number().optional().describe("Alias for hourlyRate (PKR)"),
-      yearsExperience: z.number().optional().describe("Whole years of experience"),
+      hourlyRate: z.union([z.number(), z.string()]).optional().describe("Consultation fee in PKR for a 60-minute session"),
+      consultationFee: z.union([z.number(), z.string()]).optional().describe("Alias for hourlyRate (PKR)"),
+      yearsExperience: z.union([z.number(), z.string()]).optional().describe("Whole years of experience. If months are mentioned, ignore them."),
       licenseNumber: z.string().optional(),
     }),
     execute: async (input) => {
@@ -82,6 +83,8 @@ export const tools = {
 
       const result = await applyProfileUpdate(supabase, user.id, {
         ...input,
+        hourlyRate: parseNumeric(input.hourlyRate),
+        consultationFee: parseNumeric(input.consultationFee),
         yearsExperience: normalizeYearsExperience(input.yearsExperience),
       });
       if (!result.success) return { error: result.error || "Update failed." };

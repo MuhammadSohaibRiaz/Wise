@@ -66,7 +66,8 @@ function stripControlMarkers(text: string) {
   return text
     .replace(/\[NAVIGATE:.*?\]/g, "")
     .replace(/\[VIEW_ANALYSIS:.*?\]/g, "")
-    .replace(/\[ACTION:.*?:.*?\]/g, "")
+    .replace(/\s*(?:at|here|below|from here)?\s*\[ACTION:.*?:.*?\]/gi, "")
+    .replace(/\s*(?:You can view your updated profile|View your updated profile)\s*$/i, "")
     .trim()
 }
 
