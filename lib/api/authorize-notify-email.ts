@@ -3,13 +3,16 @@ import { createClient } from "@/lib/supabase/server"
 
 type EmailTemplate =
   | "case_completion_request"
+  | "appointment_requested"
   | "appointment_accepted"
+  | "appointment_rejected"
   | "payment_confirmed"
   | "verification_approved"
   | "verification_rejected"
   | "appointment_rescheduled"
   | "appointment_cancelled"
   | "appointment_cancellation_resolved"
+  | "appointment_cancellation_refunded"
 
 export async function authorizeNotifyEmailRequest(
   user: User,
@@ -34,6 +37,7 @@ export async function authorizeNotifyEmailRequest(
     case "verification_approved":
     case "verification_rejected":
     case "appointment_cancellation_resolved":
+    case "appointment_cancellation_refunded":
       return { ok: false, status: 403, error: "Forbidden" }
 
     case "case_completion_request": {
@@ -59,6 +63,20 @@ export async function authorizeNotifyEmailRequest(
 
     case "appointment_accepted": {
       if (user.id !== data.lawyer_id) {
+        return { ok: false, status: 403, error: "Forbidden" }
+      }
+      return { ok: true }
+    }
+
+    case "appointment_rejected": {
+      if (user.id !== data.lawyer_id) {
+        return { ok: false, status: 403, error: "Forbidden" }
+      }
+      return { ok: true }
+    }
+
+    case "appointment_requested": {
+      if (user.id !== data.client_id) {
         return { ok: false, status: 403, error: "Forbidden" }
       }
       return { ok: true }

@@ -3,6 +3,7 @@ import { stripe } from "@/lib/stripe/config"
 import { createAdminClient } from "@/lib/supabase/admin"
 import Stripe from "stripe"
 import { appendCaseTimelineEvent, CaseTimelineEventType } from "@/lib/case-timeline"
+import { formatAppointmentDateTime } from "@/lib/datetime"
 import { sendEmail, buildEmailHtml, escapeHtml } from "@/lib/email"
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
@@ -89,7 +90,7 @@ export async function POST(request: NextRequest) {
 
           const { data: appointment } = await supabase
             .from("appointments")
-            .select("client_id, lawyer_id, cases(title)")
+            .select("client_id, lawyer_id, scheduled_at, cases(title)")
             .eq("id", appointment_id)
             .single()
 
@@ -143,6 +144,32 @@ export async function POST(request: NextRequest) {
                     ctaUrl: `${siteUrl}/client/appointments`,
                   }),
                 })
+              }
+
+              if (appointment.lawyer_id) {
+                const { data: lawyerProfile } = await supabase
+                  .from("profiles")
+                  .select("email")
+                  .eq("id", appointment.lawyer_id)
+                  .single()
+
+                if (lawyerProfile?.email) {
+                  const safeCaseTitle = escapeHtml(caseTitle)
+                  const formattedTime = appointment.scheduled_at
+                    ? escapeHtml(formatAppointmentDateTime(appointment.scheduled_at) || appointment.scheduled_at)
+                    : "the scheduled time"
+
+                  await sendEmail({
+                    to: lawyerProfile.email,
+                    subject: "Consultation scheduled after payment",
+                    html: buildEmailHtml({
+                      title: "Consultation Scheduled",
+                      body: `The client payment for <strong>"${safeCaseTitle}"</strong> has been received. The consultation is scheduled for <strong>${formattedTime}</strong>.`,
+                      ctaText: "View Appointments",
+                      ctaUrl: `${siteUrl}/lawyer/appointments`,
+                    }),
+                  })
+                }
               }
             } catch { /* email is supplementary */ }
           }
@@ -217,6 +244,61 @@ export async function POST(request: NextRequest) {
                   data: { appointment_id, payment_id, status: "failed" },
                 })
               }
+
+              try {
+                const siteUrl = (
+                  process.env.NEXT_PUBLIC_SITE_URL ||
+                  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+                    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+                    : null) ||
+                  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+                  "http://localhost:3000"
+                ).replace(/\/$/, "")
+                const safeCaseTitle = escapeHtml(caseTitle)
+                const failureReason = paymentIntent.last_payment_error?.message
+                  ? escapeHtml(paymentIntent.last_payment_error.message)
+                  : ""
+
+                const { data: clientProfile } = await supabase
+                  .from("profiles")
+                  .select("email")
+                  .eq("id", appointment.client_id)
+                  .single()
+
+                if (clientProfile?.email) {
+                  await sendEmail({
+                    to: clientProfile.email,
+                    subject: "Payment Failed",
+                    html: buildEmailHtml({
+                      title: "Payment Failed",
+                      body: `Your payment for <strong>"${safeCaseTitle}"</strong> could not be completed.${failureReason ? `<br><br><strong>Reason:</strong> ${failureReason}` : ""} Please try again from your payments page.`,
+                      ctaText: "Retry Payment",
+                      ctaUrl: `${siteUrl}/client/payments`,
+                    }),
+                  })
+                }
+
+                if (appointment.lawyer_id) {
+                  const { data: lawyerProfile } = await supabase
+                    .from("profiles")
+                    .select("email")
+                    .eq("id", appointment.lawyer_id)
+                    .single()
+
+                  if (lawyerProfile?.email) {
+                    await sendEmail({
+                      to: lawyerProfile.email,
+                      subject: "Client payment failed",
+                      html: buildEmailHtml({
+                        title: "Client Payment Failed",
+                        body: `The client's payment for <strong>"${safeCaseTitle}"</strong> could not be completed. The consultation will not be scheduled until payment succeeds.`,
+                        ctaText: "View Appointments",
+                        ctaUrl: `${siteUrl}/lawyer/appointments`,
+                      }),
+                    })
+                  }
+                }
+              } catch { /* email is supplementary */ }
             }
           }
 

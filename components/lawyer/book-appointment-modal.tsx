@@ -514,6 +514,22 @@ export function BookAppointmentModal({
                 caseId: caseData.id,
               }
             )
+
+            fetch("/api/notify/email", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                template: "appointment_requested",
+                data: {
+                  lawyer_id: lawyerId,
+                  client_id: clientId,
+                  case_title: caseTitle || "Consultation",
+                  scheduled_at: appointmentDateTime.toISOString(),
+                  appointment_id: finalAppointmentData.id,
+                  case_id: caseData.id,
+                },
+              }),
+            }).catch(() => {})
           }
 
           setBookedAppointmentId(finalAppointmentData.id)

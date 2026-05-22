@@ -8,7 +8,9 @@ import { sendEmail, buildEmailHtml, escapeHtml } from "@/lib/email"
 
 type EmailTemplate =
   | "case_completion_request"
+  | "appointment_requested"
   | "appointment_accepted"
+  | "appointment_rejected"
   | "payment_confirmed"
   | "verification_approved"
   | "verification_rejected"
@@ -108,6 +110,42 @@ export async function POST(req: NextRequest) {
         break
       }
 
+      case "appointment_requested": {
+        const { lawyer_id, client_id, case_title, scheduled_at } = data
+        if (!lawyer_id) return NextResponse.json({ error: "Missing lawyer_id" }, { status: 400 })
+
+        const [lawyerRes, clientRes] = await Promise.all([
+          supabase.from("profiles").select("email, first_name").eq("id", lawyer_id).single(),
+          client_id
+            ? supabase.from("profiles").select("first_name, last_name").eq("id", client_id).single()
+            : Promise.resolve({ data: null }),
+        ])
+
+        if (!lawyerRes.data?.email) {
+          return NextResponse.json({ error: "Lawyer email not found" }, { status: 404 })
+        }
+
+        const clientName = escapeHtml(
+          clientRes.data
+            ? `${clientRes.data.first_name || ""} ${clientRes.data.last_name || ""}`.trim() || "A client"
+            : "A client",
+        )
+        const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
+        const formattedTime = scheduled_at ? escapeHtml(formatAppointmentDateTime(scheduled_at) || scheduled_at) : "the selected time"
+
+        await sendEmail({
+          to: lawyerRes.data.email,
+          subject: "New appointment request",
+          html: buildEmailHtml({
+            title: "New Appointment Request",
+            body: `${clientName} requested a consultation${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""} at <strong>${formattedTime}</strong>. Please review and accept or decline the request from your appointments page.`,
+            ctaText: "Review Request",
+            ctaUrl: `${siteUrl}/lawyer/appointments`,
+          }),
+        })
+        break
+      }
+
       case "appointment_accepted": {
         const { client_id, lawyer_id, case_title } = data
         if (!client_id) return NextResponse.json({ error: "Missing client_id" }, { status: 400 })
@@ -138,6 +176,41 @@ export async function POST(req: NextRequest) {
             body: `${lawyerName} has accepted your consultation request for <strong>"${safeCaseTitle}"</strong>. Please proceed to payment to confirm your appointment.`,
             ctaText: "View Appointment",
             ctaUrl: `${siteUrl}/client/appointments`,
+          }),
+        })
+        break
+      }
+
+      case "appointment_rejected": {
+        const { client_id, lawyer_id, case_title } = data
+        if (!client_id) return NextResponse.json({ error: "Missing client_id" }, { status: 400 })
+
+        const [clientRes, lawyerRes] = await Promise.all([
+          supabase.from("profiles").select("email, first_name").eq("id", client_id).single(),
+          lawyer_id
+            ? supabase.from("profiles").select("first_name, last_name").eq("id", lawyer_id).single()
+            : Promise.resolve({ data: null }),
+        ])
+
+        if (!clientRes.data?.email) {
+          return NextResponse.json({ error: "Client email not found" }, { status: 404 })
+        }
+
+        const lawyerName = escapeHtml(
+          lawyerRes.data
+            ? `${lawyerRes.data.first_name || ""} ${lawyerRes.data.last_name || ""}`.trim() || "The lawyer"
+            : "The lawyer",
+        )
+        const safeCaseTitle = case_title ? escapeHtml(case_title) : ""
+
+        await sendEmail({
+          to: clientRes.data.email,
+          subject: "Your consultation request was declined",
+          html: buildEmailHtml({
+            title: "Appointment Request Declined",
+            body: `${lawyerName} declined your consultation request${safeCaseTitle ? ` for <strong>"${safeCaseTitle}"</strong>` : ""}. You can choose another lawyer and send a new request.`,
+            ctaText: "Find Lawyers",
+            ctaUrl: `${siteUrl}/match`,
           }),
         })
         break

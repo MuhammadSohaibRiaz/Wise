@@ -72,10 +72,7 @@ export function ScheduledConsultationActions({
         </Button>
       ) : appointment.reschedule_count >= 3 ? (
         <p className="text-xs text-muted-foreground text-right max-w-[220px]">
-          {MAX_RESCHEDULES_MESSAGE}{" "}
-          <button type="button" className="text-primary underline" onClick={onSupport}>
-            Contact Support
-          </button>
+          {MAX_RESCHEDULES_MESSAGE}
         </p>
       ) : null}
       {noShowEnabled && (

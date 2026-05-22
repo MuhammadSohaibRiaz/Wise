@@ -175,6 +175,15 @@ export async function POST(req: NextRequest) {
       caseId: caseId || undefined,
     })
 
+    fetch(new URL("/api/notify/email", req.url).toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-cron-secret": process.env.CRON_SECRET || "" },
+      body: JSON.stringify({
+        template: "appointment_rejected",
+        data: { client_id: row.client_id, lawyer_id: user.id, case_title: caseTitle, case_id: caseId },
+      }),
+    }).catch(() => {})
+
     if (caseId) {
       await appendCaseTimelineEvent(admin, {
         caseId,
