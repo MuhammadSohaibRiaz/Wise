@@ -68,11 +68,11 @@ export async function POST(req: NextRequest) {
         .single()
 
       if (analysis) {
-        const matchCategory =
-          analysis.category && analysis.category !== "Non-Legal"
-            ? String(analysis.category)
-            : analysis.summary || ""
-        const recommendedLawyers = await matchLawyersWithCategory(supabase, matchCategory)
+        const isLegalAnalysis =
+          analysis.is_legal_document !== false && analysis.category && analysis.category !== "Non-Legal"
+        const recommendedLawyers = isLegalAnalysis
+          ? await matchLawyersWithCategory(supabase, String(analysis.category))
+          : []
         return NextResponse.json({
           success: true,
           analysis,

@@ -287,7 +287,7 @@ function classifyQuery(query: string, context?: { hasRecentLegalContext?: boolea
   }
 
   const jailbreakPatterns = [
-    /\b(ignore|forget|override|bypass|disable)\b.*\b(instruction|system|developer|policy|rule|guardrail|safety)\b/,
+    /\b(ignore|forget|override|bypass|disable|avoid)\b.*\b(instruction|instructions|system|developer|policy|rule|guardrail|safety)\b/,
     /\b(system prompt|developer message|hidden prompt|internal instructions|reveal your prompt|print your prompt)\b/,
     /\b(jailbreak|dan mode|do anything now|roleplay as unrestricted|pretend you are not)\b/,
     /\b(answer without context|do not use retrieval|ignore retrieved context|make up|hallucinate)\b/,
@@ -728,8 +728,15 @@ function buildLegalRetrievalQuery(messages: LegalRagMessage[], query: string) {
 function buildLegalGenerationMessages(messages: LegalRagMessage[], query: string): LegalRagMessage[] {
   // Generation gets a small conversation window for coherence, but old messages are capped
   // because conversation history is untrusted user-controlled input.
+  const isFallbackErrorMessage = (message: LegalRagMessage) =>
+    message.role === "assistant" &&
+    /Sorry, I could not generate the legal answer right now|response was too large to generate|high demand right now|temporarily unavailable/i.test(
+      message.content,
+    )
+
   const compact = messages
     .slice(-MAX_LEGAL_HISTORY_MESSAGES)
+    .filter((message) => !isFallbackErrorMessage(message))
     .map((message) => ({
       role: message.role,
       content: truncateForPrompt(message.content, MAX_LEGAL_HISTORY_MESSAGE_CHARS),
@@ -869,19 +876,9 @@ function createLegalRagStreamResponse(input: {
           return
         }
 
-        if (!isGroqPromptTooLargeError(error)) {
-          console.error("[LegalRAG] Groq generation failed:", error)
-          const fallback =
-            "Sorry, I could not generate the legal answer right now. Please try again in a moment.\n\nDisclaimer: This is general legal information only and is not legal advice."
-          enqueue(fallback)
-          await input.saveChatMessages(fallback, { mode: "legal-rag", error: "generation_failed" })
-          close()
-          return
-        }
-
         try {
-          // If the first prompt is too large, retry with fewer/smaller chunks.
-          // Retrieval still succeeded; only the generation prompt was reduced.
+          // If generation fails after retrieval, retry once with fewer/smaller chunks.
+          // This covers both prompt-size errors and occasional empty/provider streams.
           await runAttempt(REDUCED_RAG_PROMPT_BUDGET)
           close()
         } catch (retryError) {
@@ -895,10 +892,15 @@ function createLegalRagStreamResponse(input: {
           }
 
           console.error("[LegalRAG] Groq reduced-context retry failed:", retryError)
-          const fallback =
-            "The legal knowledge base found relevant material but the response was too large to generate. Please ask a more specific question.\n\nDisclaimer: This is general legal information only and is not legal advice."
+          const promptTooLarge = isGroqPromptTooLargeError(error) || isGroqPromptTooLargeError(retryError)
+          const fallback = promptTooLarge
+            ? "The legal knowledge base found relevant material but the response was too large to generate. Please ask a more specific question.\n\nDisclaimer: This is general legal information only and is not legal advice."
+            : "Sorry, I could not generate the legal answer right now. Please try again in a moment.\n\nDisclaimer: This is general legal information only and is not legal advice."
           enqueue(fallback)
-          await input.saveChatMessages(fallback, { mode: "legal-rag", error: "token_limit_after_retry" })
+          await input.saveChatMessages(fallback, {
+            mode: "legal-rag",
+            error: promptTooLarge ? "token_limit_after_retry" : "generation_failed_after_retry",
+          })
           close()
         }
       }
