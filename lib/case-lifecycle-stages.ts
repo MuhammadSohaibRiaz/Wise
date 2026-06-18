@@ -118,7 +118,14 @@ export function deriveCaseLifecycleStages(input: DerivationInput): LifecycleStag
       status = "upcoming"
     }
 
-    return { ...def, status, nextAction }
+    let label = def.label
+    let shortLabel = def.shortLabel
+    if (def.key === "completed" && caseStatus === "closed") {
+      label = "Case Closed"
+      shortLabel = "Closed"
+    }
+
+    return { ...def, label, shortLabel, status, nextAction }
   })
 }
 
