@@ -626,7 +626,7 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
       return
     }
 
-    pendingAssistantScrollIdRef.current = trimmed.length > 200 ? assistantId : null
+    pendingAssistantScrollIdRef.current = userMessage.id
     setMessages([...nextMessages, { id: assistantId, role: "assistant", content: "", status: "streaming" }])
     setInput("")
     window.setTimeout(() => scrollMessageStartIntoView(userMessage.id, "smooth"), 0)
@@ -681,13 +681,19 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
         const chunk = decoder.decode(value, { stream: true })
         if (chunk) setIsSearching(false)
         accumulated += chunk
-        const shouldFollowStream = shouldAutoFollowStream()
         paint()
-        if (pendingAssistantScrollIdRef.current === assistantId && accumulated.trim()) {
-          pendingAssistantScrollIdRef.current = null
-          scrollMessageStartIntoView(assistantId, "smooth")
-        } else {
-          smartScrollToBottomDuringStream(shouldFollowStream)
+        if (pendingAssistantScrollIdRef.current === userMessage.id && !userScrolledUpRef.current) {
+          scrollMessageStartIntoView(userMessage.id, "auto")
+          
+          const container = scrollRef.current
+          const bubble = container?.querySelector<HTMLElement>(`[data-message-id="${userMessage.id}"]`)
+          if (container && bubble) {
+            const containerRect = container.getBoundingClientRect()
+            const bubbleRect = bubble.getBoundingClientRect()
+            if (bubbleRect.top - containerRect.top <= 20) {
+              pendingAssistantScrollIdRef.current = null
+            }
+          }
         }
       }
 
@@ -707,9 +713,8 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
           message.id === assistantId ? { ...message, content: finalText, status: "done" } : message,
         ),
       )
-      if (pendingAssistantScrollIdRef.current === assistantId) {
+      if (pendingAssistantScrollIdRef.current === userMessage.id) {
         pendingAssistantScrollIdRef.current = null
-        window.setTimeout(() => scrollMessageStartIntoView(assistantId, "smooth"), 0)
       }
       speak(finalText)
     } catch (caught: any) {
@@ -721,9 +726,8 @@ export function LegalRagAssistant({ onClose }: { onClose: () => void }) {
             item.id === assistantId ? { ...item, content: message, status: "error" } : item,
           ),
         )
-        if (pendingAssistantScrollIdRef.current === assistantId) {
+        if (pendingAssistantScrollIdRef.current === userMessage.id) {
           pendingAssistantScrollIdRef.current = null
-          window.setTimeout(() => scrollMessageStartIntoView(assistantId, "smooth"), 0)
         }
       }
     } finally {

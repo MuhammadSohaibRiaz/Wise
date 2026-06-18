@@ -500,24 +500,24 @@ export default function ClientDashboardPage() {
                 caseType: matchHint,
               })
               return (
-                <Card key={lawyer.id}>
+                <Card key={lawyer.id} className="flex flex-col h-full">
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <CardTitle className="text-base">{lawyer.name}</CardTitle>
-                        <CardDescription className="line-clamp-2">{spec}</CardDescription>
+                      <div className="min-w-0 flex-1 pr-2">
+                        <CardTitle className="text-base truncate">{lawyer.name}</CardTitle>
+                        <CardDescription className="line-clamp-1" title={spec}>{spec}</CardDescription>
                       </div>
-                      <Badge variant="secondary">{matchPct}% match</Badge>
+                      <Badge variant="secondary" className="shrink-0">{matchPct}% match</Badge>
                     </div>
                     <div className="flex items-start gap-1.5 pt-1">
                       <Sparkles className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-primary/60" />
-                      <p className="text-xs italic text-muted-foreground leading-relaxed">{reason}</p>
+                      <p className="text-xs italic text-muted-foreground leading-relaxed line-clamp-2">{reason}</p>
                     </div>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">{lawyer.location || "Location not set"}</span>
-                      <span className="flex items-center gap-1">
+                  <CardContent className="flex flex-col flex-1">
+                    <div className="flex items-center justify-between text-sm mt-auto mb-4">
+                      <span className="text-muted-foreground truncate pr-2">{lawyer.location || "Location not set"}</span>
+                      <span className="flex items-center gap-1 shrink-0">
                         <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
                         {normalizeLawyerAverageRating(lawyer.rating) > 0
                           ? `${formatLawyerRatingLabel(normalizeLawyerAverageRating(lawyer.rating))}/5`
