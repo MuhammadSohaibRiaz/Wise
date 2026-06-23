@@ -1,8 +1,9 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { AlertTriangle, CheckCircle, Info, ArrowRight, ShieldAlert, Zap, FileText } from "lucide-react"
+import { CheckCircle, Info, ShieldAlert, Zap, FileText, Sparkles, RotateCcw, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { CaseStrengthMeter } from "./case-strength-meter"
@@ -30,6 +31,40 @@ interface AnalysisResultsViewProps {
 
 export function AnalysisResultsView({ analysis }: AnalysisResultsViewProps) {
   const isLegal = analysis.is_legal_document !== false
+  const [simplifiedSummary, setSimplifiedSummary] = useState<string | null>(null)
+  const [isSimplifying, setIsSimplifying] = useState(false)
+  const [showSimplified, setShowSimplified] = useState(false)
+
+  const handleSimplify = async () => {
+    if (simplifiedSummary) {
+      setShowSimplified((v) => !v)
+      return
+    }
+    setIsSimplifying(true)
+    try {
+      const res = await fetch("/api/simplify-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          summary: analysis.summary,
+          category: analysis.category,
+          risk_level: analysis.risk_level,
+          urgency: analysis.urgency,
+          seriousness: analysis.seriousness,
+          key_terms: analysis.key_terms,
+          legal_citations: analysis.legal_citations,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Failed to simplify")
+      setSimplifiedSummary(data.simplified)
+      setShowSimplified(true)
+    } catch (err: unknown) {
+      console.error("[Simplify]", err)
+    } finally {
+      setIsSimplifying(false)
+    }
+  }
 
   const getRiskColor = (level: string) => {
     switch (level) {
@@ -144,21 +179,53 @@ export function AnalysisResultsView({ analysis }: AnalysisResultsViewProps) {
         {/* Main Analysis */}
         <div className="md:col-span-2 space-y-6">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 flex-wrap gap-2">
               <CardTitle>Case Summary</CardTitle>
-              {analysis.document_url && (
-                <Button variant="outline" size="sm" asChild>
-                  <a href={analysis.document_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    View Original Document
-                  </a>
+              <div className="flex items-center gap-2 flex-wrap">
+                {analysis.document_url && (
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={analysis.document_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      View Document
+                    </a>
+                  </Button>
+                )}
+                <Button
+                  variant={showSimplified ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={handleSimplify}
+                  disabled={isSimplifying}
+                  className="gap-2"
+                >
+                  {isSimplifying ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : showSimplified ? (
+                    <RotateCcw className="h-4 w-4" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {isSimplifying ? "Simplifying…" : showSimplified ? "Show Original" : "Explain Simply"}
                 </Button>
-              )}
+              </div>
             </CardHeader>
-            <CardContent>
-              <p className="leading-relaxed text-foreground/90">
-                {analysis.summary || 'No summary available for this document.'}
-              </p>
+            <CardContent className="space-y-4">
+              {showSimplified && simplifiedSummary ? (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      <span className="text-xs font-medium text-primary uppercase tracking-wide">Plain Language Explanation</span>
+                    </div>
+                    <p className="leading-relaxed text-foreground">
+                      {simplifiedSummary}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="leading-relaxed text-foreground/90">
+                  {analysis.summary || 'No summary available for this document.'}
+                </p>
+              )}
             </CardContent>
           </Card>
 
