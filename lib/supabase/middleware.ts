@@ -45,6 +45,17 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  // getUser() makes a network call to validate the JWT. On transient failures
+  // (token refresh race, momentary network hiccup) it returns null even though
+  // the user has a valid session in their cookies. Fall back to getSession() —
+  // which reads cookies directly without a network call — before redirecting,
+  // so a single transient failure never kicks a logged-in user to sign-in.
+  let effectiveUser = user
+  if (!user) {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.user) effectiveUser = session.user
+  }
+
   function createRedirect(dest: string) {
     const url = new URL(dest, request.url)
     const redirectResponse = NextResponse.redirect(url)
@@ -54,18 +65,23 @@ export async function updateSession(request: NextRequest) {
     return redirectResponse
   }
 
-  if (!user) {
+  if (!effectiveUser) {
     const dest = getGuestSignInRedirect(pathname)
     if (dest) {
-      return createRedirect(dest)
+      // Preserve the intended destination so the sign-in page can return the
+      // user there instead of always falling back to /client/dashboard.
+      const destWithNext = isClientProtectedRoute(pathname)
+        ? `${dest}?next=${encodeURIComponent(pathname)}`
+        : dest
+      return createRedirect(destWithNext)
     }
   }
 
-  if (user && !isPublicPath(pathname)) {
+  if (effectiveUser && !isPublicPath(pathname)) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("email_verified_at, user_type")
-      .eq("id", user.id)
+      .eq("id", effectiveUser!.id)
       .maybeSingle()
 
     const needsEmailVerification =
@@ -83,21 +99,21 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (
-    user &&
+    effectiveUser &&
     isLawyerRoute(pathname) &&
     !isLawyerLicenseExemptPath(pathname)
   ) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("user_type")
-      .eq("id", user.id)
+      .eq("id", effectiveUser!.id)
       .maybeSingle()
 
     if (profile?.user_type === "lawyer") {
       const { data: lawyerProfile } = await supabase
         .from("lawyer_profiles")
         .select("verification_status")
-        .eq("id", user.id)
+        .eq("id", effectiveUser!.id)
         .maybeSingle()
 
       if (!isLawyerLicenseApproved(lawyerProfile)) {
@@ -106,11 +122,11 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
-  if (user && routeNeedsRoleCheck(pathname)) {
+  if (effectiveUser && routeNeedsRoleCheck(pathname)) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("user_type")
-      .eq("id", user.id)
+      .eq("id", effectiveUser!.id)
       .maybeSingle()
 
     const userType = profile?.user_type
@@ -120,7 +136,7 @@ export async function updateSession(request: NextRequest) {
         const { data: lawyerProfile } = await supabase
           .from("lawyer_profiles")
           .select("verification_status")
-          .eq("id", user.id)
+          .eq("id", effectiveUser!.id)
           .maybeSingle()
         if (!isLawyerLicenseApproved(lawyerProfile)) {
           return createRedirect("/lawyer/verification")
@@ -137,7 +153,7 @@ export async function updateSession(request: NextRequest) {
       const { data: lawyerProfile } = await supabase
         .from("lawyer_profiles")
         .select("verification_status")
-        .eq("id", user.id)
+        .eq("id", effectiveUser!.id)
         .maybeSingle()
       if (!isLawyerLicenseApproved(lawyerProfile)) {
         return createRedirect("/lawyer/verification")

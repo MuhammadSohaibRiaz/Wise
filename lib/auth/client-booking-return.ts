@@ -52,6 +52,11 @@ export function sanitizeClientPostAuthNext(next: string | null | undefined): str
       if (!LAWYER_ID_PATTERN.test(lawyerId)) return null
       return url.pathname + url.search
     }
+
+    // Allow any general client-area page (e.g. /client/analysis, /client/cases)
+    if (path.startsWith("/client/")) {
+      return url.pathname + url.search
+    }
   } catch {
     return null
   }

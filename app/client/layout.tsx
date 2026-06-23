@@ -33,7 +33,7 @@ export default function ClientLayout({
         setIsAuthenticated(false)
         setIsLoading(false)
         if (!isPublicClientLawyerProfile(pathname)) {
-          router.replace("/auth/client/sign-in")
+          router.replace(`/auth/client/sign-in?next=${encodeURIComponent(pathname)}`)
         }
         return
       }
